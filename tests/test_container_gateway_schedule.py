@@ -383,5 +383,9 @@ def test_proxy_timeout_for_covers_heavy_registry_and_dedup_routes() -> None:
         == heavy
     )
     assert container_gateway._proxy_timeout_for("POST", "/registry/approve") == heavy
+    assert (
+        container_gateway._proxy_timeout_for("POST", "/ops/storage-rebuild/backup-delete")
+        == default
+    )
     # unknown control paths stay default
     assert container_gateway._proxy_timeout_for("POST", "/tasks/abort") == default

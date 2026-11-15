@@ -75,7 +75,7 @@ def build_bridge_api(
     start_storage_rebuild: Callable[[], dict[str, Any]] | None = None,
     cancel_storage_rebuild: Callable[[str], dict[str, Any]] | None = None,
     rollback_storage_rebuild: Callable[[], dict[str, Any]] | None = None,
-    delete_storage_rebuild_backup: Callable[..., dict[str, Any]] | None = None,
+    start_storage_rebuild_backup_delete: Callable[..., dict[str, Any]] | None = None,
     compute_fetcher_metrics: Callable[..., dict[str, Any]],
     get_projected_run_history: Callable[[], Any],
     get_lifecycle_run_history_rows: Callable[[], list[dict[str, Any]]],
@@ -213,7 +213,7 @@ def build_bridge_api(
         ),
         rollback_storage_rebuild=rollback_storage_rebuild
         or (lambda: {"ok": False, "error": "not_implemented"}),
-        delete_storage_rebuild_backup=delete_storage_rebuild_backup
+        start_storage_rebuild_backup_delete=start_storage_rebuild_backup_delete
         or (lambda **_: {"ok": False, "error": "not_implemented"}),
         compute_fetcher_metrics=compute_fetcher_metrics,
         get_projected_run_history=get_projected_run_history,

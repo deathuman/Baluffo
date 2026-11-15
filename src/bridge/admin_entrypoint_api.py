@@ -127,8 +127,8 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         rollback_storage_rebuild=lambda: storage_rebuild_mod.rollback_storage_rebuild(
             Path(config.data_dir).resolve()
         ),
-        delete_storage_rebuild_backup=lambda *, confirm=False, expected_backup_bytes=None: (
-            storage_rebuild_mod.delete_storage_rebuild_backup(
+        start_storage_rebuild_backup_delete=lambda *, confirm=False, expected_backup_bytes=None: (
+            storage_rebuild_mod.start_storage_rebuild_backup_delete(
                 Path(config.data_dir).resolve(),
                 confirm=confirm,
                 expected_backup_bytes=expected_backup_bytes,

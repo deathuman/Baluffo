@@ -5,7 +5,7 @@
 > - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
 > - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
 > - **Then inspect:** [`sync-contract.md`](sync-contract.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), and archived rollout history in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md) only when historical provenance is needed
-> - **Last updated:** 2026-11-13
+> - **Last updated:** 2026-11-15
 
 This document defines the current runtime storage contract. The archived rollout plan records sequencing and closeout evidence; this active contract owns the invariants future code must preserve.
 
@@ -246,7 +246,11 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   without stats are counted once for the candidate set and cached; if that
   count fails, cleanup continues with `generationRowCountKnown=false` and the
   generation count remains available. A new pass starts with an empty
-  `jobGenerations` and `truncated=false`. Compaction starts only after the
+  `jobGenerations` and `truncated=false`. `/ops/storage-health` returns that pass
+  result under `runtimeRetention`, plus scheduling fields, so it describes the last
+  pass: `truncated` (surfaced as `completionState: "follow-up-scheduled"`) is a
+  cap-bound pass, `processed > deleted` means candidates were examined and kept, and
+  `generationRowCountKnown: false` makes the totals lower bounds. Compaction starts only after the
   generation backlog is drained, because a rebuild during another deletion
   batch only skips as busy.
 - **Full source details are written once.** The fetch closeout writes the
@@ -321,6 +325,10 @@ replacement for them.
   retained backup so the outcome survives a bridge restart.
 - For the approval-gated preflight, independent validation, and rollback
   sequence, see [`plans/current-feed-full-rebuild-plan.md`](plans/current-feed-full-rebuild-plan.md).
+- The automatic form of this window — bloat verdict, rebuild, and verified delete of
+  the retained copy in one operation behind a blocking modal — is specified in
+  [`plans/automatic-storage-reclaim-plan.md`](plans/automatic-storage-reclaim-plan.md).
+  It is planned, not implemented; the manual controls above remain the shipped path.
 
 ### Measured generation-cleanup levers (2026-11-12)
 

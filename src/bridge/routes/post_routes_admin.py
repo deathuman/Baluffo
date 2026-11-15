@@ -133,7 +133,7 @@ class _AdminPostRouteApi(Protocol):
 
     def rollback_storage_rebuild(self) -> dict[str, Any]: ...
 
-    def delete_storage_rebuild_backup(
+    def start_storage_rebuild_backup_delete(
         self, *, confirm: bool = False, expected_backup_bytes: int | None = None
     ) -> dict[str, Any]: ...
 
@@ -348,21 +348,23 @@ def _handle_review_post(
     ) or _handle_registry_repair_post(handler, api=api, path=path, data=data)
 
 
-def _delete_storage_rebuild_backup_result(
+def _start_storage_rebuild_backup_delete_result(
     api: _AdminPostRouteApi, data: dict[str, Any]
 ) -> tuple[dict[str, Any], int]:
     raw_expected_bytes = data.get("expectedBackupBytes")
     expected_backup_bytes: int | None = None
     if raw_expected_bytes is not None and not isinstance(raw_expected_bytes, bool):
         expected_backup_bytes = int_or_default(raw_expected_bytes, 0) or None
-    result = api.delete_storage_rebuild_backup(
+    result = api.start_storage_rebuild_backup_delete(
         confirm=data.get("confirm") is True,
         expected_backup_bytes=expected_backup_bytes,
     )
     reason = str(result.get("reason") or "")
     if reason in {"confirmation-required", "expected-size-required"}:
         return result, 400
-    return result, 200 if bool(result.get("ok")) else 409
+    if not bool(result.get("ok")):
+        return result, 409
+    return result, 202 if bool(result.get("started")) else 200
 
 
 def _handle_ops_admin_post(
@@ -421,7 +423,7 @@ def _handle_ops_admin_post(
         return True
 
     if path == "/ops/storage-rebuild/backup-delete":
-        result, status = _delete_storage_rebuild_backup_result(api, data)
+        result, status = _start_storage_rebuild_backup_delete_result(api, data)
         handler.send_json(result, status=status)
         return True
 

@@ -161,6 +161,24 @@ def _split_sql_script(sql: str) -> list[str]:
     return [statement.strip() for statement in sql.split(";") if statement.strip()]
 
 
+# A retained copy and a delete record describe each other, so the whole record is
+# cleared whenever the copy is created or consumed. Carried forward, a stale
+# `backupDeletedAt` reported a deletion beside a copy that exists, and a failed
+# delete outlived the rollback that consumed its copy.
+_CLEARED_DELETE_JOURNAL_FIELDS: dict[str, Any] = {
+    "backupDeleted": False,
+    "backupDeletedAt": "",
+    "backupDeletedRunId": "",
+    "backupDeleteFreedBytes": 0,
+    "backupDeleteValidationBasis": "",
+    "backupDeleteStatus": "",
+    "backupDeleteRunId": "",
+    "backupDeleteStartedAt": "",
+    "backupDeleteFinishedAt": "",
+    "backupDeleteError": "",
+}
+
+
 class BaluffoStore:
     """Owns the SQLite runtime database connection and migration lifecycle."""
 
@@ -2106,6 +2124,7 @@ class BaluffoStore:
                 phase="backup-created",
                 backupPath=str(target_backup),
                 backupBytes=before_bytes,
+                **_CLEARED_DELETE_JOURNAL_FIELDS,
                 **(journal_fields or {}),
             )
             if self._reader is not None:
@@ -2148,6 +2167,7 @@ class BaluffoStore:
                 backupBytes=before_bytes,
                 databaseBytes=after_bytes,
                 reclaimedBytes=result["reclaimedBytes"],
+                **_CLEARED_DELETE_JOURNAL_FIELDS,
                 **(journal_fields or {}),
             )
             return result
@@ -2216,6 +2236,9 @@ class BaluffoStore:
                 phase="rolled-back",
                 restoredAt=_now_iso(),
                 databaseBytes=after_bytes,
+                # The copy is consumed by the restore, so a delete attempt that
+                # failed against it describes nothing.
+                **_CLEARED_DELETE_JOURNAL_FIELDS,
             )
             return result
 

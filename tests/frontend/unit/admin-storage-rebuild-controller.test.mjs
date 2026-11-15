@@ -46,15 +46,43 @@ const COMPLETE = {
   }
 };
 
+const DELETE_RUNNING = {
+  ...COMPLETE,
+  backupDeleteStatus: "running",
+  backupDeleteRunId: "backup_delete_abc",
+  backupDeleteStartedAt: "2026-11-15T10:00:00Z"
+};
+
+const DELETE_SUCCEEDED = {
+  ...COMPLETE,
+  backupExists: false,
+  backupBytes: 0,
+  canRollback: false,
+  backupDeletedAt: "2026-11-15T10:00:05Z",
+  backupDeleteFreedBytes: 1024,
+  backupDeleteStatus: "succeeded",
+  backupDeleteRunId: "backup_delete_abc",
+  backupDeleteFinishedAt: "2026-11-15T10:00:05Z"
+};
+
 function fixture({
   startPayload = { ok: true, started: true, storageRebuild: RUNNING },
   rebuildPayload = { ok: true, storageRebuild: COMPLETE },
+  deleteStartPayload = {
+    ok: true,
+    started: true,
+    alreadyRunning: false,
+    runId: "backup_delete_abc",
+    storageRebuild: DELETE_RUNNING
+  },
+  deleteStatusPayload = { ok: true, storageRebuild: DELETE_SUCCEEDED },
   confirmDelete = () => true
 } = {}) {
   const listeners = {};
   const posts = [];
   const gets = [];
   let currentRebuild = rebuildPayload?.storageRebuild || COMPLETE;
+  let deletePolled = false;
   const refs = {
     adminStorageTablesStatusEl: createElement(),
     adminStorageTablesBodyEl: createElement(),
@@ -86,6 +114,7 @@ function fixture({
     getBridge: async path => {
       gets.push(path);
       if (path === "/ops/storage-rebuild") {
+        if (deletePolled) return deleteStatusPayload;
         return { ok: true, storageRebuild: currentRebuild };
       }
       return { storage: {} };
@@ -106,15 +135,9 @@ function fixture({
         return { ok: true, storageRebuild: currentRebuild };
       }
       if (path.endsWith("/backup-delete")) {
-        currentRebuild = {
-          ...COMPLETE,
-          backupExists: false,
-          backupBytes: 0,
-          canRollback: false,
-          backupDeletedAt: "2026-11-14T18:00:00Z",
-          backupDeleteFreedBytes: 1024
-        };
-        return { ok: true, freedBytes: 1024, storageRebuild: currentRebuild };
+        currentRebuild = deleteStartPayload.storageRebuild || DELETE_RUNNING;
+        deletePolled = true;
+        return deleteStartPayload;
       }
       return {};
     },
@@ -189,7 +212,8 @@ test("rollback restores the old database and reloads storage", async () => {
   f.controller.stopRebuildPoll();
 });
 
-test("deleting the retained backup requires confirmation and refreshes storage", async () => {
+test("deleting the retained backup starts a background run and polls to success", async () => {
+  const timers = stubScheduledTimers();
   const messages = [];
   const f = fixture({
     confirmDelete: message => {
@@ -199,23 +223,44 @@ test("deleting the retained backup requires confirmation and refreshes storage",
   });
   f.controller.acceptRebuild({ ok: true, storageRebuild: COMPLETE });
 
-  await f.controller.deleteRebuildBackup();
-  await Promise.resolve();
+  try {
+    await f.controller.deleteRebuildBackup();
 
-  assert.equal(f.posts[0].path, "/ops/storage-rebuild/backup-delete");
-  assert.deepEqual(f.posts[0].body, {
-    confirm: true,
-    expectedBackupBytes: COMPLETE.backupBytes
-  });
-  assert.match(messages[0], /Permanently delete/);
-  assert.match(messages[0], /226491760640 B/);
-  assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /Old database deleted/);
-  assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /1024 B freed/);
-  assert.equal(f.refs.adminStorageRebuildRollbackBtnEl.hidden, true);
-  assert.equal(f.refs.adminStorageRebuildBackupDeleteBtnEl.hidden, true);
-  assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /No pre-rebuild database is retained/);
-  assert.ok(f.gets.includes("/ops/storage-health"));
-  f.controller.stopRebuildPoll();
+    assert.equal(f.posts[0].path, "/ops/storage-rebuild/backup-delete");
+    assert.deepEqual(f.posts[0].body, {
+      confirm: true,
+      expectedBackupBytes: COMPLETE.backupBytes
+    });
+    assert.ok(
+      f.posts[0].options.timeoutMs < 60_000,
+      "starting the delete must not wait for the old long-running request budget"
+    );
+    assert.match(messages[0], /Permanently delete/);
+    assert.match(messages[0], /226491760640 B/);
+    assert.match(messages[0], /leave this page open/);
+    assert.match(f.refs.adminStorageRebuildStatusEl.textContent, /Deleting the old database/);
+    assert.equal(f.refs.adminStorageRebuildRollbackBtnEl.hidden, true);
+    assert.equal(f.refs.adminStorageRebuildBackupDeleteBtnEl.hidden, true);
+    assert.ok(timers.scheduled.length > 0, "Admin must schedule delete-status polling");
+
+    timers.scheduled.shift()();
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(f.refs.adminStorageRebuildStatusEl.textContent, "Old database deleted");
+    assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /Old database deleted/);
+    assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /1024 B freed/);
+    assert.equal(f.refs.adminStorageRebuildRollbackBtnEl.hidden, true);
+    assert.equal(f.refs.adminStorageRebuildBackupDeleteBtnEl.hidden, true);
+    assert.match(f.refs.adminStorageRebuildBodyEl.innerHTML, /No pre-rebuild database is retained/);
+    assert.ok(f.gets.includes("/ops/storage-rebuild"));
+    assert.ok(
+      f.gets.includes("/ops/storage-health"),
+      "a completed delete must refresh the storage breakdown it just changed"
+    );
+  } finally {
+    f.controller.stopRebuildPoll();
+    timers.restore();
+  }
 });
 
 test("cancelling the delete confirmation keeps the rollback copy", async () => {

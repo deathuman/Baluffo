@@ -91,6 +91,7 @@ export function createStorageBreakdownController({
   let maintenanceStatusInFlight = false;
   let rebuild = null;
   let rebuildInFlight = false;
+  let refreshedDeleteRunId = "";
   let rebuildCancelInFlight = false;
   let rebuildStatusInFlight = false;
   let rebuildPollTimer = null;
@@ -750,11 +751,27 @@ export function createStorageBreakdownController({
     );
   }
 
+  function rebuildDeleteRunning(value = rebuild) {
+    return String(value?.backupDeleteStatus || "") === "running";
+  }
+
   function rebuildStatusText(value) {
     if (!value) return { text: "Not run", tone: "" };
     const status = String(value.status || "idle");
     if (status === "running") return { text: "Rebuild running", tone: "" };
     if (status === "cancelling") return { text: "Stopping rebuild…", tone: "warning" };
+    // A rebuild in flight outranks a delete record it has not cleared yet.
+    const deleteStatus = String(value.backupDeleteStatus || "");
+    if (deleteStatus === "running") {
+      return { text: "Deleting the old database… Safe to leave this page open.", tone: "" };
+    }
+    if (deleteStatus === "failed") {
+      return {
+        text: `Delete failed: ${value.backupDeleteError || "unknown error"}`,
+        tone: "warning"
+      };
+    }
+    if (deleteStatus === "succeeded") return { text: "Old database deleted", tone: "" };
     if (status === "complete") return { text: "Rebuild complete", tone: "" };
     if (status === "superseded") {
       return { text: "Rebuild superseded by a database write", tone: "warning" };
@@ -782,9 +799,10 @@ export function createStorageBreakdownController({
     const status = rebuildStatusText(rebuild);
     setRebuildStatus(status.text, status.tone);
     const active = rebuildRunning();
+    const deleteActive = rebuildDeleteRunning();
     const runButton = refs.adminStorageRebuildBtnEl;
     if (runButton) {
-      runButton.disabled = rebuildInFlight || active;
+      runButton.disabled = rebuildInFlight || active || deleteActive;
       runButton.hidden = active;
     }
     const cancelButton = refs.adminStorageRebuildCancelBtnEl;
@@ -792,14 +810,14 @@ export function createStorageBreakdownController({
       cancelButton.hidden = !active;
       cancelButton.disabled = rebuildCancelInFlight || rebuild?.status === "cancelling";
     }
-    const canRestore = rebuild?.canRollback === true && !active;
+    const canRestore = rebuild?.canRollback === true && !active && !deleteActive;
     if (refs.adminStorageRebuildRollbackBtnEl) {
       refs.adminStorageRebuildRollbackBtnEl.hidden = !canRestore;
-      refs.adminStorageRebuildRollbackBtnEl.disabled = rebuildInFlight;
+      refs.adminStorageRebuildRollbackBtnEl.disabled = rebuildInFlight || deleteActive;
     }
     if (refs.adminStorageRebuildBackupDeleteBtnEl) {
       refs.adminStorageRebuildBackupDeleteBtnEl.hidden = !canRestore;
-      refs.adminStorageRebuildBackupDeleteBtnEl.disabled = rebuildInFlight;
+      refs.adminStorageRebuildBackupDeleteBtnEl.disabled = rebuildInFlight || deleteActive;
     }
   }
 
@@ -812,7 +830,7 @@ export function createStorageBreakdownController({
   }
 
   function scheduleRebuildPoll() {
-    if (!rebuildRunning()) {
+    if (!rebuildRunning() && !rebuildDeleteRunning()) {
       stopRebuildPoll();
       return;
     }
@@ -834,7 +852,18 @@ export function createStorageBreakdownController({
   function acceptRebuild(payload) {
     if (payload?.storageRebuild !== undefined) rebuild = payload.storageRebuild;
     renderRebuild();
-    if (rebuildRunning()) scheduleRebuildPoll();
+    const deletedRunId = String(rebuild?.backupDeleteRunId || "");
+    if (
+      String(rebuild?.backupDeleteStatus || "") === "succeeded"
+      && deletedRunId
+      && deletedRunId !== refreshedDeleteRunId
+    ) {
+      // The delete freed bytes outside this payload, so refresh the breakdown once
+      // per completed run instead of leaving pre-delete free space on screen.
+      refreshedDeleteRunId = deletedRunId;
+      void load();
+    }
+    if (rebuildRunning() || rebuildDeleteRunning()) scheduleRebuildPoll();
     else stopRebuildPoll();
     return rebuild;
   }
@@ -849,7 +878,7 @@ export function createStorageBreakdownController({
       });
       return acceptRebuild(payload);
     } catch (err) {
-      if (rebuildRunning()) {
+      if (rebuildRunning() || rebuildDeleteRunning()) {
         setRebuildStatus(
           `Rebuild status unavailable: ${err?.message || err || "unknown error"}. Retrying…`,
           "warning"
@@ -1002,7 +1031,8 @@ export function createStorageBreakdownController({
     }
     const confirmed = confirmDelete(
       `Permanently delete the retained rollback copy (${formatBytes(expectedBackupBytes)})? `
-      + "The current feed stays live, but rollback will no longer be possible."
+      + "The current feed stays live, but rollback will no longer be possible. "
+      + "This can take several minutes; you can leave this page open while it runs."
     );
     if (!confirmed) {
       setRebuildStatus("Delete cancelled; the rollback copy was kept.", "");
@@ -1011,7 +1041,7 @@ export function createStorageBreakdownController({
     rebuildInFlight = true;
     let finalStatus = "";
     let finalTone = "";
-    setRebuildStatus("Deleting the retained old database…");
+    setRebuildStatus("Starting delete of the retained old database…");
     try {
       const payload = await postBridge(
         `${STORAGE_REBUILD_ROUTE}/backup-delete`,
@@ -1028,15 +1058,17 @@ export function createStorageBreakdownController({
           payload?.error || "unknown error"
         }`;
         finalTone = "warning";
-      } else {
-        void load();
       }
       return payload;
     } catch (err) {
-      finalStatus = `Could not delete the old database: ${
+      // The delete now runs in the bridge, so a failed response no longer means
+      // a failed delete: the request may have been accepted before the transport
+      // broke. Ask the bridge what actually happened instead of claiming failure.
+      finalStatus = `Delete status unknown: ${
         err?.message || err || "unknown error"
-      }`;
+      }. Refreshing…`;
       finalTone = "warning";
+      void refreshRebuildStatus();
       return null;
     } finally {
       rebuildInFlight = false;

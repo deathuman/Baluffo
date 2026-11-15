@@ -50,6 +50,51 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
+# Live in-process delete workers, so a second job built for the same data dir can
+# tell a `running` journal that a worker still owns from one nobody will finish.
+# Keyed by journal path because the record belongs to it, and paired with the run
+# id so a newer attempt never inherits an older worker's liveness. The job
+# registry cannot answer this on its own: tests and restart simulations build
+# `StorageRebuildJob` directly, without going through `_job_for`.
+_LIVE_DELETE_WORKERS: dict[Path, tuple[str, threading.Thread]] = {}
+_LIVE_DELETE_LOCK = threading.Lock()
+
+
+def _register_live_delete(journal_path: Path, run_id: str, thread: threading.Thread) -> None:
+    with _LIVE_DELETE_LOCK:
+        _LIVE_DELETE_WORKERS[journal_path] = (run_id, thread)
+
+
+def _unregister_live_delete(journal_path: Path, run_id: str) -> None:
+    with _LIVE_DELETE_LOCK:
+        entry = _LIVE_DELETE_WORKERS.get(journal_path)
+        if entry is not None and entry[0] == run_id:
+            del _LIVE_DELETE_WORKERS[journal_path]
+
+
+def _live_delete_thread(journal_path: Path, run_id: str) -> threading.Thread | None:
+    """The live worker that owns this journal record, if one exists in this process."""
+    with _LIVE_DELETE_LOCK:
+        entry = _LIVE_DELETE_WORKERS.get(journal_path)
+    if entry is None or not run_id or entry[0] != run_id:
+        return None
+    return entry[1] if entry[1].is_alive() else None
+
+
+# A delete belongs to one retained copy. Creating a new copy or restoring the old
+# one makes every field of the previous attempt describe nothing, so both sites
+# clear the whole set instead of listing the fields again.
+_CLEARED_DELETE_STATE: dict[str, Any] = {
+    "backupDeleteStatus": "",
+    "backupDeleteRunId": "",
+    "backupDeleteStartedAt": "",
+    "backupDeleteFinishedAt": "",
+    "backupDeleteError": "",
+    "backupDeletedAt": "",
+    "backupDeleteFreedBytes": 0,
+}
+
+
 def _empty_state(data_dir: Path) -> dict[str, Any]:
     db_path = data_dir / DEFAULT_DB_NAME
     backup = rebuild_backup_path(db_path)
@@ -72,6 +117,11 @@ def _empty_state(data_dir: Path) -> dict[str, Any]:
         "backupExists": backup.is_file(),
         "backupDeletedAt": "",
         "backupDeleteFreedBytes": 0,
+        "backupDeleteStatus": "",
+        "backupDeleteRunId": "",
+        "backupDeleteStartedAt": "",
+        "backupDeleteFinishedAt": "",
+        "backupDeleteError": "",
         "reclaimedBytes": 0,
         "requiredFreeBytes": 0,
         "freeDiskBytes": 0,
@@ -100,6 +150,7 @@ class StorageRebuildJob:
         self._lock = threading.RLock()
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
+        self._delete_thread: threading.Thread | None = None
         self._start_lock = threading.Lock()
         self._started_monotonic = 0.0
         self.run_id = ""
@@ -108,6 +159,7 @@ class StorageRebuildJob:
 
     def _hydrate_from_journal(self) -> None:
         """Show the last run's outcome after a bridge restart."""
+        self._settle_stale_delete()
         journal = read_rebuild_journal(self.journal_path)
         status = str(journal.get("status") or "")
         if status not in {
@@ -134,8 +186,109 @@ class StorageRebuildJob:
                 "reclaimedBytes": int(journal.get("reclaimedBytes") or 0),
                 "backupDeletedAt": str(journal.get("backupDeletedAt") or ""),
                 "backupDeleteFreedBytes": int(journal.get("backupDeleteFreedBytes") or 0),
+                "backupDeleteStatus": str(journal.get("backupDeleteStatus") or ""),
+                "backupDeleteRunId": str(journal.get("backupDeleteRunId") or ""),
+                "backupDeleteStartedAt": str(journal.get("backupDeleteStartedAt") or ""),
+                "backupDeleteFinishedAt": str(journal.get("backupDeleteFinishedAt") or ""),
+                "backupDeleteError": str(journal.get("backupDeleteError") or ""),
                 "error": str(journal.get("error") or ""),
                 "finishedAt": str(journal.get("updatedAt") or ""),
+            }
+        )
+
+    def _settle_stale_delete(self) -> None:
+        """Settle a journaled delete that no worker can own.
+
+        Runs before hydration rather than inside it: the delete belongs to the
+        completed-rebuild journal, and a stale `running` must not survive on a
+        status hydration would skip. No delete worker outlives a restart, so a
+        leftover `running` would report "Deleting..." forever and hide the retry
+        behind a phantom run. The files stay the truth: a missing backup is
+        promoted to `succeeded` by `_reconcile_missing_backup`, so an existing one
+        is settled as a failed attempt.
+
+        A `running` whose worker is still alive in this process is current, not
+        stale. That happens whenever a second job is built for the same data dir
+        (a reload, a direct construction, a second bridge view), and settling it
+        there would tell an operator the delete failed while it is still copying,
+        validating, or unlinking.
+        """
+        journal = read_rebuild_journal(self.journal_path)
+        if str(journal.get("backupDeleteStatus") or "") != "running":
+            return
+        delete_run_id = str(journal.get("backupDeleteRunId") or "")
+        if _live_delete_thread(self.journal_path, delete_run_id) is not None:
+            return
+        # Re-read before writing. A worker publishes its terminal record before it
+        # unregisters, so a run that finished during the check above must not have
+        # its outcome overwritten with a restart failure.
+        journal = read_rebuild_journal(self.journal_path)
+        if (
+            str(journal.get("backupDeleteStatus") or "") != "running"
+            or str(journal.get("backupDeleteRunId") or "") != delete_run_id
+        ):
+            return
+        settled_at = _now_iso()
+        update_rebuild_journal(
+            self.journal_path,
+            backupDeleteStatus="failed",
+            backupDeleteStartedAt=str(journal.get("backupDeleteStartedAt") or ""),
+            backupDeleteFinishedAt=settled_at,
+            backupDeleteError="the bridge restarted before the backup delete finished",
+        )
+
+    def _reconcile_missing_backup(self) -> None:
+        """Record a deletion that completed after the request lost its response.
+
+        Only the journal and the status record are updated: the live database, any
+        remaining files, and the feed are left untouched. A missing backup with a
+        missing live database is ambiguous, so it is never treated as a successful
+        deletion.
+        """
+        journal = read_rebuild_journal(self.journal_path)
+        if str(journal.get("status") or "") != "complete":
+            return
+        if self._backup_delete_active_locked():
+            return
+        # Another job for this data dir may own the path. Its worker removes the
+        # file before writing the terminal record, so without this a status read
+        # from the second instance would report the deletion `succeeded` while the
+        # real worker is still running. `_finish_delete_failed` and the success
+        # path both re-check the run id, so skipping here costs nothing.
+        delete_run_id = str(journal.get("backupDeleteRunId") or "")
+        if _live_delete_thread(self.journal_path, delete_run_id) is not None:
+            return
+        if str(journal.get("backupDeletedAt") or ""):
+            return
+        try:
+            backup_bytes = int(journal.get("backupBytes") or 0)
+        except (TypeError, ValueError):
+            return
+        if backup_bytes <= 0 or self.backup_path.exists():
+            return
+        if not self.db_path.is_file() or file_size(self.db_path) <= 0:
+            return
+        deleted_at = _now_iso()
+        update_rebuild_journal(
+            self.journal_path,
+            backupDeletedAt=deleted_at,
+            backupBytes=0,
+            backupDeleted=True,
+            backupDeletedRunId=str(journal.get("runId") or ""),
+            backupDeleteFreedBytes=backup_bytes,
+            backupDeleteValidationBasis="missing-backup-reconciled",
+            backupDeleteStatus="succeeded",
+            backupDeleteRunId=str(journal.get("backupDeleteRunId") or ""),
+            backupDeleteFinishedAt=deleted_at,
+            backupDeleteError="",
+        )
+        self._state.update(
+            {
+                "backupDeletedAt": deleted_at,
+                "backupDeleteFreedBytes": backup_bytes,
+                "backupDeleteStatus": "succeeded",
+                "backupDeleteFinishedAt": deleted_at,
+                "backupDeleteError": "",
             }
         )
 
@@ -220,6 +373,14 @@ class StorageRebuildJob:
             "canRollback": backup_exists and self._state["status"] not in {"running", "cancelling"},
         }
 
+    def _backup_delete_active_locked(self) -> bool:
+        thread = self._delete_thread
+        return (
+            str(self._state.get("backupDeleteStatus") or "") == "running"
+            and thread is not None
+            and thread.is_alive()
+        )
+
     def _snapshot_locked(self) -> dict[str, Any]:
         payload = copy.deepcopy(self._state)
         payload.update(self._disk_fields_locked())
@@ -230,7 +391,17 @@ class StorageRebuildJob:
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            return self._snapshot_locked()
+            # Do not reconcile while a rebuild, rollback, or delete owns the
+            # backup path. Rollback removes the path before its journal update,
+            # so a concurrent status read must not mistake that for deletion.
+            start_guard = self._start_lock.acquire(blocking=False)
+            try:
+                if start_guard:
+                    self._reconcile_missing_backup()
+                return self._snapshot_locked()
+            finally:
+                if start_guard:
+                    self._start_lock.release()
 
     def _blocked(self, reason: str) -> tuple[dict[str, Any], bool]:
         with self._lock:
@@ -244,6 +415,9 @@ class StorageRebuildJob:
     def _start_locked(self) -> tuple[dict[str, Any], bool]:
         with self._lock:
             if self._state["status"] in {"running", "cancelling"}:
+                return self._snapshot_locked(), False
+            if self._backup_delete_active_locked():
+                self._state["blockedReason"] = "backup-delete-running"
                 return self._snapshot_locked(), False
         self._reconcile_crash_state()
         if self.backup_path.is_file():
@@ -632,6 +806,13 @@ class StorageRebuildJob:
                     "error": "a current-feed rebuild is running",
                     "storageRebuild": self._snapshot_locked(),
                 }
+            if self._backup_delete_active_locked():
+                return {
+                    "ok": False,
+                    "reason": "backup-delete-running",
+                    "error": "a backup delete is running",
+                    "storageRebuild": self._snapshot_locked(),
+                }
         try:
             store = get_storage_store(self.data_dir, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
             result = store.restore_rebuilt_database(
@@ -654,6 +835,9 @@ class StorageRebuildJob:
                     "databaseBytes": int(result.get("databaseBytes") or 0),
                     "reclaimedBytes": 0,
                     "error": "",
+                    # The restore consumes the retained copy, so the previous
+                    # delete attempt describes nothing any more.
+                    **_CLEARED_DELETE_STATE,
                 }
             )
             self._state.update(self._disk_fields_locked())
@@ -664,17 +848,253 @@ class StorageRebuildJob:
         with self._start_lock:
             with self._lock:
                 thread = self._thread
+                delete_thread = self._delete_thread
             if thread is not None and thread.is_alive():
                 self.cancel(force=True)
                 thread.join(timeout=30.0)
+            if delete_thread is not None and delete_thread.is_alive():
+                delete_thread.join(timeout=30.0)
 
-    def delete_backup(
+    def start_delete_backup(
         self, *, confirm: bool = False, expected_backup_bytes: int | None = None
     ) -> dict[str, Any]:
+        """Start the retained-backup delete without holding the request thread."""
         with self._start_lock:
-            return self._delete_backup_locked(
+            # Request shape first. A duplicate start answers 200 with the active
+            # run, but only for a well-formed request: `{confirm: false}` must not
+            # borrow that 200 and skip the confirmation the route documents.
+            error, expected_bytes = self._delete_backup_request(
                 confirm=confirm, expected_backup_bytes=expected_backup_bytes
             )
+            if error is not None:
+                return self._backup_delete_start_error(
+                    str(error.get("reason") or "delete-rejected"),
+                    str(error.get("error") or "the delete request was rejected"),
+                )
+            with self._lock:
+                if self._state["status"] in {"running", "cancelling"}:
+                    return self._backup_delete_start_error(
+                        "rebuild-running", "a current-feed rebuild is running"
+                    )
+                if self._backup_delete_active_locked():
+                    return {
+                        "ok": True,
+                        "started": False,
+                        "alreadyRunning": True,
+                        "runId": str(self._state.get("backupDeleteRunId") or ""),
+                        "reason": "backup-delete-running",
+                        "error": "",
+                        "storageRebuild": self._snapshot_locked(),
+                    }
+            error, backup_bytes = self._delete_backup_file(expected_bytes)
+            if error is not None:
+                return self._backup_delete_start_error(
+                    str(error.get("reason") or "delete-rejected"),
+                    str(error.get("error") or "the delete request was rejected"),
+                )
+            run_id = f"backup_delete_{uuid.uuid4().hex[:12]}"
+            started_at = _now_iso()
+            # Durable before the worker exists. Without this the in-flight delete
+            # lived only in memory, so a restart mid-validation hydrated the
+            # previous `complete` with no delete record, and `_settle_stale_delete`
+            # never saw the `running` it is built to settle. Best-effort like every
+            # other journal write here; memory still owns the live status.
+            try:
+                update_rebuild_journal(
+                    self.journal_path,
+                    backupDeleteStatus="running",
+                    backupDeleteRunId=run_id,
+                    backupDeleteStartedAt=started_at,
+                    backupDeleteFinishedAt="",
+                    backupDeleteError="",
+                )
+            except OSError:
+                # A temporarily unwritable journal must not block the delete; the
+                # retry path re-reads the files, not this record.
+                pass
+            with self._lock:
+                self._state.update(
+                    {
+                        "backupDeleteStatus": "running",
+                        "backupDeleteRunId": run_id,
+                        "backupDeleteStartedAt": started_at,
+                        "backupDeleteFinishedAt": "",
+                        "backupDeleteError": "",
+                    }
+                )
+                thread = threading.Thread(
+                    target=self._run_delete_backup,
+                    name=f"baluffo-backup-delete-{run_id[-6:]}",
+                    kwargs={
+                        "run_id": run_id,
+                        "expected_bytes": backup_bytes,
+                        "started_at": started_at,
+                    },
+                    daemon=True,
+                )
+                self._delete_thread = thread
+                # Registered before start so a job built concurrently never sees a
+                # journaled `running` without the worker that owns it.
+                _register_live_delete(self.journal_path, run_id, thread)
+                thread.start()
+                snapshot = self._snapshot_locked()
+            return {
+                "ok": True,
+                "started": True,
+                "alreadyRunning": False,
+                "runId": run_id,
+                "reason": "",
+                "error": "",
+                "storageRebuild": snapshot,
+            }
+
+    def _backup_delete_start_error(self, reason: str, error: str) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "started": False,
+            "alreadyRunning": False,
+            "runId": "",
+            "reason": reason,
+            "error": error,
+            "storageRebuild": self.snapshot(),
+        }
+
+    def _set_delete_terminal_state(
+        self,
+        run_id: str,
+        status: str,
+        *,
+        finished_at: str,
+        error: str = "",
+        **fields: Any,
+    ) -> None:
+        with self._lock:
+            if str(self._state.get("backupDeleteRunId") or "") != run_id:
+                return
+            self._state.update(
+                {
+                    "backupDeleteStatus": status,
+                    "backupDeleteFinishedAt": finished_at,
+                    "backupDeleteError": error,
+                    **fields,
+                }
+            )
+            self._state.update(self._disk_fields_locked())
+
+    def _run_delete_backup(self, *, run_id: str, expected_bytes: int, started_at: str) -> None:
+        try:
+            error, run = self._delete_backup_run()
+            if error is not None:
+                self._finish_delete_failed(
+                    run_id,
+                    started_at=started_at,
+                    error=str(error.get("error") or "backup validation failed"),
+                )
+                return
+            error, backup_bytes = self._delete_backup_file(expected_bytes)
+            if error is not None:
+                self._finish_delete_failed(
+                    run_id,
+                    started_at=started_at,
+                    error=str(error.get("error") or "backup file changed"),
+                )
+                return
+            journal = run["journal"]
+            validation_basis = str(run.get("validationBasis") or "")
+            try:
+                redundant_hardlink = os.path.samefile(self.db_path, self.backup_path)
+            except OSError:
+                redundant_hardlink = False
+            try:
+                self.backup_path.unlink()
+            except OSError as exc:
+                self._finish_delete_failed(run_id, started_at=started_at, error=str(exc))
+                return
+            freed_bytes = 0 if redundant_hardlink else backup_bytes
+            deleted_at = _now_iso()
+            update_rebuild_journal(
+                self.journal_path,
+                backupDeletedAt=deleted_at,
+                backupBytes=0,
+                backupDeleted=True,
+                backupDeletedRunId=str(journal.get("runId") or ""),
+                backupDeleteFreedBytes=freed_bytes,
+                backupDeleteValidationBasis=validation_basis,
+                backupDeleteStatus="succeeded",
+                backupDeleteRunId=run_id,
+                backupDeleteStartedAt=started_at,
+                backupDeleteFinishedAt=deleted_at,
+                backupDeleteError="",
+            )
+            self._set_delete_terminal_state(
+                run_id,
+                "succeeded",
+                finished_at=deleted_at,
+                backupExists=False,
+                backupBytes=0,
+                canRollback=False,
+                backupDeletedAt=deleted_at,
+                backupDeleteFreedBytes=freed_bytes,
+            )
+        except (
+            BaluffoStoreError,
+            CurrentFeedRebuildError,
+            KeyError,
+            OSError,
+            RuntimeError,
+            sqlite3.Error,
+            TypeError,
+            ValueError,
+        ) as exc:
+            self._finish_delete_failed(
+                run_id,
+                started_at=started_at,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+        finally:
+            with self._lock:
+                current_thread = self._delete_thread is threading.current_thread()
+                still_running = (
+                    current_thread
+                    and str(self._state.get("backupDeleteRunId") or "") == run_id
+                    and str(self._state.get("backupDeleteStatus") or "") == "running"
+                )
+            if still_running:
+                self._finish_delete_failed(
+                    run_id,
+                    started_at=started_at,
+                    error="backup delete worker exited unexpectedly",
+                )
+            # Unregistered last: the record stays owned until the terminal state
+            # it published is visible, so a concurrent second job cannot settle a
+            # run that has already decided its own outcome.
+            _unregister_live_delete(self.journal_path, run_id)
+            with self._lock:
+                if current_thread and self._delete_thread is threading.current_thread():
+                    self._delete_thread = None
+
+    def _finish_delete_failed(self, run_id: str, *, started_at: str, error: str) -> None:
+        with self._lock:
+            if str(self._state.get("backupDeleteRunId") or "") != run_id:
+                # A newer attempt owns the record; an older worker must not stamp
+                # its failure onto that attempt's journal entry.
+                return
+        finished_at = _now_iso()
+        try:
+            update_rebuild_journal(
+                self.journal_path,
+                backupDeleteStatus="failed",
+                backupDeleteRunId=run_id,
+                backupDeleteStartedAt=started_at,
+                backupDeleteFinishedAt=finished_at,
+                backupDeleteError=error,
+            )
+        except OSError:
+            # The in-memory terminal state must not remain `running` when the
+            # journal is temporarily unavailable; restart reconciliation can
+            # settle a missing backup on the next status read.
+            pass
+        self._set_delete_terminal_state(run_id, "failed", finished_at=finished_at, error=error)
 
     def _backup_delete_error(self, reason: str, error: str, **extra: Any) -> dict[str, Any]:
         return {
@@ -756,7 +1176,7 @@ class StorageRebuildJob:
         expected_source_rows: int,
     ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         try:
-            validation = validate_feed_generation(
+            validate_feed_generation(
                 self.db_path,
                 generation=generation,
                 expected_row_count=expected_job_rows,
@@ -810,16 +1230,8 @@ class StorageRebuildJob:
                     ),
                     {},
                 )
-            return None, {
-                "validation": current,
-                "validationBasis": "current-feed-after-supersede",
-                "completedGenerationRetained": False,
-            }
-        return None, {
-            "validation": validation,
-            "validationBasis": "completed-generation",
-            "completedGenerationRetained": True,
-        }
+            return None, {"validationBasis": "current-feed-after-supersede"}
+        return None, {"validationBasis": "completed-generation"}
 
     def _delete_backup_run(self) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         journal = read_rebuild_journal(self.journal_path)
@@ -852,78 +1264,6 @@ class StorageRebuildJob:
         if error is not None:
             return error, {}
         return None, {"journal": journal, **run}
-
-    def _delete_backup_locked(
-        self, *, confirm: bool, expected_backup_bytes: int | None
-    ) -> dict[str, Any]:
-        with self._lock:
-            if self._state["status"] in {"running", "cancelling"}:
-                return {
-                    "ok": False,
-                    "reason": "rebuild-running",
-                    "error": "a current-feed rebuild is running",
-                    "storageRebuild": self._snapshot_locked(),
-                }
-        error, expected_bytes = self._delete_backup_request(
-            confirm=confirm, expected_backup_bytes=expected_backup_bytes
-        )
-        if error is not None:
-            return error
-        error, backup_bytes = self._delete_backup_file(expected_bytes)
-        if error is not None:
-            return error
-        error, run = self._delete_backup_run()
-        if error is not None:
-            return error
-        journal = run["journal"]
-        validation = run["validation"]
-        validation_basis = str(run.get("validationBasis") or "")
-
-        try:
-            redundant_hardlink = os.path.samefile(self.db_path, self.backup_path)
-        except OSError:
-            redundant_hardlink = False
-        before_free = free_disk_bytes(self.data_dir)
-        try:
-            self.backup_path.unlink()
-        except OSError as exc:
-            return self._backup_delete_error("delete-failed", str(exc))
-        after_free = free_disk_bytes(self.data_dir)
-        freed_bytes = 0 if redundant_hardlink else backup_bytes
-        observed_freed = (
-            max(0, after_free - before_free) if before_free > 0 and after_free > 0 else None
-        )
-        deleted_at = _now_iso()
-        update_rebuild_journal(
-            self.journal_path,
-            backupDeletedAt=deleted_at,
-            backupBytes=0,
-            backupDeleted=True,
-            backupDeletedRunId=str(journal.get("runId") or ""),
-            backupDeleteFreedBytes=freed_bytes,
-            backupDeleteValidationBasis=validation_basis,
-        )
-        with self._lock:
-            self._state.update(
-                {
-                    "backupExists": False,
-                    "backupBytes": 0,
-                    "canRollback": False,
-                    "backupDeletedAt": deleted_at,
-                    "backupDeleteFreedBytes": freed_bytes,
-                }
-            )
-            snapshot = self._snapshot_locked()
-        return {
-            "ok": True,
-            "freedBytes": freed_bytes,
-            "observedFreedBytes": observed_freed,
-            "redundantHardlink": redundant_hardlink,
-            "validation": validation,
-            "validationBasis": validation_basis,
-            "completedGenerationRetained": bool(run.get("completedGenerationRetained")),
-            "storageRebuild": snapshot,
-        }
 
 
 def _job_for(data_dir: Path | str) -> StorageRebuildJob:
@@ -970,13 +1310,13 @@ def rollback_storage_rebuild(data_dir: Path | str) -> dict[str, Any]:
     return _job_for(data_dir).rollback()
 
 
-def delete_storage_rebuild_backup(
+def start_storage_rebuild_backup_delete(
     data_dir: Path | str,
     *,
     confirm: bool = False,
     expected_backup_bytes: int | None = None,
 ) -> dict[str, Any]:
-    return _job_for(data_dir).delete_backup(
+    return _job_for(data_dir).start_delete_backup(
         confirm=confirm, expected_backup_bytes=expected_backup_bytes
     )
 
