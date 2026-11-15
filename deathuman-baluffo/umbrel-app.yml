@@ -4,7 +4,7 @@ name: Baluffo
 tagline: Find and save game industry jobs
 icon: https://raw.githubusercontent.com/deathuman/Baluffo/main/packaging/baluffo.png
 category: Development
-version: "0.3.062"
+version: "0.3.063"
 port: 8877
 description: >-
   Discover game industry jobs from studios worldwide. Filter openings, save jobs,
@@ -19,11 +19,14 @@ path: ""
 defaultUsername: ""
 defaultPassword: ""
 releaseNotes: >-
-  Release 0.3.062 makes deleting the retained pre-rebuild database safer: it
-  requires explicit confirmation, checks the reviewed backup size, and verifies
-  the live feed before freeing space. If a newer feed has replaced the completed
-  rebuild, the current feed is checked instead. Existing feeds, saved jobs,
-  notes, and compatibility exports are preserved; rollback remains available
-  until you confirm deletion.
+  Release 0.3.063 makes the one-time delete of the retained pre-rebuild database
+  a background storage-rebuild job. Admin starts the delete, can leave the page
+  open, and polls the existing storage-rebuild status while the old file is
+  validated and freed; a duplicate start reuses the active run. Validation
+  failure keeps the rollback copy. Existing feeds, saved jobs, notes, and
+  compatibility exports are preserved; rollback remains available until you
+  confirm deletion. If an earlier delete already removed the file but lost its
+  response, the bridge records that completed deletion without touching the live
+  database or any other file.
 storage:
   dataRoot: data
