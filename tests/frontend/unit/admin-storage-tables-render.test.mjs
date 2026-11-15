@@ -246,9 +246,14 @@ test("renders quick generation counts without table allocation", () => {
     }
   }, formatBytes);
 
-  assert.match(html, /Current feed/);
   assert.match(html, /Space used by saved rows/);
-  assert.match(html, /Current stored rows/);
+  assert.doesNotMatch(
+    html,
+    /Current feed/,
+    "the quick report must not restate the feed card the tables body already owns"
+  );
+  assert.doesNotMatch(html, /What the jobs page is serving right now/);
+  assert.doesNotMatch(html, /Current stored rows/);
   assert.match(html, /gen-current/);
   assert.match(html, /data-generation-id="gen-current"/);
   assert.match(html, /bounded-rowid-sample/);
@@ -317,7 +322,7 @@ test("partial quick checks do not claim a current share when older rows are unme
     }
   }, formatBytes);
 
-  assert.match(html, /Current stored rows/);
+  assert.doesNotMatch(html, /Current stored rows/);
   assert.match(html, /measured tables only/);
   assert.match(html, /Older saved versions/);
   assert.match(html, /older rows not measured/);

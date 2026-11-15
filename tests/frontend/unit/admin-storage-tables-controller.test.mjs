@@ -328,7 +328,11 @@ test("quick check starts with quick mode and renders generation counts", async (
   assert.equal(f.postCalls.length, 1);
   assert.equal(f.postCalls[0].path, "/ops/storage-diagnostic");
   assert.deepEqual(f.postCalls[0].payload, { mode: "quick" });
-  assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Current feed/);
+  assert.doesNotMatch(
+    f.refs.adminStorageDiagnosticBodyEl.innerHTML,
+    /Current feed/,
+    "the quick check report carries the space estimate, not a second feed card"
+  );
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Space used by saved rows/);
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /gen-current/);
   assert.match(f.refs.adminStorageDiagnosticBodyEl.innerHTML, /Jobs by feed version/);

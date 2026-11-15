@@ -108,32 +108,6 @@ function renderSpaceBar(current, older) {
   </div>`;
 }
 
-function renderQuickFeedState(feedState, totals, formatBytes) {
-  const feed = feedState && typeof feedState === "object" ? feedState : {};
-  const published = Boolean(feed.currentPublishedAt || feed.currentGeneration);
-  const currentValue = totals.currentMeasured ? `~${formatBytes(totals.current)}` : "Not measured";
-  const currentNote = !totals.currentMeasured
-    ? "row-byte sample did not complete"
-    : totals.currentComplete
-      ? "job and source text, excluding indexes"
-      : "measured tables only; some row text is unmeasured";
-  return `<section class="admin-storage-card">
-    <div class="admin-storage-card-head">
-      <div>
-        <h3 class="admin-storage-card-title">Current feed</h3>
-        <p class="admin-storage-card-copy">What the jobs page is serving right now.</p>
-      </div>
-      ${published ? renderPill("Published feed", "is-ok") : renderPill("No published feed", "is-warning")}
-    </div>
-    <div class="admin-storage-stats">
-      ${renderStat("Jobs", formatCount(feed.currentRowCount), "in the current feed")}
-      ${renderStat("Saved source rows", formatCount(feed.currentSourceCount), "source records behind those jobs")}
-      ${renderStat("Published", formatTime(feed.currentPublishedAt), "last feed update")}
-      ${renderStat("Current stored rows", currentValue, currentNote)}
-    </div>
-  </section>`;
-}
-
 function probeTotals(probe) {
   const tables = Array.isArray(probe?.tables) ? probe.tables : [];
   const sumMeasured = key =>
@@ -323,8 +297,10 @@ function renderQuickDiagnostic(diagnostic, formatBytes) {
     || diagnostic.exactContent === false
     || probe.status !== "ok"
     || !totals.totalComplete;
+  // No Current feed card here: the space estimate is the quick check's subject,
+  // and the feed counters it used to restate live in the storage panel's tables
+  // body and the audit's exact job-source card.
   return `
-    ${renderQuickFeedState(diagnostic.feedState, totals, formatBytes)}
     ${renderQuickSpace(probe, formatBytes)}
     ${partial && warnings.length === 0
       ? renderNotice("This check finished with partial results. Some measurements did not complete before the time limit.", "is-warning")
