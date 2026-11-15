@@ -73,18 +73,20 @@ process) instead of `complete`; the live database is unchanged either way, and t
 panel reports it on the next launch.
 
 **When a restart leaves the run interrupted, not running.** After a bridge restart
-`StorageRebuildJob` rehydrates only terminal journal statuses; `running`, `staged` and
-`backup-created` are settled by `_reconcile_crash_state`, which runs on the next
-`start()`. A fresh job therefore reports `idle` — so the reclaim endpoint, not the
-modal's polling loop, decides the outcome. Every status read checks three things: the
-journal phase, whether a job thread exists in this process, and whether the swap
-completed. A modal left open across the restart shows the waiting line, then closes on
-the first settled read — it never spins on a run that no longer exists and never
-invents a new `runId`.
+`StorageRebuildJob` rehydrates only terminal rebuild journal statuses; `running`,
+`staged` and `backup-created` are settled by `_reconcile_crash_state`, which runs on
+the next `start()`. `StorageReclaimJob` reads both its own `<db>.reclaim.json` and that
+rebuild snapshot; a fresh rebuild job therefore reports `idle` — so the reclaim
+endpoint, not the modal's polling loop, decides the outcome. Every status read checks
+four things: the reclaim journal phase, the rebuild phase, whether a job thread exists
+in this process, and whether the swap completed. A modal left open across the restart
+shows the waiting line, then closes on the first settled read — it never spins on a run
+that no longer exists and never invents a new `runId`. The `finishedAt` in the reclaim
+journal, not the rebuild journal's terminal timestamp, drives cooldown.
 
-| Journal after restart | Reclaim status reports | Modal |
+| Rebuild journal after restart | Reclaim status reports | Modal |
 |---|---|---|
-| `running` / `staged` (pre-swap) | `interrupted` | Closes: "Interrupted before install. The live database is unchanged and nothing was deleted." The staging file is removed by the next start's §3 step 2 (journal token, not the one-hour age cutoff). |
+| `running` / `staged` (pre-swap) | `interrupted` | Closes: "Interrupted before install. The live database is unchanged and nothing was deleted." The staging file is removed by the next start's §3 step 2 (journal token, not the one-hour age cutoff), and the next start's named-artifact cleanup removes a dead rehearsal's scratch journal. |
 | `backup-created`, post-swap | `complete` | Closes: "Rebuild finished; the previous copy is retained. Use **Delete old database** in the panel." No delete resumes, per §3. |
 | terminal (`complete`, `failed`, `cancelled`, `superseded`) | that status | Closes with that message. |
 
@@ -96,14 +98,19 @@ second `GET` returns the same settled state instead of a new `runId`.
 Each bullet is a set of cases, not a file. Assertions are on observable outcomes - a
 refusal code, a retained file, a settled journal status - never on a call having happened.
 
-- **Policy**: ratio matrix, 512 MiB floor, cooldown from a journal `finishedAt`,
-  every blocker, and the case that matters most — a database with history *inside*
-  the retention window reports `ok`.
+- **Policy**: lower-bound ratio matrix, 512 MiB floor, cooldown from the reclaim
+  journal's `finishedAt`, every blocker including `sample-unavailable`, and the case
+  that matters most — a database with history *inside* the retention window reports
+  `ok`. A database whose `tableSizes` include large current-feed indexes must not
+  become bloat when its history is inside the window.
 - **Orchestrator**: phase walk against a fake rebuild job; cancel during `copying`
   never reaches a delete; delete receives the completed run's `backupBytes`;
   `backup-exists` refuses; `superseded` stops without retry; a restart leaves a
   complete rebuild with the copy on disk and **no** delete; a `no-current-generation`
-  database yields `ok` with that blocker and no ratio.
+  database yields `ok` with that blocker and no ratio; the reclaim journal survives a
+  `write_rebuild_journal` rewrite with the rebuild run id and digest record intact;
+  `finishedAt` is written on every terminal path; `auto: false` passes cooldown and
+  `auto-disabled` but not a safety blocker.
 - **Content parity**: a tampered staging copy fails the copy-time digest and never
   installs; a live database whose saved-jobs content drifts after install fails the
   delete-time digest and keeps the retained copy; a legitimate `task_runs` write
@@ -122,9 +129,10 @@ refusal code, a retained file, a settled journal status - never on a call having
   a copy the heuristic would refuse; the automatic trigger never reaches step 5 and
   declines with `free-space`; a refusal carries `shortfallBytes` and the artifacts it
   removed; no step deletes the live database or its `-wal`/`-shm`.
-- **Dry run**: builds and validates staging, reports `stagingBytes` and `durationMs`,
-  leaves `backupExists` and journal `status` unchanged, and removes its staging file on
-  success, failure and cancel.
+- **Dry run**: starts as a background job, builds and validates staging, reports
+  `stagingBytes` and `durationMs`, leaves the real `<db>.rebuild.json` unchanged, has
+  the reclaim journal record only the rehearsal mode/status/result, and removes its
+  staging file and scratch `<db>.reclaim-rehearsal.json` on success, failure and cancel.
 - **Hold**: a hold whose job thread dies without a terminal phase is released by the
   next task-start read, which returns 200 instead of `409 storage-reclaim-running`,
   settles the run `interrupted` and records `releasedBy: "watchdog"`; a silent live hold
@@ -134,9 +142,12 @@ refusal code, a retained file, a settled journal status - never on a call having
   `GET` reports `scope: "inline"`, no dialog opens even for a live run, and the panel's
   existing Stop cancels by `runId`; without it `GET` reports `scope: "modal"`, the
   dialog opens, and task starts hit `409 storage-reclaim-running`. The verdict, checks
-  and cooldown are identical in both.
+  and cooldown are identical in both. `GET` reuses the cached verdict until
+  `RECLAIM_VERDICT_TTL_S` or `?refresh=1`; a dead hold is settled on read but a healthy
+  one is not rewritten.
 - **Guardrails**: route inventory, gateway budget, `ruff`, plan lifecycle tripwires,
-  markdown link check.
+  markdown link check, and a source check that no reclaim journal path is
+  `write_rebuild_journal`'s real rebuild path.
 
 ## C. UI files these slices touch
 

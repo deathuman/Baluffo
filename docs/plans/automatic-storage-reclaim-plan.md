@@ -25,10 +25,9 @@ changing what a rebuild copies; desktop packaging; anything on the Jobs page.
 ## 1. Bloat verdict (read-only)
 
 ```
-reclaimable = (tableSizes.jobs + tableSizes.job_sources)
-            - currentGenerationEstimatedBytes
-            + freelistBytes
-ratio       = reclaimable / databaseBytes
+historicalBytes = bounded payload sample of every non-current jobs/job_sources row
+reclaimable     = historicalBytes + freelistBytes
+ratio           = reclaimable / databaseBytes
 
 bloat  when  ratio >= BALUFFO_RECLAIM_MIN_RATIO_PCT / 100
         and  reclaimable >= RECLAIM_ABSOLUTE_FLOOR (512 MiB, constant)
@@ -38,38 +37,57 @@ bloat  when  ratio >= BALUFFO_RECLAIM_MIN_RATIO_PCT / 100
 except the current one (`cleanup_preview(keep_generations=1)`), so any non-current
 generation in the feed tables is space the product has already declared disposable.
 
-`cleanup_preview` is capped at `DEFAULT_GENERATION_DELETE_CAP = 4`, so it cannot
-report a weeks-old backlog. It therefore gains **two** fields,
-both from the bounded sampling it already performs:
+**The verdict does not subtract payload from `tableSizes`.** `tableSizes` counts
+allocated pages, including indexes and the current generation; the preview fields
+count payload bytes. Subtracting one from the other would count current-feed index
+and page overhead as reclaimable and could call bloat on a database whose history
+is still inside the retention window. `historicalBytes` is instead measured
+directly and is deliberately a **lower bound**: it ignores index and page overhead,
+so it can delay a true reclaim but cannot manufacture a false one. `freelistBytes`
+comes from the exact freelist page count, and `databaseBytes` is the file size.
 
-- `currentGenerationEstimatedBytes` — payload bytes of the generation being kept;
-- `estimatedReclaimableBytes` — `reclaimable` above, so the ratio is computed against
-  the whole feed-table footprint rather than a four-candidate slice.
+`cleanup_preview` is capped at `DEFAULT_GENERATION_DELETE_CAP = 4`, so its candidate
+list cannot describe a weeks-old backlog. It therefore gains **four** fields. The
+current method samples only the capped candidates, not the current generation or the
+uncapped history, so the first two are new bounded samples rather than free fields:
+
+- `currentGenerationEstimatedBytes` — bounded payload sample of the generation being
+  kept (also the ETA target, not a subtraction term);
+- `historicalGenerationEstimatedBytes` — bounded payload sample across all
+  non-current generations;
+- `historicalGenerationCount` — number of non-current generations seen by that sample;
+- `estimatedReclaimableBytes` — `historicalGenerationEstimatedBytes + freelistBytes`,
+  the conservative lower bound used above.
 
 `candidateGenerationCount` and `capReached` stay as **evidence only**; neither gates
 the decision, because the cap makes the count misleading on exactly the databases
 this operation exists for.
 
 Payload: `verdict` (`bloat` / `ok`), `ratio`, `reclaimable`, `databaseBytes`,
-`freelistBytes`, `candidateGenerationCount`, `capReached`,
-`blockers[]`, `cooldownRemainingHours`.
+`freelistBytes`, `currentGenerationEstimatedBytes`,
+`historicalGenerationEstimatedBytes`, `historicalGenerationCount`,
+`estimatedReclaimableBytes`, `reclaimableBasis` (`payload-sample+freelist`),
+`candidateGenerationCount`, `capReached`, `blockers[]`, `cooldownRemainingHours`.
 
 Blockers, each stated rather than silently skipped: `no-current-generation`,
 `active-task`, `compaction-running`, `backup-exists`, `free-space`, `cooldown`,
-`auto-disabled`, `store-unavailable`.
+`auto-disabled`, `store-unavailable`, `sample-unavailable`.
 
 `free-space` is a refusal with a way out, not a dead end: it names the shortfall and
 follows the ordered resolution in §3, which re-asks the gate against a measured staging
 size before it suggests giving up the rollback copy.
 
-`no-current-generation` is required, not defensive. With no published feed,
-`reclaimable` becomes the feed tables' whole allocation, so the ratio is meaningless
-rather than conservative — measured at **15.25 %** on an empty 236 KiB dev database with
-zero history. Only the 512 MiB floor kept that from being a verdict; a first-run or
-reset database must report `verdict: "ok"` with this blocker.
+`no-current-generation` is required, not defensive. With no published feed there is
+no protected generation to define "history": every feed row would count as
+reclaimable, so the ratio is meaningless rather than conservative — measured at
+**15.25 %** on an empty 236 KiB dev database with zero history. Only the 512 MiB
+floor kept that from being a verdict; a first-run or reset database must report
+`verdict: "ok"` with this blocker.
 
 Computed on demand (Admin init and after a fetch closeout), never on the 5 s
-storage-health poll: the read does bounded row counts and payload sampling.
+storage-health poll: the read does bounded row counts and payload sampling. The
+route caches the verdict for `RECLAIM_VERDICT_TTL_S = 60` so modal polling does not
+repeat those samples; `?refresh=1` forces a fresh read.
 
 ## 2. Configuration
 
@@ -77,10 +95,11 @@ storage-health poll: the read does bounded row counts and payload sampling.
 |---|---|---|
 | `BALUFFO_RECLAIM_AUTO_ENABLED` | `0` | Whether the operation may start without a click. Off until a rehearsal has reported numbers on that host (§9); `1` enables the trigger, and the verdict and manual controls are unchanged either way. |
 | `BALUFFO_RECLAIM_MIN_RATIO_PCT` | `10` | How much of the file must be reclaimable before it counts as bloat. |
-| `BALUFFO_RECLAIM_MIN_INTERVAL_HOURS` | `168` | Anti-thrash for the **automatic** trigger only, read from the journal's last `finishedAt`; an explicit `auto: false` start passes it (§5). |
+| `BALUFFO_RECLAIM_MIN_INTERVAL_HOURS` | `168` | Anti-thrash for the **automatic** trigger only, read from the reclaim journal's last non-rehearsal `finishedAt`; an explicit `auto: false` start passes it (§5). |
 
-No other knobs. Constants in the policy leaf: the 512 MiB floor, and reuse of the
-existing free-space gate `rebuild_required_free_bytes()`.
+No other knobs. Constants in the policy leaf: the 512 MiB floor,
+`RECLAIM_VERDICT_TTL_S = 60`, and reuse of the existing free-space gate
+`rebuild_required_free_bytes()`.
 
 ## 3. The operation
 
@@ -98,7 +117,7 @@ evaluating → rebuild(queued … installing) → verifying → deleting-backup 
 | stopping-retention, checking-space, copying | yes | `POST /ops/storage-reclaim/cancel` delegates to the existing cancel with the rebuild `runId` |
 | installing | no | atomic swap in `StorageRebuildJob._run` |
 | verifying | no | `quick_check`, foreign keys, counts, feed hashes, non-feed content digests |
-| deleting-backup | no | one unlink |
+| deleting-backup | no | the existing background delete worker validates, byte-guards, then unlinks; reclaim does not retry it |
 
 - The delete calls `start_delete_backup(confirm=True,
   expected_backup_bytes=<backupBytes from the completed rebuild snapshot>)` and polls the
@@ -128,9 +147,16 @@ evaluating → rebuild(queued … installing) → verifying → deleting-backup 
   copy, and names the table in the modal. The allowlist is a constant, not a knob.
 - No retry on `superseded`: a write landed mid-copy, so retrying in a loop would
   burn full database copies. The cooldown applies and the next window tries once.
-- Journal: `reclaim: {runId, phase, expectedBackupBytes, startedAt, auto}` added to
-  the existing `<db>.rebuild.json`. Written at every phase, read at startup, and
-  **never** resumed into a delete.
+- Journal: a dedicated `<db>.reclaim.json`, not a nested record in
+  `<db>.rebuild.json`. The rebuild leaf rewrites its own journal wholesale when
+  the copy starts (`write_rebuild_journal`), so a nested reclaim record would be
+  erased at exactly the wrong moment. The reclaim journal carries
+  `{schemaVersion, runId, rebuildRunId, mode, status, phase, startedAt, finishedAt,
+  auto, expectedBackupBytes, copyDigests}`; `finishedAt` is the cooldown source.
+  It is written at every transition, read at startup, and **never** resumed into a
+  delete. The rebuild journal remains the source of rebuild phase and crash
+  recovery. A reclaim journal write is best-effort: memory settles the live run,
+  and the next start reconciles.
 - `set_storage_reclaim_hold()` lives beside `set_storage_compaction_hold()` in
   `src/bridge/storage_health.py`; task-start routes return
   `409 {reason: "storage-reclaim-running"}` while it is held. Without this the
@@ -181,7 +207,7 @@ re-measures; the order stops at the first that satisfies the gate.
 |---|---|---|---|
 | 1 | Measure `freeBytes`, heuristic `requiredBytes` (`rebuild_required_free_bytes`), measured staging estimate (verdict `currentGenerationEstimatedBytes` + non-feed allocation) | — | yes |
 | 2 | Remove orphaned staging (`<db>.<token>.rebuild.tmp`) whose token is not the journal's active `runId` and whose phase is not `running`/`staged`, with no thread alive — not the one-hour cutoff, which blocks a retry after a kill | ≤ one partial copy | yes |
-| 3 | Remove orphaned `<staging>-wal`/`-shm` and `<journal>.tmp`; the shipped glob covers `*.rebuild.tmp` only | MBs | yes |
+| 3 | Remove orphaned `<staging>-wal`/`-shm`, `<journal>.tmp`, and `<db>.reclaim-rehearsal.json`/`.tmp` when no rehearsal thread owns them; the shipped glob covers `*.rebuild.tmp` only | MBs | yes |
 | 4 | Start when `freeBytes` ≥ measured staging estimate × 1.25 + 64 MiB: the 1 % heuristic is probe-avoidance, not physics — 2.32 GB asked for a 0.5–1.5 GB copy | 0 (re-asks) | yes |
 | 5 | Delete the retained `<db>.pre-rebuild`, distinct inode, byte-guarded, after showing the bytes and the rollback it costs | ~old size | **click** |
 | 6 | Refuse with `free-space`: `freeBytes`, `requiredBytes`, `measuredRequiredBytes`, `shortfallBytes`, `relievedBytes`, artifacts removed | — | — |
@@ -194,7 +220,7 @@ re-measures; the order stops at the first that satisfies the gate.
   (`free_disk_bytes`), not a small disk; a small measured number is step 4's case. An
   ENOSPC mid-copy already raises, unlinks its staging and journals `failed`, leaving the
   live database untouched.
-- **An unwritable journal is not fatal**: `write_rebuild_journal` is best-effort, the run
+- **An unwritable journal is not fatal**: both journal writes are best-effort, the run
   settles in memory, and the next start reconciles.
 
 Never: delete generation rows (a freelist page is not a filesystem byte), use compaction
@@ -203,9 +229,15 @@ codebase does not name.
 
 ## 4. Triggers
 
-1. After the post-fetch maintenance/retention pass finishes, when no task is active.
-2. At startup, ~60 s after `resume_storage_maintenance`, so the first paint is not
-   competing with a multi-GB copy.
+1. After a fetch closeout transitions the task ledger to no active task. That is
+   the seam `admin_task_lifecycle.finish_run/fail_run/cancel_run` already owns when
+   it releases the compaction hold. If retention is still running, the pre-flight
+   refuses and one delayed re-check runs after retention reaches a terminal state;
+   there is no existing per-fetch maintenance-completion callback to subscribe to.
+2. At startup, one delayed check ~60 s after `resume_storage_maintenance` returns,
+   so the first paint is not competing with a multi-GB copy. The pre-flight refuses
+   while the startup retention pass is still running; the same delayed re-check
+   handles that case.
 
 Both run in the bridge, so a container with no Admin tab open still reclaims, and
 cooldown is the only guard against a repeat. Both run the §3 pre-flight first (steps
@@ -243,15 +275,17 @@ rules, the full-disk order, and the cooldown. The manual **Rebuild current feed*
 
 | Route | Shape |
 |---|---|
-| `GET /ops/storage-reclaim` | verdict, live status, `scope` (`modal` in a container, `inline` on desktop), journal; read-only |
-| `POST /ops/storage-reclaim` | `202` started; `200 {started: false, reason}` per blocker. `cooldown` refuses an automatic start (`auto: true`) only — an explicit `auto: false` start overrides it and the response records `cooldownOverridden: true`. |
-| `POST /ops/storage-reclaim/cancel` | delegates to the rebuild cancel; `409` on stale `runId` |
+| `GET /ops/storage-reclaim` | verdict, live status, `scope` (`modal` in a container, `inline` on desktop), journal; read-only except it may settle a dead hold/run, never starts a copy, deletes a file, or changes a healthy journal. Verdict is cached for `RECLAIM_VERDICT_TTL_S`; `?refresh=1` recomputes. |
+| `POST /ops/storage-reclaim` | `202` started; `{dryRun: true}` starts a background rehearsal and returns its `runId`; `200 {started: false, reason}` per blocker. `cooldown` and `auto-disabled` refuse an automatic start (`auto: true`) only — an explicit `auto: false` start overrides both and records `triggerOverride: true`. |
+| `POST /ops/storage-reclaim/cancel` | cancels a rehearsal event, or delegates to the rebuild cancel when a rebuild owns the copy; `409` on stale `runId` |
 
 The cooldown is a trigger guard, not a safety gate: every other blocker
-(`active-task`, `compaction-running`, `backup-exists`, `free-space`,
-`store-unavailable`) refuses both an automatic and an explicit start, while
-`cooldown` refuses only the automatic one. The verdict keeps reporting it so the
-reason an automatic start did not happen is visible.
+(`no-current-generation`, `active-task`, `compaction-running`, `backup-exists`,
+`free-space`, `store-unavailable`, `sample-unavailable`) refuses both an automatic and
+an explicit start, while `cooldown` and `auto-disabled` refuse only the automatic one. The
+verdict keeps reporting them so the reason an automatic start did not happen is
+visible. GET is not a mutation endpoint; the watchdog may write a terminal settlement
+for a dead run, but a caller can never start or stop work with it.
 
 Register in `tools/repo_health/bridge_route_inventory.py` and add the two POSTs to
 the gateway's heavy-route budget in `src/container_gateway.py`. POST returns
@@ -288,13 +322,13 @@ Element, focus, recovery, slow-copy and bridge-disappears mechanics are in
 
 | Slice | Where it lands | Pinned by |
 |---|---|---|
-| Verdict leaf | new `src/storage/reclaim_policy.py`, reading `preview_runtime_retention()` and `table_sizes()` | `tests/storage/test_reclaim_policy.py` |
-| Two preview fields | `src/storage/job_runtime.py::cleanup_preview` (`currentGenerationEstimatedBytes`, `estimatedReclaimableBytes`) | `tests/storage/test_job_runtime_preview.py` |
+| Verdict leaf | new `src/storage/reclaim_policy.py`, reading the preview fields plus `file_sizes()`; no `tableSizes` subtraction | `tests/storage/test_reclaim_policy.py` |
+| Four preview fields | `src/storage/job_runtime.py::cleanup_preview` (`currentGenerationEstimatedBytes`, `historicalGenerationEstimatedBytes`, `historicalGenerationCount`, `estimatedReclaimableBytes`) | `tests/storage/test_job_runtime_preview.py` |
 | Non-feed content digests | `src/storage/current_feed_rebuild.py` (digest at copy time, allowlist constant, journal field) and the delete-time recheck beside `validate_feed_generation` | `tests/storage/test_current_feed_rebuild.py` |
-| Orchestrator + journal | new `src/bridge/storage_reclaim.py`, composing `StorageRebuildJob.start/cancel` and `delete_backup` | `tests/bridge/test_storage_reclaim.py` |
+| Orchestrator + journal | new `src/bridge/storage_reclaim.py`, composing `StorageRebuildJob.start/cancel` and `delete_backup`; dedicated `<db>.reclaim.json` | `tests/bridge/test_storage_reclaim.py` |
 | Hold | `src/bridge/storage_health.py`; checks in the task-start handlers | `tests/bridge/test_storage_reclaim.py` |
 | Routes | `src/bridge/routes/get_ops_diagnostics.py`, `src/bridge/routes/post_routes_admin.py` | `tests/bridge/test_admin_post_route_capability.py` |
-| Triggers | post-fetch maintenance path and `src/bridge/bootstrap.py` | `tests/bridge/test_storage_reclaim.py` |
+| Triggers | task closeout in `src/bridge/admin_task_lifecycle.py` and startup in `src/bridge/bootstrap.py` | `tests/bridge/test_storage_reclaim.py` |
 | Gateway | `src/container_gateway.py::_proxy_timeout_for` | `tests/test_container_gateway_schedule.py` |
 | Docs | this plan; `storage-contract.md` on landing; `admin-bridge-api.md` for the routes | repo guardrails |
 
@@ -329,15 +363,23 @@ The numbers this plan relies on are assumed, not measured: a 0.5–1.5 GB post-r
 size, a 2.32 GB free-space requirement derived from the 1 % heuristic, and a copy
 duration inferred from the source size.
 
-`POST /ops/storage-reclaim` accepts `{dryRun: true}` and runs the real copy against the
-**live** database, read-only: `rebuild_current_feed_database` into a
-staging file, then feed validation and the content digests on that staging copy. It
-reports `stagingBytes`, `reclaimedBytes` (`sourceDatabaseBytes - stagingBytes`),
-`durationMs`, per-table counts, the validation result, and `freeBytes` /
-`requiredFreeBytes`; then it unlinks staging in a `finally`. It never links a backup,
-never installs, never deletes, and never writes journal `status` — the only journal
-change is a `reclaim.rehearsal` record. Gates match a real run (the §3 pre-flight, no
-active task, retention stopped); other conditions measure the wrong thing.
+`POST /ops/storage-reclaim` accepts `{dryRun: true}` and starts a **background
+rehearsal** on the same single-flight as reclaim, taking the same container hold:
+`202` plus its own `runId`, with `GET`/cancel using the same routes and
+`mode: "rehearsal"` in the status. It runs the real copy against the **live** database,
+read-only: `rebuild_current_feed_database` into a staging file, then feed validation
+and the content digests on that staging copy. It reports `stagingBytes`,
+`reclaimedBytes` (`sourceDatabaseBytes - stagingBytes`), `durationMs`, per-table
+counts, the validation result, and `freeBytes` / `requiredFreeBytes`; then it unlinks
+staging in a `finally`. It never links a backup, never installs, and never deletes.
+
+The existing copy helper always writes a journal, so the rehearsal passes a scratch
+path, `<db>.reclaim-rehearsal.json`, and unlinks that scratch in the same `finally`.
+It never writes the real `<db>.rebuild.json`; the real `<db>.reclaim.json` records
+this run's `mode: "rehearsal"` status and result, never a rebuild status. A synchronous
+request would also exceed the Admin request budget on a multi-GB copy, which is why
+this is a job, not a route-thread operation. Gates match a real run (the §3 pre-flight,
+no active task, retention stopped); other conditions measure the wrong thing.
 
 That is what makes auto mode honest: `BALUFFO_RECLAIM_AUTO_ENABLED` stays `0`, and the
 turn-on step is a rehearsal whose report shows staging size, reclaimed bytes and
@@ -374,6 +416,20 @@ Recorded so implementation does not relitigate them:
   could never see a real backlog; the absolute-bytes knob collapsed into the 512 MiB
   constant; the freelist ratio merged into `reclaimable`, which covers dropped
   generations and free pages together.
+- **The verdict is a conservative payload lower bound, not `tableSizes` minus the
+  current generation.** Mixing allocated-page bytes with payload bytes would count
+  current-feed indexes as reclaimable; the bounded all-history sample can only
+  understate history, never manufacture a false bloat verdict.
+- **Reclaim has its own journal.** The rebuild leaf rewrites `<db>.rebuild.json`
+  wholesale at copy start, so nesting the reclaim record there would erase it just
+  as the run begins. `<db>.reclaim.json` also makes the latest non-rehearsal
+  `finishedAt` the cooldown source and keeps a rehearsal out of rebuild recovery.
+- **The rehearsal is a background job with a scratch journal.** The copy helper
+  always writes a journal, so reusing the real path would either clobber recovery or
+  block an HTTP thread for the duration of a multi-GB copy.
+- **Cooldown and auto-disabled gate only automatic starts, per §5.** The manual
+  controls remain available when auto mode is off; an explicit start overrides both
+  trigger guards but never a safety blocker.
 - **The age check was dropped.** Candidates carry no timestamp
   (`_generations_before_current` orders by `feed_generation`), and adding one means new
   SQL over the largest table to prove what retention already asserts.
@@ -406,4 +462,6 @@ Stop and ask instead of improvising when:
 - the retained copy is missing after a completed rebuild, or rollback is unavailable;
 - a non-feed digest mismatches at either checkpoint, or verification hashes/counts
   differ from the journal;
-- the modal cannot render the active run on load (stale route, older build).
+- the modal cannot render the active run on load (stale route, older build);
+- a rehearsal leaves its scratch journal or staging file behind, or the reclaim
+  journal and rebuild journal disagree about the active `rebuildRunId`.
