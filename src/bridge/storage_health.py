@@ -321,12 +321,22 @@ def storage_reclaim_hold_status() -> dict[str, Any]:
         return _reclaim_hold_payload(record)
 
 
-def clear_storage_reclaim_hold(released_by: str = "terminal") -> dict[str, Any]:
-    """Release the hold, recording why, so task starts resume."""
+def clear_storage_reclaim_hold(
+    released_by: str = "terminal", *, run_id: str = ""
+) -> dict[str, Any]:
+    """Release the hold, recording why, so task starts resume.
+
+    ``run_id`` scopes the release to the run that took it: a terminal thread can
+    outlive its own run by a moment, and a newer run's hold must not be cleared by
+    the older thread's ``finally``.
+    """
     with _RECLAIM_HOLD_LOCK:
-        if _RECLAIM_HOLD is None:
+        record = _RECLAIM_HOLD
+        if record is None:
             # Not `storage_reclaim_hold_status()`: the lock is not reentrant.
             return _no_reclaim_hold_locked()
+        if run_id and str(record.get("runId") or "") != run_id:
+            return _reclaim_hold_payload(record)
         return _release_reclaim_hold_locked(released_by)
 
 

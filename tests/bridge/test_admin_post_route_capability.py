@@ -149,6 +149,12 @@ class MinimalAdminPostRouteApi:
             "runtimeRetention": {"status": "cancelling", "running": True, "runId": run_id},
         }
 
+    def start_storage_rebuild(self) -> dict[str, Any]:
+        return {"ok": True, "started": True, "storageRebuild": {"status": "running"}}
+
+    def rollback_storage_rebuild(self) -> dict[str, Any]:
+        return {"ok": True, "restored": True, "storageRebuild": {"status": "rolled-back"}}
+
     def start_storage_rebuild_backup_delete(
         self, *, confirm: bool = False, expected_backup_bytes: int | None = None
     ) -> dict[str, Any]:
@@ -393,11 +399,25 @@ def test_task_starts_are_refused_while_a_reclaim_run_holds(tmp_path: Path) -> No
         assert blocked.sent[-1]["payload"]["storageReclaimHold"]["active"] is True
         assert blocked_sync.sent[-1]["status"] == 409
         assert blocked_discovery.sent[-1]["status"] == 409
+
+        # A manual rebuild would supersede the copy; rollback and the retained-copy
+        # delete share the same files.
+        assert _post(api, "/ops/storage-rebuild", {}).sent[-1]["status"] == 409
+        assert _post(api, "/ops/storage-rebuild/rollback", {}).sent[-1]["status"] == 409
+        backup_delete_while_held = _post(
+            api,
+            "/ops/storage-rebuild/backup-delete",
+            {"confirm": True, "expectedBackupBytes": 123},
+        )
+        assert backup_delete_while_held.sent[-1]["status"] == 409
+        assert backup_delete_while_held.sent[-1]["payload"]["reason"] == ("storage-reclaim-running")
     finally:
         clear_storage_reclaim_hold("terminal")
 
     allowed = _post(api, "/tasks/run-fetcher", {})
     assert allowed.sent[-1]["status"] == 200
+    allowed_rebuild = _post(api, "/ops/storage-rebuild", {})
+    assert allowed_rebuild.sent[-1]["status"] == 202
 
 
 def test_review_posts_do_not_load_registry_state(tmp_path: Path) -> None:

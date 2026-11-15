@@ -445,7 +445,7 @@ class StorageReclaimJob:
                 self.cancel(run_id)
                 thread.join(timeout=10.0)
             if self._hold_taken:
-                clear_storage_reclaim_hold("shutdown")
+                clear_storage_reclaim_hold("shutdown", run_id=run_id)
                 self._hold_taken = False
 
     def watchdog(self) -> None:
@@ -472,7 +472,7 @@ class StorageReclaimJob:
             phase=phase,
         )
         if self._hold_taken and str(hold.get("runId") or "") in {"", run_id}:
-            clear_storage_reclaim_hold("watchdog")
+            clear_storage_reclaim_hold("watchdog", run_id=run_id)
             self._hold_taken = False
 
     def _cancel_refusal(self, reason: str, *, stale: bool, requested: str) -> dict[str, Any]:
@@ -567,6 +567,8 @@ class StorageReclaimJob:
         return None
 
     def _run(self) -> None:
+        with self._lock:
+            run_id = str(self._state["runId"])
         try:
             refusal = self._evaluate()
             if refusal is not None:
@@ -605,11 +607,16 @@ class StorageReclaimJob:
             with self._lock:
                 if self._thread is threading.current_thread():
                     self._thread = None
+                # A newer run can already own the job by the time this thread
+                # unwinds; it must not lose its hold to the older finally.
+                same_run = str(self._state["runId"]) == run_id
+                took_hold = self._hold_taken and same_run
+                if took_hold:
+                    self._hold_taken = False
             # Same finally that clears the thread: a terminal phase and the hold
             # release are one transition, never a phase boundary.
-            if self._hold_taken:
-                clear_storage_reclaim_hold("terminal")
-                self._hold_taken = False
+            if took_hold:
+                clear_storage_reclaim_hold("terminal", run_id=run_id)
 
     def _start_rebuild_waiting(self) -> tuple[dict[str, Any] | None, str]:
         """Start the rebuild once any in-flight one has left, or name the refusal.
@@ -691,6 +698,10 @@ class StorageReclaimJob:
         swap that landed something else must fail here rather than at the unlink.
         """
         self._set_phase("verifying")
+        # The validation below is one long call with no progress events; refresh
+        # the stall clock on either side of it. A check longer than the 60 s stall
+        # window still releases the hold, which is the hold's documented rule.
+        self._heartbeat()
         generation = str(snapshot.get("currentGeneration") or "").strip()
         if not generation:
             return "the completed rebuild reported no current generation"
@@ -712,6 +723,7 @@ class StorageReclaimJob:
             ValueError,
         ) as exc:
             return f"the installed database did not validate: {exc}"
+        self._heartbeat()
         return None
 
     def _delete_backup(self, snapshot: dict[str, Any]) -> str | None:

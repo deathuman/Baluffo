@@ -547,6 +547,21 @@ def test_the_watchdog_settles_a_run_whose_thread_is_gone(tmp_path: Path) -> None
         clear_storage_reclaim_hold("terminal")
 
 
+def test_a_release_is_scoped_to_the_run_that_took_the_hold() -> None:
+    try:
+        set_storage_reclaim_hold("storage_reclaim_new")
+
+        unchanged = clear_storage_reclaim_hold("terminal", run_id="storage_reclaim_old")
+
+        assert unchanged["active"] is True
+        assert unchanged["runId"] == "storage_reclaim_new"
+        assert clear_storage_reclaim_hold("terminal", run_id="storage_reclaim_new")["active"] is (
+            False
+        )
+    finally:
+        clear_storage_reclaim_hold("terminal")
+
+
 def test_shutdown_releases_a_hold_it_took(tmp_path: Path) -> None:
     job = storage_reclaim.StorageReclaimJob(tmp_path.resolve())
     set_storage_reclaim_hold("storage_reclaim_shutdown")

@@ -385,6 +385,9 @@ def _handle_ops_storage_copy_post(
     backup lifecycle, so they dispatch together instead of each taking a branch
     in the ops handler.
     """
+    if _storage_reclaim_start_refusal(handler, path=path, paths=RECLAIM_EXCLUSIVE_PATHS):
+        return True
+
     if path == "/ops/storage-rebuild":
         result = api.start_storage_rebuild()
         handler.send_json(result, status=202 if bool(result.get("started")) else 200)
@@ -531,8 +534,23 @@ TASK_START_PATHS = frozenset(
 )
 
 
-def _storage_reclaim_start_refusal(handler: BridgeResponseWriter, *, path: str) -> bool:
-    if path not in TASK_START_PATHS:
+# The other copies share the files a reclaim is using: a manual rebuild would
+# race the install, a rollback would swap the live database under the copy, and a
+# backup delete would remove the copy the reclaim is about to remove itself. All
+# three hold closed while a container reclaim runs.
+RECLAIM_EXCLUSIVE_PATHS = frozenset(
+    {
+        "/ops/storage-rebuild",
+        "/ops/storage-rebuild/rollback",
+        "/ops/storage-rebuild/backup-delete",
+    }
+)
+
+
+def _storage_reclaim_start_refusal(
+    handler: BridgeResponseWriter, *, path: str, paths: frozenset[str] = TASK_START_PATHS
+) -> bool:
+    if path not in paths:
         return False
     hold = storage_reclaim_hold_status()
     if not bool(hold.get("active")):
