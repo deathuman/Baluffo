@@ -516,3 +516,4 @@ carriedSourceBundleProvenanceMismatchMovableCount  # unused variable (src\jobs\c
 carriedSourceBundleProvenanceMismatchAmbiguousCount  # unused variable (src\jobs\common\contracts_dedup_evidence.py) — TypedDict key consumed by bridge/report normalizers and frontend, outside vulture's static analysis
 carriedSourceBundleProvenanceMismatchExamples  # unused variable (src\jobs\common\contracts_dedup_evidence.py) — TypedDict key consumed by bridge/report normalizers and frontend, outside vulture's static analysis
 carriedBundleReconciliationRecommendation  # unused variable (src\jobs\common\contracts_dedup_evidence.py) — TypedDict key consumed by bridge/report normalizers, outside vulture's static analysis
+reclaim_verdict  # unused function (src\storage\reclaim_policy.py:60) — leaf entry point the reclaim route and triggers call; not wired yet

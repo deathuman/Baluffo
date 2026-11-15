@@ -7,8 +7,10 @@
 > - **Verified against:** `560ed78f` (tree inspection of the existing rebuild,
 >   retention, and storage-health surface; no reclaim code exists yet)
 > - **Status:** In progress. The four preview fields (§1) are implemented in
-  `cleanup_preview` and pinned by `tests/storage/test_job_runtime_preview.py`.
-  The verdict leaf and every later slice are unimplemented.
+  `cleanup_preview` (pinned by `tests/storage/test_job_runtime_preview.py`), and
+  the verdict leaf is `src/storage/reclaim_policy.py` (pinned by
+  `tests/storage/test_reclaim_policy.py`). Routes, orchestrator, hold, triggers
+  and presentation are unimplemented.
 
 ## Scope
 
