@@ -119,6 +119,41 @@ def test_request_timing_category_propagates_unexpected_path_failure() -> None:
         server_handler._request_timing_category(_PathRaisesRuntimeError(), "GET")
 
 
+def test_log_message_tolerates_a_connection_that_idled_before_its_request_line(
+    tmp_path: Path,
+) -> None:
+    """``http.server`` logs an idle keep-alive timeout before ``path`` is set.
+
+    ``handle_one_request`` reports that timeout through ``log_error``, so the
+    request log must survive a handler that never parsed a request line instead
+    of raising AttributeError and spamming the journal with a traceback.
+    """
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.runtime_config = type("RuntimeConfig", (), {"quiet_requests": False})()
+    logs: list[tuple[str, str, dict[str, Any]]] = []
+    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))
+
+    server_handler._log_request_message(object(), api, "Request timed out: %r", (TimeoutError(),))
+
+    assert logs[-1][1] == "http_request"
+    assert logs[-1][2]["path"] == ""
+    assert logs[-1][2]["method"] == ""
+    assert "Request timed out" in logs[-1][2]["detail"]
+
+
+def test_log_message_keeps_the_request_path_when_there_is_one(tmp_path: Path) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.runtime_config = type("RuntimeConfig", (), {"quiet_requests": False})()
+    logs: list[tuple[str, str, dict[str, Any]]] = []
+    api.bridge_log = lambda level, event, **fields: logs.append((level, event, fields))
+    handler = type("Parsed", (), {"command": "GET", "path": "/ops/health"})()
+
+    server_handler._log_request_message(handler, api, "%s %s", ("GET", "/ops/health"))
+
+    assert logs[-1][2]["path"] == "/ops/health"
+    assert logs[-1][2]["detail"] == "GET /ops/health"
+
+
 def test_send_json_response_suppresses_expected_status_bookkeeping_failure(
     tmp_path: Path,
 ) -> None:

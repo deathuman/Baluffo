@@ -3,10 +3,12 @@
  *
  * Every action is a request against the shipped reclaim routes, and every render
  * comes from their `storageReclaim` payload, so the panel never owns the run: the
- * bridge does, keyed by data directory and journaled. There is deliberately no
- * polling timer — a run reports its phase on demand, and Refresh reads the route
- * with `?refresh=1` so the verdict, the status and the measured gate's warnings
- * arrive together.
+ * bridge does, keyed by data directory and journaled. A live run is the one thing
+ * that changes without a click, so while one is live the panel reads the status
+ * again on its own — bounded in time and cancelled the moment the run settles, so
+ * a finished run closes its modal instead of waiting for a manual Refresh. Refresh
+ * reads the route with `?refresh=1` so the verdict, the status and the measured
+ * gate's warnings arrive together.
  *
  * The admin shell has a hard byte budget, so these controls live behind the
  * dynamically imported storage panel and resolve their own elements by id; the
@@ -22,8 +24,14 @@ import {
   STORAGE_RECLAIM_ROUTE
 } from "../render/storage-reclaim-dialog.js";
 import { renderStorageReclaimHealthHtml } from "../render/storage-reclaim.js";
+import { maybeUnrefTimer } from "../../shared/ui-helpers.js";
 
 const DEFAULT_TIMEOUT_MS = 5000;
+// A copy can take minutes, so the follow-up read outlasts a click-driven panel.
+// The window is the bound: past it the panel keeps the last status and says to
+// Refresh, rather than reading a stuck bridge forever.
+const LIVE_READ_INTERVAL_MS = 3000;
+const LIVE_READ_MAX_MS = 30 * 60 * 1000;
 
 const ELEMENT_IDS = {
   adminStorageReclaimHealthEl: "admin-storage-reclaim-health",
@@ -60,15 +68,27 @@ export function createStorageReclaimController({
   getBridge,
   postBridge,
   formatBytes,
-  timeoutMs = DEFAULT_TIMEOUT_MS
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  liveReadMaxMs = LIVE_READ_MAX_MS,
+  setTimer = callback => maybeUnrefTimer(globalThis.setTimeout(callback, LIVE_READ_INTERVAL_MS)),
+  clearTimer = timer => globalThis.clearTimeout(timer),
+  now = () => Date.now()
 }) {
   let reclaim = null;
   let verdict = null;
   let message = "";
+  // A refusal is the bridge's answer to a click, so a later read must not erase
+  // it before the operator has seen it; a transport error is ours to replace.
+  let messageIsRefusal = false;
   let busy = "";
   let inFlight = false;
   // The container modal can be dismissed without cancelling: the run continues.
   let dismissedRunId = "";
+  let liveReadTimer = null;
+  // The window belongs to one run, so a run that begins later on the same page
+  // gets its own follow-up instead of inheriting a closed window.
+  let liveReadRunId = "";
+  let liveReadStartedAt = null;
 
   function el(name) {
     const injected = refs?.[name];
@@ -113,11 +133,28 @@ export function createStorageReclaimController({
     }
   }
 
+  /**
+   * Whether a live run has outlived its follow-up window: the panel stopped
+   * reading it, so the dialog and the modal must say so rather than keep
+   * promising updates. Derived from the timer's own state, so the note cannot
+   * claim something the scheduler is not doing.
+   */
+  function liveUpdatesStopped() {
+    return (
+      reclaimRunning(reclaim) &&
+      liveReadStartedAt !== null &&
+      now() - liveReadStartedAt >= liveReadMaxMs
+    );
+  }
+
   function renderModal() {
     const modal = el("adminStorageReclaimModalEl");
     if (!modal) return;
     const runId = String(reclaim?.runId || "");
-    const html = runId && runId === dismissedRunId ? "" : renderStorageReclaimModalHtml(reclaim);
+    const html =
+      runId && runId === dismissedRunId
+        ? ""
+        : renderStorageReclaimModalHtml(reclaim, { followUpStopped: liveUpdatesStopped() });
     const body = el("adminStorageReclaimModalBodyEl");
     if (body) body.innerHTML = html;
     modal.hidden = !html;
@@ -128,9 +165,12 @@ export function createStorageReclaimController({
     setText(el("adminStorageReclaimStatusEl"), status.text, status.tone);
     const dialog = el("adminStorageReclaimDialogEl");
     if (dialog) {
+      const body = renderStorageReclaimDialogHtml(reclaim, formatBytes, {
+        followUpStopped: liveUpdatesStopped()
+      });
       dialog.innerHTML = message
-        ? `<p class="admin-storage-reclaim-blocked">${message}</p>${renderStorageReclaimDialogHtml(reclaim, formatBytes)}`
-        : renderStorageReclaimDialogHtml(reclaim, formatBytes);
+        ? `<p class="admin-storage-reclaim-blocked">${message}</p>${body}`
+        : body;
     }
     const health = el("adminStorageReclaimHealthEl");
     if (health) {
@@ -142,15 +182,55 @@ export function createStorageReclaimController({
     renderModal();
   }
 
+  function stopLiveRead() {
+    if (liveReadTimer !== null) clearTimer(liveReadTimer);
+    liveReadTimer = null;
+    liveReadStartedAt = null;
+  }
+
+  /**
+   * Read the status again while a run is live, one read at a time. The read is
+   * what settles the panel: a terminal status renders, and `accept` cancels the
+   * next one, so a finished run closes its own modal.
+   */
+  function scheduleLiveRead() {
+    if (!reclaimRunning(reclaim) || typeof getBridge !== "function") {
+      stopLiveRead();
+      return;
+    }
+    // One timer, however many payloads arrive: a pending read already covers them.
+    if (liveReadTimer !== null) return;
+    const runId = String(reclaim?.runId || "");
+    if (runId !== liveReadRunId) {
+      liveReadRunId = runId;
+      liveReadStartedAt = null;
+    }
+    if (liveReadStartedAt === null) liveReadStartedAt = now();
+    // Past the window the panel stops reading. The read that carried the run's
+    // last status has already rendered, so it also rendered the stopped note.
+    if (now() - liveReadStartedAt >= liveReadMaxMs) return;
+    liveReadTimer = setTimer(() => {
+      liveReadTimer = null;
+      // `refresh` is async, so it always answers with a promise; it still accepts
+      // (and reschedules from) payloads that carry only the run's status.
+      void refresh({ followUp: true }).finally(scheduleLiveRead);
+    });
+  }
+
   /** Accept any payload that carries a `storageReclaim` object. */
   function accept(payload) {
     if (payload?.storageReclaim && typeof payload.storageReclaim === "object") {
-      reclaim = payload.storageReclaim;
+      const incoming = payload.storageReclaim;
+      // A start or cancel answers with the run's status only, so it carries no scope.
+      // The panel keeps the presentation it already read: the container modal opens
+      // from the click's own payload instead of waiting for the follow-up read.
+      reclaim = incoming.scope ? incoming : { ...incoming, scope: reclaim?.scope || "" };
       if (reclaim.verdict) verdict = reclaim.verdict;
       if (String(reclaim.runId || "") !== dismissedRunId) dismissedRunId = "";
     }
     if (payload?.verdict && typeof payload.verdict === "object") verdict = payload.verdict;
     render();
+    scheduleLiveRead();
     return reclaim;
   }
 
@@ -158,8 +238,11 @@ export function createStorageReclaimController({
    * Read the route once. `refreshVerdict` adds `?refresh=1` so the cached verdict
    * is recomputed, which is the panel's only way to see new measurements.
    */
-  async function refresh({ refreshVerdict = false } = {}) {
+  async function refresh({ refreshVerdict = false, followUp = false } = {}) {
     if (inFlight || typeof getBridge !== "function") return null;
+    // An operator read is also the way back from a closed window: it reopens the
+    // follow-up instead of leaving a stale "stopped" line on screen.
+    if (!followUp) liveReadStartedAt = null;
     inFlight = true;
     try {
       const query = refreshVerdict ? "?refresh=1" : "";
@@ -167,10 +250,11 @@ export function createStorageReclaimController({
         timeoutMs,
         affectsReachability: false
       });
-      message = "";
+      if (!messageIsRefusal) message = "";
       return accept(payload);
     } catch (err) {
       message = `Reclaim status unavailable: ${err?.message || err || "unknown error"}`;
+      messageIsRefusal = false;
       render();
       return null;
     } finally {
@@ -183,6 +267,7 @@ export function createStorageReclaimController({
     if (busy || reclaimRunning(reclaim) || typeof postBridge !== "function") return null;
     busy = action;
     message = "";
+    messageIsRefusal = false;
     render();
     try {
       const body = action === "rehearse" ? { dryRun: true } : {};
@@ -192,17 +277,21 @@ export function createStorageReclaimController({
         allowStatuses: [409]
       });
       accept(payload);
-      if (!payload?.started) message = refusalText(payload?.reason);
+      if (!payload?.started) {
+        message = refusalText(payload?.reason);
+        messageIsRefusal = true;
+      }
       return payload;
     } catch (err) {
       message = `Could not start the ${action === "rehearse" ? "rehearsal" : "reclaim"}: ${
         err?.message || err || "unknown error"
       }`;
+      messageIsRefusal = false;
       return null;
     } finally {
       busy = "";
       render();
-      // One read, not a poll: the verdict and the status progress together.
+      // One read after the click; a live run then follows it on its own.
       void refresh({ refreshVerdict: true });
     }
   }
@@ -217,6 +306,7 @@ export function createStorageReclaimController({
     }
     busy = "stop";
     message = "";
+    messageIsRefusal = false;
     // The button says what it is doing before the bridge answers.
     reclaim = { ...(reclaim || {}), status: "cancelling" };
     render();
@@ -227,11 +317,17 @@ export function createStorageReclaimController({
         allowStatuses: [409]
       });
       accept(payload);
-      if (payload?.stale) message = REFUSAL_TEXT["run-id-mismatch"];
-      else if (payload?.ok === false) message = refusalText(payload?.reason);
+      if (payload?.stale) {
+        message = REFUSAL_TEXT["run-id-mismatch"];
+        messageIsRefusal = true;
+      } else if (payload?.ok === false) {
+        message = refusalText(payload?.reason);
+        messageIsRefusal = true;
+      }
       return payload;
     } catch (err) {
       message = `Could not stop the run: ${err?.message || err || "unknown error"}`;
+      messageIsRefusal = false;
       return null;
     } finally {
       busy = "";

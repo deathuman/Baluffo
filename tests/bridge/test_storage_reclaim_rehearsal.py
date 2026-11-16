@@ -327,6 +327,12 @@ def test_a_failed_rehearsal_still_removes_its_staging_and_scratch_journal(
 
     assert payload["status"] == "failed", payload
     assert journal is not None
+    # The panel gets a plain sentence; the class name and the detail stay journaled.
+    # The journal is the writer's own output, so this also pins that the sentence
+    # is persisted for the restore path rather than only held in memory.
+    assert payload["error"] == "the copy failed validation, so nothing was installed."
+    assert journal["operatorError"] == payload["error"]
+    assert "CurrentFeedRebuildError" in journal["error"]
     assert "the copy exploded" in journal["error"]
     assert live_jobs == 2
     assert leftovers == []
@@ -414,3 +420,27 @@ def test_a_rehearsal_still_refuses_a_safety_blocker(monkeypatch: pytest.MonkeyPa
     assert result["started"] is False
     assert result["reason"] == "active-task"
     assert journal is None
+
+
+def test_operator_failure_text_never_leaks_a_class_name() -> None:
+    """The status line explains a failure; the raw exception stays in the journal."""
+    assert (
+        storage_reclaim._failure_text(storage_reclaim.ContentParityMismatch("a row changed"))
+        == "the copy did not match the live feed, so nothing was installed."
+    )
+    assert (
+        storage_reclaim._failure_text(sqlite3.OperationalError("database is locked"))
+        == "the database could not be read or written during the copy."
+    )
+    assert storage_reclaim._failure_text(RuntimeError("boom")) == (
+        "the run failed before it finished. The journal has the detail."
+    )
+    # A path that recorded no sentence still may not show a class prefix.
+    assert storage_reclaim._operator_error("RuntimeError: boom") == (
+        "the run failed before it finished. The journal has the detail."
+    )
+    # Restart and run-limit messages are already operator text.
+    assert (
+        storage_reclaim._operator_error("the bridge restarted before the run finished")
+        == "the bridge restarted before the run finished"
+    )

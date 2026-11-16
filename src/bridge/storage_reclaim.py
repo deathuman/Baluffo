@@ -66,6 +66,8 @@ from src.shared.utils import parse_iso
 from src.storage import BaluffoStoreError
 from src.storage.baluffo_store import DEFAULT_DB_NAME
 from src.storage.current_feed_rebuild import (
+    ContentParityMismatch,
+    ContentParityRace,
     CurrentFeedRebuildCancelled,
     CurrentFeedRebuildError,
     rebuild_backup_path,
@@ -457,8 +459,35 @@ def _empty_state() -> dict[str, Any]:
         # Full-disk relief (§3) for the last run: free space after the artifact
         # removal, what it released, and the gates it was asked against.
         "space": {},
+        # `error` is the journal's raw text; `operatorError` is the one sentence
+        # the panel shows for it, so a failure never reads as a class name and an
+        # internal count.
         "error": "",
+        "operatorError": "",
     }
+
+
+_FAILURE_FALLBACK = "the run failed before it finished. The journal has the detail."
+# A raw error that still starts with a class name never reaches the panel, even
+# on a path that recorded no sentence (a rebuild snapshot's own error, say).
+_CLASS_PREFIX_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Interrupt):\s")
+
+
+def _failure_text(exc: BaseException) -> str:
+    """The sentence the panel shows for a failure; the journal keeps the detail."""
+    if isinstance(exc, (ContentParityMismatch, ContentParityRace)):
+        return "the copy did not match the live feed, so nothing was installed."
+    if isinstance(exc, CurrentFeedRebuildError):
+        return "the copy failed validation, so nothing was installed."
+    if isinstance(exc, (BaluffoStoreError, OSError, sqlite3.Error)):
+        return "the database could not be read or written during the copy."
+    return _FAILURE_FALLBACK
+
+
+def _operator_error(text: str) -> str:
+    """Strip a class name from display text; plain sentences pass through."""
+    value = str(text or "")
+    return _FAILURE_FALLBACK if _CLASS_PREFIX_RE.match(value) else value
 
 
 class StorageReclaimJob:
@@ -510,6 +539,7 @@ class StorageReclaimJob:
                     "result": dict(journal.get("result") or {}),
                     "space": dict(journal.get("space") or {}),
                     "error": str(journal.get("error") or ""),
+                    "operatorError": str(journal.get("operatorError") or ""),
                 }
             )
         # No run outlives its process, so a journaled `running` is not activity.
@@ -539,7 +569,7 @@ class StorageReclaimJob:
                 "runId": str(self._state["runId"]),
                 "mode": str(self._state["mode"]),
                 "rebuildRunId": str(self._state["rebuildRunId"]),
-                "error": str(self._state["error"]),
+                "error": _operator_error(str(self._state["operatorError"] or self._state["error"])),
             }
 
     def start(
@@ -741,6 +771,7 @@ class StorageReclaimJob:
         status: str,
         *,
         error: str = "",
+        operator_error: str = "",
         phase: str = "",
         result: dict[str, Any] | None = None,
     ) -> None:
@@ -753,6 +784,7 @@ class StorageReclaimJob:
                     "phase": phase or status,
                     "finishedAt": _now_iso(),
                     "error": error,
+                    "operatorError": operator_error,
                 }
             )
             if result is not None:
@@ -879,7 +911,11 @@ class StorageReclaimJob:
             TypeError,
             ValueError,
         ) as exc:
-            self._settle("failed", error=f"{type(exc).__name__}: {exc}")
+            self._settle(
+                "failed",
+                error=f"{type(exc).__name__}: {exc}",
+                operator_error=_failure_text(exc),
+            )
         finally:
             self._release_run_hold(run_id)
 
@@ -920,7 +956,11 @@ class StorageReclaimJob:
         if self._cancel_event.is_set() and time.monotonic() <= deadline:
             self._settle("cancelled")
             return
-        self._settle("failed", error=f"{type(exc).__name__}: {exc}")
+        self._settle(
+            "failed",
+            error=f"{type(exc).__name__}: {exc}",
+            operator_error=_failure_text(exc),
+        )
 
     def _rehearse(self, run_id: str, deadline: float) -> None:
         """Run the real copy on the live database and report what it cost.

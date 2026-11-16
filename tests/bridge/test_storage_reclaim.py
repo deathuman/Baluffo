@@ -175,6 +175,46 @@ def test_journaled_running_is_reported_interrupted_after_a_restart() -> None:
     assert reclaim["phase"] == "copying"
 
 
+def test_a_journaled_failure_shows_its_sentence_after_a_restart() -> None:
+    with workspace_tmpdir("reclaim-route-error-text") as data_dir:
+        _seed(data_dir)
+        _write_journal(
+            data_dir,
+            {
+                "status": "failed",
+                "mode": "rehearsal",
+                "error": "CurrentFeedRebuildError: the copy exploded",
+                "operatorError": "the copy failed validation, so nothing was installed.",
+                "finishedAt": _finished_hours_ago(1),
+            },
+        )
+
+        reclaim = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+
+    # The panel gets the sentence; the journal keeps the exception for diagnosis.
+    assert reclaim["error"] == "the copy failed validation, so nothing was installed."
+    assert reclaim["journal"]["error"] == "CurrentFeedRebuildError: the copy exploded"
+
+
+def test_a_journaled_failure_without_a_sentence_still_hides_the_class_name() -> None:
+    # A journal written before the split carries only the raw exception text.
+    with workspace_tmpdir("reclaim-route-error-raw") as data_dir:
+        _seed(data_dir)
+        _write_journal(
+            data_dir,
+            {
+                "status": "failed",
+                "mode": "rehearsal",
+                "error": "CurrentFeedRebuildError: the copy exploded",
+                "finishedAt": _finished_hours_ago(1),
+            },
+        )
+
+        reclaim = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+
+    assert reclaim["error"] == "the run failed before it finished. The journal has the detail."
+
+
 def test_a_rehearsal_does_not_start_the_cooldown() -> None:
     with workspace_tmpdir("reclaim-route-rehearsal") as data_dir:
         _seed(data_dir)

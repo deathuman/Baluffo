@@ -233,11 +233,14 @@ def _log_request_message(
         message = format % args
     except (TypeError, ValueError):
         message = format
+    # http.server logs errors through here too: an idle keep-alive socket that
+    # times out mid-read calls log_error before any request line exists, so
+    # `path` is genuinely unset and reading it must not raise.
     api.bridge_log(
         "debug",
         "http_request",
         method=getattr(handler, "command", ""),
-        path=handler.path,
+        path=getattr(handler, "path", ""),
         detail=message,
     )
 

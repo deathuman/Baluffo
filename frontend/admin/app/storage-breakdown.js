@@ -108,7 +108,8 @@ export function createStorageBreakdownController({
   let rebuildPollTimer = null;
   let rebuildPollStartedAt = 0;
   // Rehearse / Run / Stop and the panel's status all render from the reclaim
-  // route's payload; the controller owns no timer and no copy.
+  // route's payload. The controller owns the copy never and the timer only while
+  // a run is live: the bridge is still the run's owner.
   const reclaimPanel = createStorageReclaimController({
     refs,
     getBridge,

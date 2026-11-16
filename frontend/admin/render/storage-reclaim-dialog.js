@@ -43,6 +43,13 @@ const SAFETY_BLOCKERS = [
   "sample-unavailable"
 ];
 
+// The claim that the panel stopped following must not drift between the inline
+// dialog and the container modal, so both open with this one sentence.
+const LIVE_UPDATES_STOPPED = "Live updates stopped for this run.";
+
+const NOT_BLOATED_TOOLTIP =
+  "The database is not bloated enough to shrink right now. Rehearse still measures the copy.";
+
 const BLOCKER_TEXT = {
   "no-current-generation": "There is no published feed to shrink yet.",
   "active-task": "A task is running. Run refuses until it finishes.",
@@ -155,7 +162,14 @@ export function reclaimStatusText(reclaim) {
 export function reclaimButtonState(reclaim, { busy = "", verdict = null } = {}) {
   const running = reclaimRunning(reclaim);
   const safety = reclaimSafetyBlockers(verdict);
-  const reason = safety.length ? BLOCKER_TEXT[safety[0]] || safety[0] : "";
+  // An explicit start cannot override a verdict that says there is nothing worth
+  // shrinking, so Run is disabled with that reason instead of posting into a refusal.
+  const notBloated = Boolean(verdict) && String(verdict?.verdict || "") !== "bloat";
+  const reason = safety.length
+    ? BLOCKER_TEXT[safety[0]] || safety[0]
+    : notBloated
+      ? NOT_BLOATED_TOOLTIP
+      : "";
   const rehearsal = String(reclaim?.mode || "") === "rehearsal";
   return {
     rehearse: {
@@ -164,7 +178,7 @@ export function reclaimButtonState(reclaim, { busy = "", verdict = null } = {}) 
       tooltip: "Copies the database once to measure what a reclaim would cost, validates the copy, then discards it. Installs and deletes nothing."
     },
     run: {
-      disabled: Boolean(busy) || running || safety.length > 0,
+      disabled: Boolean(busy) || running || safety.length > 0 || notBloated,
       label: busy === "run" ? "Starting…" : running && !rehearsal ? "Running…" : "Run",
       tooltip: reason
         || "Rebuilds around the published feed and installs the shrunken database. Refused if a write commits mid-copy."
@@ -186,8 +200,11 @@ function formatBytesText(value, formatBytes) {
 /**
  * The panel body: what is happening, why a start is refused, and the copies
  * involved. Numbers only — no ETA, because a stalled disk would make it a lie.
+ * `followUpStopped` is the panel's own state: it stops reading a run on its own
+ * once the run outlives the follow-up window, and has to say so rather than keep
+ * promising that it follows.
  */
-export function renderStorageReclaimDialogHtml(reclaim, formatBytes) {
+export function renderStorageReclaimDialogHtml(reclaim, formatBytes, { followUpStopped = false } = {}) {
   if (!reclaim || typeof reclaim !== "object") {
     return "<p class=\"admin-storage-reclaim-note\">Run <strong>Rehearse</strong> to measure what a shrink would cost before anything is installed.</p>";
   }
@@ -206,7 +223,7 @@ export function renderStorageReclaimDialogHtml(reclaim, formatBytes) {
     parts.push(
       `<p class="admin-storage-reclaim-blocked">${BLOCKER_TEXT[safety[0]] || safety[0]}</p>`
     );
-  } else if (String(verdict?.verdict || "") === "ok") {
+  } else if (verdict && String(verdict.verdict || "") !== "bloat") {
     parts.push("<p class=\"admin-storage-reclaim-note\">The database is not bloated enough to shrink right now.</p>");
   }
   const result = reclaim.result || null;
@@ -222,7 +239,9 @@ export function renderStorageReclaimDialogHtml(reclaim, formatBytes) {
   const runId = String(reclaim.runId || "").trim();
   if (runId && reclaimRunning(reclaim)) {
     parts.push(
-      "<p class=\"admin-storage-reclaim-note\">The run continues in the bridge if this page closes; only <strong>Stop</strong> cancels it. Progress updates when you refresh.</p>"
+      followUpStopped
+        ? `<p class="admin-storage-reclaim-note">${LIVE_UPDATES_STOPPED} <strong>Refresh</strong> resumes them.</p>`
+        : "<p class=\"admin-storage-reclaim-note\">The run continues in the bridge if this page closes; only <strong>Stop</strong> cancels it. The panel follows it while it runs.</p>"
     );
   }
   return parts.join("");
@@ -232,11 +251,17 @@ export function renderStorageReclaimDialogHtml(reclaim, formatBytes) {
  * The container modal. Desktop renders nothing here: its payload says `inline`,
  * and the same dialog body is already on the panel.
  */
-export function renderStorageReclaimModalHtml(reclaim) {
+export function renderStorageReclaimModalHtml(reclaim, { followUpStopped = false } = {}) {
   if (String(reclaim?.scope || "") !== "modal" || !reclaimRunning(reclaim)) return "";
   const status = reclaimStatusText(reclaim);
+  // In a container the modal is the whole panel, so this is the only place the
+  // operator can learn that the status has stopped moving. It sits under the
+  // status it qualifies, above the note that explains closing the tab.
   return [
     `<p class="admin-storage-reclaim-modal-status" data-tone="${status.tone || ""}">${status.text}</p>`,
+    followUpStopped
+      ? `<p class="admin-storage-reclaim-modal-note">${LIVE_UPDATES_STOPPED} Hide this dialog and <strong>Refresh</strong> to resume them.</p>`
+      : "",
     `<p class="admin-storage-reclaim-modal-note">Closing this tab is safe: the copy runs in the bridge and only Stop cancels it. Fetch starts are refused while it holds.</p>`
   ].join("");
 }

@@ -1,7 +1,7 @@
 /**
  * The Runtime Database Storage reclaim controls: Rehearse, Run and Stop against the
  * shipped routes, container modal and desktop inline from one payload, the measured
- * gate's warnings, and no polling timer.
+ * gate's warnings, and the bounded follow-up read that lets a live run settle.
  *
  * The run belongs to the bridge, so every case here asserts only that the panel
  * reflects a payload, never that it owns or drives a copy.
@@ -9,79 +9,21 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
-import { createStorageReclaimController } from "../../../frontend/admin/app/storage-reclaim-panel.js";
 import {
   reclaimButtonState,
   reclaimPhaseLabel,
   reclaimStatusText,
   renderStorageReclaimModalHtml
 } from "../../../frontend/admin/render/storage-reclaim-dialog.js";
-import { createElement } from "./helpers/admin-controller-test-helpers.mjs";
-
-const DAY_SECONDS = 24 * 60 * 60;
-const MB = 1024 * 1024;
-
-function verdict(overrides = {}) {
-  return {
-    verdict: "bloat",
-    blockers: [],
-    measuredStagingBytes: 900 * MB,
-    measuredStagingAgeS: 2 * DAY_SECONDS,
-    measuredStagingStale: false,
-    lastRehearsalGateAdequate: true,
-    ...overrides
-  };
-}
-
-function payload(reclaim = {}, verdictOverrides = {}) {
-  return {
-    storageReclaim: {
-      scope: "inline",
-      status: "idle",
-      phase: "idle",
-      runId: "",
-      mode: "",
-      verdict: verdict(verdictOverrides),
-      ...reclaim
-    }
-  };
-}
-
-function refs() {
-  return {
-    adminStorageReclaimStatusEl: createElement(),
-    adminStorageReclaimDialogEl: createElement(),
-    adminStorageReclaimHealthEl: createElement({ hidden: true }),
-    adminStorageReclaimRehearseBtnEl: createElement(),
-    adminStorageReclaimRunBtnEl: createElement(),
-    adminStorageReclaimStopBtnEl: createElement({ hidden: true }),
-    adminStorageReclaimModalEl: createElement({ hidden: true }),
-    adminStorageReclaimModalBodyEl: createElement(),
-    adminStorageReclaimModalStopBtnEl: createElement(),
-    adminStorageReclaimModalHideBtnEl: createElement()
-  };
-}
-
-function controller(target, { get, post } = {}) {
-  const calls = { get: [], post: [] };
-  const instance = createStorageReclaimController({
-    refs: target,
-    getBridge: async url => {
-      calls.get.push(url);
-      return get ? get(url) : payload();
-    },
-    postBridge: async (url, body) => {
-      calls.post.push({ url, body });
-      return post ? post(url, body) : payload({ status: "running", runId: "run-1", mode: "reclaim" });
-    },
-    formatBytes: value => `${Math.round(value / MB)} MB`
-  });
-  return { instance, calls };
-}
-
-const settle = () => new Promise(resolve => setImmediate(resolve));
+import {
+  DAY_SECONDS,
+  MB,
+  controller,
+  payload,
+  refs,
+  settle
+} from "./helpers/admin-storage-reclaim-fixtures.mjs";
 
 test("an idle payload offers both starts and no Stop", () => {
   const target = refs();
@@ -111,6 +53,33 @@ test("a container run opens the modal from the same payload", () => {
   // Starting is refused while the bridge owns the run; Stop is the only action.
   assert.equal(target.adminStorageReclaimRehearseBtnEl.disabled, true);
   assert.equal(target.adminStorageReclaimRunBtnEl.disabled, true);
+});
+
+test("the container modal opens from the start response, not the refresh", async () => {
+  const target = refs();
+  let releaseRead;
+  const pendingRead = new Promise(resolve => {
+    releaseRead = resolve;
+  });
+  const { instance } = controller(target, {
+    // The follow-up read never answers here: only the click's own payload can render.
+    get: () => pendingRead,
+    post: () => ({
+      started: true,
+      // The bridge's start answer carries run status and no scope.
+      storageReclaim: { status: "running", phase: "copying", runId: "run-11", mode: "reclaim" }
+    })
+  });
+
+  instance.accept(payload({ scope: "modal" }));
+  assert.equal(target.adminStorageReclaimModalEl.hidden, true);
+
+  await instance.rehearse();
+
+  assert.equal(target.adminStorageReclaimModalEl.hidden, false);
+  assert.match(target.adminStorageReclaimModalBodyEl.innerHTML, /copying the database/);
+  assert.equal(target.adminStorageReclaimStatusEl.textContent, "Reclaim running — copying the database");
+  releaseRead(payload({ scope: "modal" }));
 });
 
 test("desktop renders the same run inline with no modal", () => {
@@ -174,6 +143,50 @@ test("the trigger guards do not disable Run", () => {
 
   assert.equal(target.adminStorageReclaimRunBtnEl.disabled, false);
   assert.doesNotMatch(target.adminStorageReclaimDialogEl.innerHTML, /not armed/);
+});
+
+test("a verdict that is not bloat disables Run and says why", () => {
+  const target = refs();
+  const { instance } = controller(target);
+
+  instance.accept(payload({}, { verdict: "ok" }));
+
+  // A click cannot override the verdict, so Run is refused before it posts.
+  assert.equal(target.adminStorageReclaimRunBtnEl.disabled, true);
+  assert.match(target.adminStorageReclaimRunBtnEl.attributes["data-tooltip"], /not bloated enough/);
+  assert.equal(target.adminStorageReclaimRehearseBtnEl.disabled, false);
+  assert.match(target.adminStorageReclaimDialogEl.innerHTML, /not bloated enough to shrink right now/);
+});
+
+test("a refused start explains itself and the follow-up read keeps it", async () => {
+  const target = refs();
+  const { instance, calls } = controller(target, {
+    get: () => payload(),
+    post: () => ({ ok: true, started: false, reason: "not-bloated", storageReclaim: {} })
+  });
+  instance.accept(payload());
+  await instance.rehearse();
+  await settle(); await settle();
+
+  // The start's own refresh still runs; it must leave the refusal on screen.
+  assert.equal(calls.get.at(-1), "/ops/storage-reclaim?refresh=1");
+  assert.match(target.adminStorageReclaimDialogEl.innerHTML, /not bloated enough to shrink\. Rehearse/);
+});
+
+test("a transport error is replaced by the next successful read", async () => {
+  const target = refs();
+  let fail = true;
+  const { instance } = controller(target, {
+    get: () => {
+      if (fail) throw new Error("bridge unreachable");
+      return payload();
+    }
+  });
+  await instance.refresh();
+  assert.match(target.adminStorageReclaimDialogEl.innerHTML, /unavailable: bridge unreachable/);
+  fail = false;
+  await instance.refresh();
+  assert.doesNotMatch(target.adminStorageReclaimDialogEl.innerHTML, /status unavailable/);
 });
 
 test("the measured gate's stale and thin warnings render beside the controls", () => {
@@ -328,16 +341,6 @@ test("Refresh reads the route without the verdict only when asked", async () => 
   assert.deepEqual(calls.get, ["/ops/storage-reclaim", "/ops/storage-reclaim?refresh=1"]);
 });
 
-test("the panel has no polling timer", () => {
-  const source = readFileSync(
-    new URL("../../../frontend/admin/app/storage-reclaim-panel.js", import.meta.url),
-    "utf8"
-  );
-
-  // Progress arrives when the user refreshes; nothing schedules itself.
-  assert.doesNotMatch(source, /\bsetTimeout\b|\bsetInterval\b/);
-});
-
 test("a run's phase and status read as sentences", () => {
   assert.equal(reclaimPhaseLabel("stopping-retention"), "stopping retention");
   assert.deepEqual(reclaimStatusText({ status: "running", phase: "verifying", mode: "reclaim" }), {
@@ -348,6 +351,15 @@ test("a run's phase and status read as sentences", () => {
     text: "Rehearsal failed: disk full",
     tone: "warning"
   });
+  // The bridge sends the failure sentence already, so the line reads as one.
+  assert.deepEqual(
+    reclaimStatusText({
+      status: "failed",
+      mode: "rehearsal",
+      error: "the copy failed validation, so nothing was installed."
+    }),
+    { text: "Rehearsal failed: the copy failed validation, so nothing was installed.", tone: "warning" }
+  );
   assert.equal(renderStorageReclaimModalHtml({ scope: "inline", status: "running" }), "");
   assert.equal(reclaimButtonState({ status: "running", runId: "r" }).stop.hidden, false);
 });
