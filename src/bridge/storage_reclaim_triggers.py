@@ -25,9 +25,9 @@ measuring".
 Retention is the one gate the verdict cannot see: the retention pass is a daemon
 that writes deletes, and a copy started against it would be superseded. A trigger
 that finds it running waits instead — one re-check per data directory, which polls
-until the pass leaves the write path and then asks once. The re-check is bounded
-by the same two hours a reclaim may run, and it never stacks: a closeout that
-lands while a check is pending rides the pending one.
+until the pass leaves the write path and then asks once. The re-check waits at
+most two hours and never stacks: a closeout that lands while a check is pending
+rides the pending one.
 """
 
 from __future__ import annotations
@@ -50,8 +50,10 @@ from src.storage_metrics import file_size
 # The first paint must not compete with a multi-GB copy, so startup asks later.
 RECLAIM_TRIGGER_STARTUP_DELAY_S = 60.0
 RECLAIM_TRIGGER_RETENTION_POLL_S = 5.0
-# A re-check gives up at the same limit that caps a stuck reclaim.
-RECLAIM_TRIGGER_RECHECK_MAX_S = storage_reclaim.RECLAIM_MAX_RUN_S
+# How long a re-check waits for an in-flight retention pass before giving up on
+# this one. Two hours, independent of the run limit on purpose: this waits for
+# someone else's pass, it does not describe how long a copy may take.
+RECLAIM_TRIGGER_RECHECK_MAX_S = 7200.0
 # The idle probe's cadence. Hours, because the disk grows over days, and because
 # the full verdict (not just the probe) is what costs a store open.
 RECLAIM_IDLE_PROBE_INTERVAL_S = 3 * 60 * 60

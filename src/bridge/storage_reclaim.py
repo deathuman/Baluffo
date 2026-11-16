@@ -102,8 +102,13 @@ RECLAIM_SCOPES = ("modal", "inline")
 # Poll the rebuild's status rather than subscribing to it: the request thread
 # must never wait on a copy, and the rebuild job already publishes its phase.
 RECLAIM_POLL_S = 0.5
-# Caps a stuck run at the same two hours the hold's hard maximum allows.
+# The longest a reclaim or a rehearsal may run: the hold's hard maximum, so a
+# run can never outlive the hold it took. A stalled run is caught by the hold's
+# heartbeat long before this.
 RECLAIM_MAX_RUN_S = RECLAIM_HOLD_MAX_S
+# How long the run limit waits for the copy it cancelled to leave before settling
+# without it, so a rebuild that will not stop cannot pin task starts.
+RECLAIM_STOP_WAIT_S = 60.0
 # How often a blocking step that reports nothing refreshes the hold's stall
 # clock; well inside the stall timeout so a beat is never late by design.
 RECLAIM_HOLD_PULSE_S = 15.0
@@ -1120,6 +1125,10 @@ class StorageReclaimJob:
         deadline = time.monotonic() + RECLAIM_MAX_RUN_S
         while True:
             if time.monotonic() > deadline:
+                # The copy has no deadline of its own, so the limit is enforced
+                # here. Stop it before settling: settling releases the hold, and a
+                # fetch landing mid-copy supersedes the install.
+                self._cancel_followed_rebuild()
                 self._settle("failed", error="the rebuild did not finish within the run limit")
                 return None
             snapshot = dict(
@@ -1158,6 +1167,28 @@ class StorageReclaimJob:
 
     def _cancel_rebuild(self, rebuild_run_id: str) -> None:
         rebuild_mod.cancel_storage_rebuild(self.data_dir, rebuild_run_id)
+
+    def _cancel_followed_rebuild(self) -> None:
+        """Stop the copy this run followed, and give it a moment to leave.
+
+        The wait is bounded by ``RECLAIM_STOP_WAIT_S``: the settle that follows
+        releases the hold either way, so a rebuild that ignores the cancel delays
+        task starts by seconds, not by the rest of the run limit.
+        """
+        with self._lock:
+            rebuild_run_id = str(self._state["rebuildRunId"])
+        if not rebuild_run_id:
+            return
+        self._cancel_rebuild(rebuild_run_id)
+        stop_by = time.monotonic() + RECLAIM_STOP_WAIT_S
+        while time.monotonic() < stop_by:
+            snapshot = dict(
+                rebuild_mod.get_storage_rebuild_payload(self.data_dir).get("storageRebuild") or {}
+            )
+            if str(snapshot.get("status") or "") not in {"running", "cancelling"}:
+                return
+            self._heartbeat()
+            time.sleep(RECLAIM_POLL_S)
 
     def _verify(self, snapshot: dict[str, Any]) -> str | None:
         """Re-check the installed database against the completed rebuild's record.

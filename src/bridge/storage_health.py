@@ -228,7 +228,13 @@ def set_storage_compaction_hold(held: bool) -> list[dict[str, Any]]:
 # is evaluated on every read: a crashed run must not block fetches until the
 # bridge restarts. `expiresAt` is a hard maximum and is never renewed.
 RECLAIM_HOLD_HEARTBEAT_TIMEOUT_S = 60.0
-RECLAIM_HOLD_MAX_S = 7200.0
+# Eight hours, not two. A copy of a few hundred gigabytes on a slow disk is real
+# work, not a hang: at the ~85 MB/s measured here a 200 GB store copies in about
+# 40 minutes, but on an old HDD at 20 MB/s the same store needs nearly three
+# hours once the verify and the delete are counted. The heartbeat above notices a
+# run that stopped making progress; this ceiling only has to outlast real work,
+# because a shorter one fails the run mid-copy and throws the copy away.
+RECLAIM_HOLD_MAX_S = 28800.0
 _RECLAIM_HOLD_LOCK = threading.Lock()
 _RECLAIM_HOLD: dict[str, Any] | None = None
 _RECLAIM_HOLD_LAST_RELEASE: dict[str, str] = {}

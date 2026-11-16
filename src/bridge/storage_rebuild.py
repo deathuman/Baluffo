@@ -42,6 +42,7 @@ from src.storage.current_feed_rebuild import (
     validate_current_feed_database,
     validate_feed_generation,
 )
+from src.storage.retention_cancel import RetentionCancelled
 from src.storage_metrics import file_size
 
 _JOBS_LOCK = threading.RLock()
@@ -786,7 +787,10 @@ class StorageRebuildJob:
                     },
                 },
             )
-        except CurrentFeedRebuildCancelled:
+        except (CurrentFeedRebuildCancelled, RetentionCancelled):
+            # The copy's cancel boundary raises the retention type, not the
+            # rebuild's: caught here so a cancelled rebuild settles instead of
+            # leaving the thread dead behind a status that still says running.
             if staging is not None:
                 staging.unlink(missing_ok=True)
             self._finish("cancelled")

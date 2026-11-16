@@ -221,9 +221,9 @@ run would block every fetch start until the bridge restarted. Reclaim stores
   read path, so it works with no job running to notice.
 - **Stall**: `RECLAIM_HOLD_HEARTBEAT_TIMEOUT_S = 60`, refreshed by each progress event;
   a silent hold with a live thread is released the same way.
-- **Maximum: `RECLAIM_HOLD_MAX_S = 7200` (2 h)** from `heldAt`, hard and not renewable.
-  That exceeds the copy envelope (tens of minutes) plus validation, and caps a stuck run
-  at two hours of blocked starts. Constants, not knobs.
+- **Maximum: `RECLAIM_HOLD_MAX_S = 28800` (8 h)** from `heldAt`, hard and not renewable.
+  That exceeds the copy envelope (minutes to hours) plus validation, and caps a stuck
+  run at eight hours of blocked starts. Constants, not knobs.
 - **Shutdown** releases unconditionally; the next start reconciles from the journal.
 
 Task-start replies carry `releasedBy: terminal | watchdog | ttl | shutdown`, so a normal
@@ -308,7 +308,7 @@ every health payload as `deps.desktop_mode`) selects the presentation and the
 concurrency guard, not whether the operation is allowed.
 
 - **Container**: the blocking modal of §6 plus `set_storage_reclaim_hold()`. The copy
-  runs for tens of minutes on a hundreds-of-gigabytes store; a fetch mid-copy would
+  runs for minutes to hours on a hundreds-of-gigabytes store; a fetch mid-copy would
   burn it.
 - **Desktop**: the same operation, inline. No dialog is constructed; the panel
   renders the phases from the same `GET`, and **Stop** cancels by `runId`. No hold is
