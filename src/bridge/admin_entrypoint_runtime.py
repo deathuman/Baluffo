@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from src.bridge import startup_work_budget, storage_health
+from src.bridge import startup_work_budget, storage_health, storage_reclaim_triggers
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.local_data_store import LocalDataPaths, LocalDataStore
 from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
@@ -86,7 +86,10 @@ def prepare_bridge_runtime(
 
 
 def finish_bridge_startup_hooks(
-    *, on_started: Callable[[], Any], append_startup_metric: Callable[..., Any]
+    *,
+    on_started: Callable[[], Any],
+    append_startup_metric: Callable[..., Any],
+    desktop_mode: bool = False,
 ) -> None:
     """Run the post-bind startup work, then release deferred SQLite maintenance.
 
@@ -124,6 +127,25 @@ def finish_bridge_startup_hooks(
                 stores=len(released),
                 scheduled=sum(1 for row in released if row.get("scheduled")),
             )
+            _schedule_reclaim_startup_checks(released, desktop_mode=desktop_mode)
+
+
+def _schedule_reclaim_startup_checks(released: list[dict[str, Any]], *, desktop_mode: bool) -> None:
+    """Offer each resumed store one delayed reclaim check, ~60 s from now.
+
+    The delay keeps the startup copy off the first paint, and the trigger itself
+    runs the pre-flight, so a container with no Admin tab open can still reclaim
+    while a host whose verdict is not bloat does nothing.
+    """
+    for row in released:
+        data_dir = str(row.get("dataDir") or "").strip()
+        if not data_dir:
+            continue
+        try:
+            storage_reclaim_triggers.schedule_startup_check(Path(data_dir), hold=not desktop_mode)
+        except (OSError, RuntimeError, ValueError):
+            # A trigger is opportunistic; startup keeps serving either way.
+            continue
 
 
 def log_enabled(level: str, *, root_mod: Any) -> bool:

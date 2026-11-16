@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from src.bridge import storage_health as storage_health_mod
+from src.bridge import storage_reclaim_triggers
 from src.bridge.task_lifecycle import TaskLifecycleService
 from src.storage.task_runtime import TaskRuntimeStore
 
@@ -41,6 +42,7 @@ class AdminTaskLifecycle:
         task_runtime_store: Callable[[], Any] | None = None,
         record_storage_diagnostic: Callable[..., None] | None = None,
         storage_data_dir: Callable[[], Path] | None = None,
+        on_tasks_idle: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
         self._lifecycle_path = lifecycle_path
         self._max_rows = max_rows
@@ -52,6 +54,9 @@ class AdminTaskLifecycle:
         self._task_runtime_store = task_runtime_store
         self._record_storage_diagnostic = record_storage_diagnostic
         self._storage_data_dir = storage_data_dir
+        # The automatic reclaim trigger: the transition that releases the
+        # compaction hold is the only place a fetch closeout is observable.
+        self._on_tasks_idle = on_tasks_idle
         self._service: TaskLifecycleService | None = None
         self._service_key: tuple[Path, int] | None = None
 
@@ -212,7 +217,29 @@ class AdminTaskLifecycle:
             storage_health_mod.set_storage_compaction_hold(active)
             summary["changed"] = True
         summary["held"] = bool(storage_health_mod.storage_compaction_hold_active())
+        if summary["changed"] and not active:
+            self._notify_tasks_idle(summary)
         return summary
+
+    def _notify_tasks_idle(self, summary: dict[str, Any]) -> None:
+        """Tell the reclaim trigger the ledger just left every task idle.
+
+        Without an explicit callback the automatic trigger is asked directly:
+        this transition is the only place a fetch closeout is observable, and a
+        bridge whose data directory is not configured has nothing to reclaim.
+        A trigger problem must not fail a lifecycle transition the task already
+        recorded, so both paths are isolated here.
+        """
+        callback = self._on_tasks_idle
+        if callback is None:
+            storage_data_dir = self._storage_data_dir
+            if storage_data_dir is None:
+                return
+            callback = lambda _summary: storage_reclaim_triggers.on_task_idle(storage_data_dir())
+        try:
+            callback(dict(summary))
+        except (OSError, RuntimeError, sqlite3.Error, TypeError, ValueError):
+            return
 
     def sync_compaction_hold(self) -> dict[str, Any]:
         """Re-derive the rebuild hold from the active rows in the ledger."""

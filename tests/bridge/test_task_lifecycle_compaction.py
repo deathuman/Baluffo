@@ -445,3 +445,30 @@ def test_sync_compaction_hold_reports_an_active_seed(tmp_path: Path) -> None:
         assert released["changed"] is True
     finally:
         set_storage_compaction_hold(False)
+
+
+def test_a_closeout_to_no_active_task_notifies_the_reclaim_trigger(tmp_path: Path) -> None:
+    lifecycle_path = tmp_path / "admin-task-lifecycle.json"
+    idle_transitions: list[dict[str, Any]] = []
+    lifecycle = AdminTaskLifecycle(
+        lifecycle_path=lambda: lifecycle_path,
+        max_rows=lambda: 240,
+        lock=threading.RLock(),
+        load_json_object=_load_json_object,
+        save_json_atomic=_save_json_atomic,
+        now_iso=lambda: "2026-05-06T19:00:00+00:00",
+        parse_iso=_parse_iso,
+        on_tasks_idle=lambda summary: idle_transitions.append(dict(summary)),
+    )
+    try:
+        lifecycle.start_run(run_id="fetch_1", task_type="fetch")
+        # Going idle -> active holds the rebuild; it is not a closeout.
+        assert idle_transitions == []
+
+        lifecycle.finish_run("fetch_1", "fetch")
+
+        assert len(idle_transitions) == 1
+        assert idle_transitions[0]["hasActiveTask"] is False
+        assert idle_transitions[0]["changed"] is True
+    finally:
+        set_storage_compaction_hold(False)

@@ -30,9 +30,14 @@
   through the same helper the rebuild uses before it reads, is capped at
   `RECLAIM_MAX_RUN_S` like a real run, reports staging/reclaimed bytes, duration,
   per-table counts, validation and the content digests under the journal's
-  `result`, and unlinks its staging file and scratch `<db>.reclaim-rehearsal.json`
-  in a `finally`. Triggers (§4), full-disk order (§3)
-  and presentation (§6) are unimplemented.
+  `result`, and unlinks its staging file and scratch   `<db>.reclaim-rehearsal.json`
+  in a `finally`. Triggers (§4) are implemented in
+  `src/bridge/storage_reclaim_triggers.py`: the closeout transition that releases
+  the compaction hold asks once, startup schedules one check `60` s after
+  maintenance resumes, both go through `auto: true` so the verdict, every safety
+  blocker and the cooldown still apply, and a running retention pass defers them
+  into one coalesced re-check that waits for it (capped at `RECLAIM_MAX_RUN_S`).
+  Full-disk order (§3) and presentation (§6) are unimplemented.
 
 ## Scope
 
