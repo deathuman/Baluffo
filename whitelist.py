@@ -516,3 +516,4 @@ carriedSourceBundleProvenanceMismatchMovableCount  # unused variable (src\jobs\c
 carriedSourceBundleProvenanceMismatchAmbiguousCount  # unused variable (src\jobs\common\contracts_dedup_evidence.py) — TypedDict key consumed by bridge/report normalizers and frontend, outside vulture's static analysis
 carriedSourceBundleProvenanceMismatchExamples  # unused variable (src\jobs\common\contracts_dedup_evidence.py) — TypedDict key consumed by bridge/report normalizers and frontend, outside vulture's static analysis
 carriedBundleReconciliationRecommendation  # unused variable (src\jobs\common\contracts_dedup_evidence.py) — TypedDict key consumed by bridge/report normalizers, outside vulture's static analysis
+stop_idle_probe  # unused function (src\bridge\storage_reclaim_triggers.py) — the idle probe is a daemon for the bridge's lifetime; this is the test-facing stop that proves the loop releases.

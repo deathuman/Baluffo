@@ -11,7 +11,7 @@ import {
   storageMaintenanceRetryScheduled
 } from "../render/storage-tables.js";
 import { renderStorageDiagnosticHtml } from "../render/storage-diagnostic.js";
-import { renderStorageReclaimHealthHtml } from "../render/storage-reclaim.js";
+import { createStorageReclaimController } from "./storage-reclaim-panel.js";
 import {
   downloadStorageDiagnosticJson,
   serializeStorageDiagnosticExport,
@@ -23,7 +23,6 @@ const STORAGE_DIAGNOSTIC_ROUTE = "/ops/storage-diagnostic";
 const STORAGE_MAINTENANCE_ROUTE = "/ops/storage-maintenance";
 const STORAGE_MAINTENANCE_PREVIEW_ROUTE = "/ops/storage-maintenance/preview";
 const STORAGE_REBUILD_ROUTE = "/ops/storage-rebuild";
-const STORAGE_RECLAIM_ROUTE = "/ops/storage-reclaim";
 const DEFAULT_STORAGE_HEALTH_TIMEOUT_MS = 5000;
 // The preview reads cached generation stats and bounded 200-row samples, then
 // stays under the container gateway's existing 60 s heavy-route budget.
@@ -108,6 +107,14 @@ export function createStorageBreakdownController({
   let rebuildStatusInFlight = false;
   let rebuildPollTimer = null;
   let rebuildPollStartedAt = 0;
+  // Rehearse / Run / Stop and the panel's status all render from the reclaim
+  // route's payload; the controller owns no timer and no copy.
+  const reclaimPanel = createStorageReclaimController({
+    refs,
+    getBridge,
+    postBridge,
+    formatBytes
+  });
 
   function statusText(tableSizes) {
     if (!tableSizes || tableSizes.status === "unavailable") return "Unavailable";
@@ -157,26 +164,10 @@ export function createStorageBreakdownController({
     refs.adminStorageTablesBodyEl.innerHTML = renderStorageTablesHtml(tableSizes, formatBytes);
   }
 
-  function renderReclaimHealth(verdict) {
-    const healthEl = refs.adminStorageReclaimHealthEl;
-    if (!healthEl) return;
-    const html = renderStorageReclaimHealthHtml(verdict);
-    healthEl.innerHTML = html;
-    healthEl.hidden = !html;
-  }
-
   // The verdict is advisory here: a failed read keeps the last warning rather
   // than claiming the measured gate is healthy, and never fails the panel.
-  async function refreshReclaimHealth() {
-    try {
-      const payload = await getBridge(STORAGE_RECLAIM_ROUTE, {
-        timeoutMs,
-        affectsReachability: false
-      });
-      renderReclaimHealth(payload?.storageReclaim?.verdict);
-    } catch {
-      // Nothing rendered: the panel's own load path owns reporting the bridge.
-    }
+  async function refreshReclaimHealth({ refreshVerdict = false } = {}) {
+    await reclaimPanel.refresh({ refreshVerdict });
   }
 
   function diagnosticStatusText(value) {
@@ -1195,7 +1186,8 @@ export function createStorageBreakdownController({
       });
       const tableSizes = acceptStorageHealth(payload);
       if (refs.adminStorageRebuildBodyEl) void refreshRebuildStatus();
-      await refreshReclaimHealth();
+      // A plain read reuses the cached verdict; Refresh asks for a fresh one.
+      await refreshReclaimHealth({ refreshVerdict: options.refreshVerdict === true });
       if (!tableSizes) {
         setStatus("Unavailable", "warning");
         renderMessage("Storage health did not include a table-size breakdown.");
@@ -1218,7 +1210,10 @@ export function createStorageBreakdownController({
     refs.adminStorageTablesEl?.addEventListener?.("toggle", () => {
       if (refs.adminStorageTablesEl?.open === true && !healthRendered) void load();
     });
-    refs.adminStorageTablesRefreshBtnEl?.addEventListener?.("click", () => load());
+    reclaimPanel.init();
+    refs.adminStorageTablesRefreshBtnEl?.addEventListener?.("click", () =>
+      load({ refreshVerdict: true })
+    );
     refs.adminStorageQuickCheckBtnEl?.addEventListener?.("click", () => startQuickCheck());
     refs.adminStorageMaintenancePreviewBtnEl?.addEventListener?.("click", () =>
       previewMaintenance()

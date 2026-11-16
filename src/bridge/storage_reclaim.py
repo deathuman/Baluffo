@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -61,7 +62,7 @@ from src.bridge.storage_reclaim_space import (
     release_live_artifacts,
     relieve_free_space,
 )
-from src.shared.utils import env_flag, parse_iso
+from src.shared.utils import parse_iso
 from src.storage import BaluffoStoreError
 from src.storage.baluffo_store import DEFAULT_DB_NAME
 from src.storage.current_feed_rebuild import (
@@ -77,6 +78,8 @@ from src.storage.current_feed_rebuild import (
 from src.storage.reclaim_policy import (
     RECLAIM_VERDICT_TTL_S,
     ReclaimContext,
+    anchor_is_stale,
+    auto_arm_decision,
     free_space_satisfied,
     reclaim_verdict,
 )
@@ -88,6 +91,11 @@ RECLAIM_JOURNAL_SCHEMA_VERSION = 1
 RECLAIM_AUTO_ENABLED_ENV = "BALUFFO_RECLAIM_AUTO_ENABLED"
 RECLAIM_MIN_INTERVAL_HOURS_ENV = "BALUFFO_RECLAIM_MIN_INTERVAL_HOURS"
 DEFAULT_RECLAIM_MIN_INTERVAL_HOURS = 168.0
+# A run that did not complete proves nothing about the database: it gets a short
+# pause so a transient cause (a restart, a busy disk, a racing write) can clear,
+# not the week of silence a finished reclaim earns.
+RECLAIM_RETRY_BACKOFF_HOURS = 1.0
+RECLAIM_RETRY_STATUSES = frozenset({"failed", "cancelled", "interrupted", "superseded"})
 RECLAIM_SCOPES = ("modal", "inline")
 # Poll the rebuild's status rather than subscribing to it: the request thread
 # must never wait on a copy, and the rebuild job already publishes its phase.
@@ -136,6 +144,42 @@ def read_reclaim_journal(data_dir: Path | str) -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def auto_reclaim_switch() -> bool | None:
+    """The operator's explicit switch, or ``None`` when the host may arm itself.
+
+    ``BALUFFO_RECLAIM_AUTO_ENABLED`` stays a kill switch: ``0`` (and its spelling
+    variants) disables automatic starts no matter what the journal has measured,
+    and ``1`` still forces them on. Unset or empty means "let the host decide", so
+    a fresh install can rehearse and arm itself without an operator editing an
+    environment file it has not read.
+
+    Anything else is **off**, not on: a typo such as ``disable`` or ``banana`` is a
+    failed attempt to configure the switch, and reading it as consent would turn
+    the kill switch into an enable switch. The recognised spellings are the ones
+    ``env_flag`` reads, so the two parsers cannot disagree about ``on``.
+    """
+    raw = re.sub(r"\s+", " ", str(os.getenv(RECLAIM_AUTO_ENABLED_ENV) or "")).strip().lower()
+    if not raw:
+        return None
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    # Includes the off spellings and every unrecognised value: fail closed.
+    return False
+
+
+def auto_reclaim_enabled(data_dir: Path | str) -> bool:
+    """Whether automatic starts are allowed here, by kill switch or by measurement."""
+    return _auto_enabled(read_reclaim_journal(data_dir))
+
+
+def _auto_enabled(journal: dict[str, Any] | None) -> bool:
+    switch = auto_reclaim_switch()
+    if switch is not None:
+        return switch
+    arm = (journal or {}).get("autoArm")
+    return bool(isinstance(arm, dict) and arm.get("armed"))
 
 
 def get_storage_reclaim_payload(
@@ -256,7 +300,9 @@ def _compute_verdict(data_dir: Path, journal: dict[str, Any] | None) -> dict[str
         last_rehearsal_gate_adequate=anchor.gate_adequate,
         relievable_bytes=artifact_bytes(orphaned_artifacts(data_dir, db_path)),
         cooldown_remaining_hours=_cooldown_remaining_hours(journal),
-        auto_enabled=env_flag(RECLAIM_AUTO_ENABLED_ENV, False),
+        auto_enabled=_auto_enabled(journal),
+        auto_switch=auto_reclaim_switch(),
+        auto_arm=(journal or {}).get("autoArm"),
     )
     return reclaim_verdict(preview, file_sizes, context=context)
 
@@ -271,6 +317,22 @@ def _anchor_age_s(measured_at: str) -> int | None:
     if parsed is None:
         return None
     return int((datetime.now(UTC) - parsed).total_seconds())
+
+
+def measured_anchor_stale(data_dir: Path | str) -> bool | None:
+    """The verdict's ``measuredStagingStale``, answered from the journal alone.
+
+    A trigger asks this on a beat and must not open a store for it, so it reads the
+    same journal stamp the verdict does and applies the same rule.
+    """
+    resolved = Path(data_dir)
+    anchor = measured_anchor(resolved, resolved / DEFAULT_DB_NAME)
+    return anchor_is_stale(_anchor_age_s(anchor.measured_at))
+
+
+def reclaim_run_active(data_dir: Path | str) -> bool:
+    """Whether a run's thread is still driving this data dir's reclaim journal."""
+    return _job_for(Path(data_dir).resolve()).active()
 
 
 @contextmanager
@@ -306,16 +368,32 @@ def _cooldown_remaining_hours(
 ) -> float:
     """Hours left on the automatic trigger's anti-thrash window.
 
-    Read from the reclaim journal's last non-rehearsal ``finishedAt``; a rehearsal
-    does not start the clock, and a run that has not finished has none.
+    Only a **completed** reclaim earns the full ``RECLAIM_MIN_INTERVAL_HOURS``
+    window: its work is done, so a repeat would copy a database that already fits.
+    A failed, cancelled, interrupted or superseded run says nothing about bloat,
+    so it earns a short retry pause instead — otherwise one transient failure
+    would silence automatic reclaim for a week while the disk keeps filling.
+    A rehearsal starts neither clock, and a run with no finish time has none.
     """
     if not journal or str(journal.get("mode") or "") == "rehearsal":
+        return 0.0
+    window_hours = _cooldown_window_hours(str(journal.get("status") or ""))
+    if window_hours <= 0:
         return 0.0
     finished = parse_iso(journal.get("finishedAt"))
     if finished is None:
         return 0.0
     elapsed_hours = max(0.0, ((now or datetime.now(UTC)) - finished).total_seconds() / 3600.0)
-    return max(0.0, _min_interval_hours() - elapsed_hours)
+    return max(0.0, window_hours - elapsed_hours)
+
+
+def _cooldown_window_hours(status: str) -> float:
+    """How long an outcome may hold the automatic trigger back."""
+    if status == "complete":
+        return _min_interval_hours()
+    if status in RECLAIM_RETRY_STATUSES:
+        return RECLAIM_RETRY_BACKOFF_HOURS
+    return 0.0
 
 
 def _min_interval_hours() -> float:
@@ -370,6 +448,9 @@ def _empty_state() -> dict[str, Any]:
         "measuredStagingBytes": 0,
         "measuredStagingAt": "",
         "lastRehearsalGateAdequate": None,
+        # The self-arming decision and the rehearsal evidence behind it; carried
+        # forward so a later real run does not erase the record that enabled auto.
+        "autoArm": None,
         "copyDigests": {},
         # A rehearsal reports its measurements here; a reclaim leaves it empty.
         "result": {},
@@ -420,6 +501,11 @@ class StorageReclaimJob:
                         if journal.get("lastRehearsalGateAdequate") is None
                         else bool(journal.get("lastRehearsalGateAdequate"))
                     ),
+                    "autoArm": (
+                        dict(journal["autoArm"])
+                        if isinstance(journal.get("autoArm"), dict)
+                        else None
+                    ),
                     "copyDigests": dict(journal.get("copyDigests") or {}),
                     "result": dict(journal.get("result") or {}),
                     "space": dict(journal.get("space") or {}),
@@ -435,6 +521,11 @@ class StorageReclaimJob:
                 error="the bridge restarted before the run finished",
                 phase=self._state["phase"],
             )
+
+    def active(self) -> bool:
+        """Whether a run is in flight: a journaled ``running`` alone is not activity."""
+        with self._lock:
+            return self._thread is not None and self._thread.is_alive()
 
     def space_fields(self) -> dict[str, Any]:
         with self._lock:
@@ -497,6 +588,7 @@ class StorageReclaimJob:
                     "measuredStagingBytes": int(self._state.get("measuredStagingBytes") or 0),
                     "measuredStagingAt": str(self._state.get("measuredStagingAt") or ""),
                     "lastRehearsalGateAdequate": self._state.get("lastRehearsalGateAdequate"),
+                    "autoArm": self._state.get("autoArm"),
                 }
                 self._write_journal_locked()
                 if hold:
@@ -665,6 +757,16 @@ class StorageReclaimJob:
             )
             if result is not None:
                 self._state["result"] = dict(result)
+            if str(self._state.get("mode") or "") == "rehearsal":
+                # Every rehearsal re-decides enablement, including a failed one: a
+                # host whose gate just proved thin must not stay armed on the old
+                # measurement.
+                self._state["autoArm"] = auto_arm_decision(
+                    status=status,
+                    result=self._state.get("result") or {},
+                    anchor_age_s=_anchor_age_s(str(self._state.get("measuredStagingAt") or "")),
+                    decided_at=str(self._state.get("finishedAt") or _now_iso()),
+                )
             self._write_journal_locked()
 
     def _evaluate(self, *, rehearsal: bool = False) -> tuple[str | None, dict[str, Any]]:
@@ -887,6 +989,7 @@ class StorageReclaimJob:
         self._settle(
             "complete",
             result={
+                "runId": run_id,
                 "stagingBytes": staging_bytes,
                 "reclaimedBytes": max(0, source_bytes - staging_bytes),
                 "measuredGateBytes": gate_bytes,

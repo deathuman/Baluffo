@@ -193,6 +193,89 @@ def test_a_rehearsal_does_not_start_the_cooldown() -> None:
     assert "cooldown" not in reclaim["verdict"]["blockers"]
 
 
+@pytest.mark.parametrize("status", sorted(storage_reclaim.RECLAIM_RETRY_STATUSES))
+def test_an_unfinished_run_earns_only_a_short_retry(status: str) -> None:
+    """A run that did not complete says nothing about bloat, so it cannot earn a week."""
+
+    with workspace_tmpdir(f"reclaim-cooldown-{status}") as data_dir:
+        _seed(data_dir)
+        _write_journal(
+            data_dir,
+            {
+                "status": status,
+                "mode": "reclaim",
+                "runId": "reclaim-retry",
+                "finishedAt": _finished_hours_ago(0.25),
+            },
+        )
+
+        reclaim = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+
+    remaining = reclaim["verdict"]["cooldownRemainingHours"]
+    assert 0.0 < remaining <= storage_reclaim.RECLAIM_RETRY_BACKOFF_HOURS
+    assert remaining < storage_reclaim.DEFAULT_RECLAIM_MIN_INTERVAL_HOURS
+    assert "cooldown" in reclaim["verdict"]["blockers"]
+
+
+def test_the_short_retry_expires_so_auto_can_try_again() -> None:
+    with workspace_tmpdir("reclaim-cooldown-retry-expired") as data_dir:
+        _seed(data_dir)
+        _write_journal(
+            data_dir,
+            {
+                "status": "failed",
+                "mode": "reclaim",
+                "runId": "reclaim-retry",
+                "finishedAt": _finished_hours_ago(2),
+            },
+        )
+
+        reclaim = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+
+    # Two hours after a failure, only the 168 h window could still block a start.
+    assert reclaim["verdict"]["cooldownRemainingHours"] == 0.0
+    assert "cooldown" not in reclaim["verdict"]["blockers"]
+
+
+def test_only_a_completed_reclaim_starts_the_full_window() -> None:
+    with workspace_tmpdir("reclaim-cooldown-complete") as data_dir:
+        _seed(data_dir)
+        _write_journal(
+            data_dir,
+            {
+                "status": "complete",
+                "mode": "reclaim",
+                "runId": "reclaim-done",
+                "finishedAt": _finished_hours_ago(2),
+            },
+        )
+
+        reclaim = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+
+    remaining = reclaim["verdict"]["cooldownRemainingHours"]
+    assert 164.0 <= remaining <= storage_reclaim.DEFAULT_RECLAIM_MIN_INTERVAL_HOURS
+    assert "cooldown" in reclaim["verdict"]["blockers"]
+
+
+def test_a_failed_rehearsal_starts_no_clock_at_all() -> None:
+    with workspace_tmpdir("reclaim-cooldown-rehearsal-failed") as data_dir:
+        _seed(data_dir)
+        _write_journal(
+            data_dir,
+            {
+                "status": "failed",
+                "mode": "rehearsal",
+                "runId": "rehearsal-failed",
+                "finishedAt": _finished_hours_ago(0.25),
+            },
+        )
+
+        reclaim = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+
+    assert reclaim["verdict"]["cooldownRemainingHours"] == 0.0
+    assert "cooldown" not in reclaim["verdict"]["blockers"]
+
+
 def test_an_unreadable_store_refuses_through_blockers(monkeypatch: pytest.MonkeyPatch) -> None:
     def failing_store(*_args: Any, **_kwargs: Any) -> Any:
         raise BaluffoStoreError("store unavailable")

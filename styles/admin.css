@@ -668,6 +668,108 @@ h2.admin-section-title {
   margin: 0;
 }
 
+.admin-storage-reclaim-panel {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  background: var(--surface-4);
+}
+
+.admin-storage-reclaim-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.admin-storage-reclaim-status {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+}
+
+.admin-storage-reclaim-status[data-tone="warning"] {
+  color: var(--tint-warning);
+}
+
+.admin-storage-reclaim-dialog {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.admin-storage-reclaim-line,
+.admin-storage-reclaim-note,
+.admin-storage-reclaim-detail,
+.admin-storage-reclaim-auto,
+.admin-storage-reclaim-blocked {
+  margin: 0;
+}
+
+.admin-storage-reclaim-auto {
+  color: var(--text-secondary);
+}
+
+.admin-storage-reclaim-line[data-tone="warning"],
+.admin-storage-reclaim-auto[data-tone="warning"],
+.admin-storage-reclaim-blocked {
+  color: var(--tint-warning);
+}
+
+.admin-storage-reclaim-detail {
+  color: var(--text-secondary);
+}
+
+.admin-storage-reclaim-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.admin-storage-reclaim-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(8, 11, 18, 0.72);
+}
+
+.admin-storage-reclaim-modal[hidden] {
+  display: none;
+}
+
+.admin-storage-reclaim-modal-card {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 30rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  background: var(--surface-4);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+}
+
+.admin-storage-reclaim-modal-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.admin-storage-reclaim-modal-body {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.admin-storage-reclaim-modal-status[data-tone="warning"] {
+  color: var(--tint-warning);
+}
+
 .baluffo-tooltip-portal.baluffo-tooltip-portal-warning {
   background: color-mix(in srgb, var(--tint-warning) 24%, rgba(12, 16, 24, 0.96));
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34),

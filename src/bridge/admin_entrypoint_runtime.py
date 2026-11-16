@@ -142,7 +142,16 @@ def _schedule_reclaim_startup_checks(released: list[dict[str, Any]], *, desktop_
         if not data_dir:
             continue
         try:
+            # An unarmed host, or one whose measurement has gone stale, rehearses
+            # first (same delay, so the first paint stays clear); a measured host
+            # goes straight to the startup check.
+            storage_reclaim_triggers.maintain_auto(
+                Path(data_dir),
+                hold=not desktop_mode,
+                delay_s=storage_reclaim_triggers.RECLAIM_TRIGGER_STARTUP_DELAY_S,
+            )
             storage_reclaim_triggers.schedule_startup_check(Path(data_dir), hold=not desktop_mode)
+            storage_reclaim_triggers.start_idle_probe(Path(data_dir), hold=not desktop_mode)
         except (OSError, RuntimeError, ValueError):
             # A trigger is opportunistic; startup keeps serving either way.
             continue

@@ -138,6 +138,30 @@
           </div>
           <div id="admin-storage-maintenance-status" data-ui="admin-storage-maintenance-status" class="admin-storage-maintenance-status" role="status" aria-live="polite"></div>
           <div id="admin-storage-reclaim-health" data-ui="admin-storage-reclaim-health" class="admin-storage-reclaim-health" role="status" aria-live="polite" hidden></div>
+          <section id="admin-storage-reclaim-panel" class="admin-storage-reclaim-panel" aria-label="Feed database shrink">
+            <div class="admin-storage-reclaim-panel-head">
+              <strong>Shrink the feed database</strong>
+              <span id="admin-storage-reclaim-status" data-ui="admin-storage-reclaim-status" class="admin-storage-reclaim-status" role="status" aria-live="polite">Not measured</span>
+            </div>
+            <div id="admin-storage-reclaim-dialog" data-ui="admin-storage-reclaim-dialog" class="admin-storage-reclaim-dialog" aria-live="polite">
+              <p class="admin-storage-reclaim-note">Run <strong>Rehearse</strong> to measure what a shrink would cost before anything is installed.</p>
+            </div>
+            <div class="admin-storage-reclaim-actions" role="group" aria-label="Feed database shrink actions">
+              <button id="admin-storage-reclaim-rehearse-btn" data-ui="admin-storage-reclaim-rehearse-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Copies the database once to measure what a reclaim would cost, validates the copy, then discards it. Installs and deletes nothing.">Rehearse</button>
+              <button id="admin-storage-reclaim-run-btn" data-ui="admin-storage-reclaim-run-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip-tone="warning" data-tooltip="Rebuilds around the published feed and installs the shrunken database. Refused if a write commits mid-copy.">Run</button>
+              <button id="admin-storage-reclaim-stop-btn" data-ui="admin-storage-reclaim-stop-btn" class="btn clear-filters-btn admin-storage-btn" type="button" hidden data-tooltip="Stops after the current database step. The live database is untouched until install.">Stop</button>
+            </div>
+          </section>
+          <div id="admin-storage-reclaim-modal" data-ui="admin-storage-reclaim-modal" class="admin-storage-reclaim-modal" role="dialog" aria-modal="true" aria-labelledby="admin-storage-reclaim-modal-title" hidden>
+            <div class="admin-storage-reclaim-modal-card">
+              <h3 id="admin-storage-reclaim-modal-title" class="admin-storage-reclaim-modal-title">Shrinking the feed database</h3>
+              <div id="admin-storage-reclaim-modal-body" data-ui="admin-storage-reclaim-modal-body" class="admin-storage-reclaim-modal-body" aria-live="polite"></div>
+              <div class="admin-storage-reclaim-actions" role="group" aria-label="Feed database shrink actions">
+                <button id="admin-storage-reclaim-modal-stop-btn" data-ui="admin-storage-reclaim-modal-stop-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Stops after the current database step. The live database is untouched until install.">Stop</button>
+                <button id="admin-storage-reclaim-modal-hide-btn" data-ui="admin-storage-reclaim-modal-hide-btn" class="btn clear-filters-btn admin-storage-btn" type="button" data-tooltip="Hides this dialog. The run continues; only Stop cancels it.">Hide</button>
+              </div>
+            </div>
+          </div>
           <div id="admin-storage-maintenance-preview" data-ui="admin-storage-maintenance-preview" class="admin-storage-maintenance-preview" aria-live="polite" hidden></div>
           <div id="admin-storage-maintenance-progress" data-ui="admin-storage-maintenance-progress" class="admin-storage-maintenance-progress" aria-live="polite" hidden></div>
           <section id="admin-storage-rebuild" data-ui="admin-storage-rebuild" class="admin-storage-maintenance-preview admin-storage-rebuild" aria-live="polite" aria-label="Current-feed rebuild">

@@ -59,9 +59,33 @@ test("admin markup declares the data-ui tokens the registry resolves", () => {
     for (const token of Object.values(bucket)) known.add(token);
   }
   const selectedByLiteral = ["admin-bulk-busy-message", "admin-advanced-bulk-actions"];
+  // The reclaim panel is behind a dynamic import and resolves its own controls
+  // from a literal id table (`ELEMENT_IDS`), so it carries no shell budget and no
+  // registry entry. The literals are checked against its source below rather than
+  // trusted: a rename there would otherwise pass this guard silently.
+  const reclaimPanelHandles = [
+    "admin-storage-reclaim-status",
+    "admin-storage-reclaim-dialog",
+    "admin-storage-reclaim-rehearse-btn",
+    "admin-storage-reclaim-run-btn",
+    "admin-storage-reclaim-stop-btn",
+    "admin-storage-reclaim-modal",
+    "admin-storage-reclaim-modal-body",
+    "admin-storage-reclaim-modal-stop-btn",
+    "admin-storage-reclaim-modal-hide-btn"
+  ];
+  const reclaimPanelSource = read("frontend/admin/app/storage-reclaim-panel.js");
+  for (const token of reclaimPanelHandles) {
+    assert.ok(
+      reclaimPanelSource.includes(`"${token}"`),
+      `storage-reclaim-panel.js must resolve data-ui="${token}" by that literal`
+    );
+  }
 
   const unknown = [...declared].filter(
-    (token) => !known.has(token) && !selectedByLiteral.includes(token)
+    (token) => !known.has(token)
+      && !selectedByLiteral.includes(token)
+      && !reclaimPanelHandles.includes(token)
   );
   assert.deepEqual(
     unknown,

@@ -134,9 +134,9 @@ repeat those samples; `?refresh=1` forces a fresh read.
 
 | Knob | Default | Behavior it changes |
 |---|---|---|
-| `BALUFFO_RECLAIM_AUTO_ENABLED` | `0` | Whether the operation may start without a click. Off until a rehearsal has reported numbers on that host (§9); `1` enables the trigger, and the verdict and manual controls are unchanged either way. |
+| `BALUFFO_RECLAIM_AUTO_ENABLED` | unset (self-arming) | Kill switch for automatic starts. Unset, one rehearsal runs and the journal records the decision and its evidence as `autoArm`; auto starts once it is adequate and the anchor fresh. `0` blocks even the rehearsal, `1` forces auto on, unrecognised values are off; manual controls are unchanged. |
 | `BALUFFO_RECLAIM_MIN_RATIO_PCT` | `10` | How much of the file must be reclaimable before it counts as bloat. |
-| `BALUFFO_RECLAIM_MIN_INTERVAL_HOURS` | `168` | Anti-thrash for the **automatic** trigger only, read from the reclaim journal's last non-rehearsal `finishedAt`; an explicit `auto: false` start passes it (§5). |
+| `BALUFFO_RECLAIM_MIN_INTERVAL_HOURS` | `168` | Anti-thrash for the **automatic** trigger only: 168 h after a **completed** reclaim, one hour after a failed, cancelled, interrupted or superseded one, so a transient failure cannot silence auto mode for a week; `auto: false` passes both (§5). |
 
 No other knobs. Constants in the policy leaf: the 512 MiB floor,
 `RECLAIM_VERDICT_TTL_S = 60`, and reuse of the existing free-space gate
@@ -193,7 +193,8 @@ evaluating → rebuild(queued … installing) → verifying → deleting-backup 
   the copy starts (`write_rebuild_journal`), so a nested reclaim record would be
   erased at exactly the wrong moment. The reclaim journal carries
   `{schemaVersion, runId, rebuildRunId, mode, status, phase, startedAt, finishedAt,
-  auto, expectedBackupBytes, copyDigests}`; `finishedAt` is the cooldown source.
+  auto, expectedBackupBytes, copyDigests}`; `finishedAt` dates the cooldown, whose
+  length depends on `status`: the full window for `complete`, one hour otherwise.
   It is written at every transition, read at startup, and **never** resumed into a
   delete. The rebuild journal remains the source of rebuild phase and crash
   recovery. A reclaim journal write is best-effort: memory settles the live run,
@@ -284,45 +285,47 @@ after 30 days. `.pre-rebuild` is never a candidate.
 
 1. After a fetch closeout transitions the task ledger to no active task. That is
    the seam `admin_task_lifecycle.finish_run/fail_run/cancel_run` already owns when
-   it releases the compaction hold. If retention is still running, the pre-flight
-   refuses and one delayed re-check runs after retention reaches a terminal state;
-   there is no existing per-fetch maintenance-completion callback to subscribe to.
-2. At startup, one delayed check ~60 s after `resume_storage_maintenance` returns,
-   so the first paint is not competing with a multi-GB copy. The pre-flight refuses
-   while the startup retention pass is still running; the same delayed re-check
-   handles that case.
+   it releases the compaction hold. If retention still runs, the pre-flight
+   refuses and one delayed re-check runs once it settles.
+2. At startup, one check ~60 s after `resume_storage_maintenance` returns, keeping
+   the first paint off a multi-GB copy; the same re-check waits out the startup
+   retention pass.
+3. Every three hours, an idle probe reads free space and the database file's size
+   and asks for the verdict only within 1.5× the copy gate (measured, or the 1 %
+   heuristic before one exists): a disk filling while nothing fetches is otherwise
+   never checked. The startup check and the idle beat rehearse once when the anchor
+   is stale, at most daily, skipped while a run is in flight or the copy does not
+   fit.
 
-Both run in the bridge, so a container with no Admin tab open still reclaims, and
-cooldown is the only guard against a repeat. Both run the §3 pre-flight first (steps
-1–4) and neither can reach step 5, so a full volume declines instead of spending the
-rollback copy on its own initiative.
+All three run in the bridge, so a container with no Admin tab open still reclaims;
+cooldown is the only guard against a repeat, and the probe starts nothing by itself.
+Each runs the §3 pre-flight first (steps 1–4) and none can reach step 5, so a full
+volume declines instead of spending the rollback copy on its own initiative.
 
-**Same triggers, two presentations — decided.** Both triggers run on container and
+**Same triggers, two presentations — decided.** All three run on container and
 desktop alike. `desktop_mode` (`--desktop-mode` / `BALUFFO_DESKTOP_MODE`, already on
 every health payload as `deps.desktop_mode`) selects the presentation and the
-concurrency guard, not whether the operation is allowed at all.
+concurrency guard, not whether the operation is allowed.
 
 - **Container**: the blocking modal of §6 plus `set_storage_reclaim_hold()`. The copy
-  there runs for tens of minutes on a store measured in hundreds of gigabytes, and a
-  fetch started mid-copy would burn it.
-- **Desktop**: the same operation, inline. No dialog is constructed, the Runtime
-  Database Storage panel renders the phases from the same `GET`, and the shipped
-  **Stop** control cancels by `runId`. No hold is taken, because a personal store is
-  tens to hundreds of megabytes: the copy is seconds, and losing a race costs
-  `superseded`, not a burned multi-minute copy. The 512 MiB floor means it rarely fires
-there; when it does, the quiet path is right.
+  runs for tens of minutes on a hundreds-of-gigabytes store; a fetch mid-copy would
+  burn it.
+- **Desktop**: the same operation, inline. No dialog is constructed; the panel
+  renders the phases from the same `GET`, and **Stop** cancels by `runId`. No hold is
+  taken: a personal store is tens to hundreds of megabytes, so the copy is seconds and
+  losing a race costs `superseded`, not a burned multi-minute copy. The 512 MiB floor
+  means it rarely fires; when it does, the quiet path is right.
 
 Two reasons the desktop modal is wrong rather than merely unnecessary. **The shell:**
-`admin.html` is an embedded page of the desktop app
+`admin.html` is embedded in the desktop app
 (`startup_probe_policy.EMBEDDED_PAGE_PROBES`, chromium-app mode), so the dialog blocks
-Jobs and Saved in the same window for an operation that takes seconds. **The
-lifetime:** the desktop bridge runs under the app, so closing the window cancels the
-run — the container's "closing the tab is safe" promise would be false on desktop, and
-a modal is the wrong thing to show for work that cannot outlive it.
+Jobs and Saved for seconds of work. **The lifetime:** closing the window cancels the
+run, so the container's "closing the tab is safe" promise would be false here, and a
+modal is wrong for work that cannot outlive it.
 
-Everything else is shared: the verdict, the §3 content-parity checks, the retained-copy
+Everything else is shared: the verdict, the §3 parity checks, the retained-copy
 rules, the full-disk order, and the cooldown. The manual **Rebuild current feed**,
-**Roll back** and **Delete old database** controls stay as the fallback on both.
+**Roll back** and **Delete old database** controls stay as the fallback.
 
 ## 5. Routes
 
@@ -347,13 +350,11 @@ immediately; the long work stays on the job thread.
 ## 6. Presentation: modal in the container, inline on desktop
 
 **The blocking dialog is container-only, and that follows from the cost model.** A
-container reclaim copies 0.5-1.5 GB off a 226 GB file on a slow disk, so the run lasts
-long enough that a user must not start another mutation mid-copy: the dialog blocks the
-app and the bridge hold blocks other tabs. Desktop is the opposite case - the copy is
-short and the bridge exits with the app, so a modal would interrupt for seconds and a
-hold would outlive the process; the run renders inline in the existing Runtime Database
-Storage panel from the same payload (`scope: "inline"`), cancelled by the shipped
-**Stop** by `runId`. `scope` is the only payload difference.
+container reclaim copies 0.5-1.5 GB on a slow disk, so a user must not start another
+mutation mid-copy: the dialog blocks the app and the bridge hold blocks other tabs.
+Desktop is the opposite: the copy is short and the bridge exits with the app, so the
+run renders inline in the Runtime Database Storage panel from the same payload
+(`scope: "inline"`), cancelled by **Stop** by `runId`. `scope` is the only difference.
 
 Three decisions follow from the run being backend-owned:
 
@@ -365,8 +366,11 @@ Three decisions follow from the run being backend-owned:
 - **The endpoint settles the outcome, not the modal.** A restart leaves the job reporting
   `idle`, so the modal's last sample cannot tell a landed swap from an interrupted one.
 - **No invented ETA.** The dialog shows staged bytes and a table count, and minutes only
-  from samples it trusts; a stalled disk reads as slow, never as "2 minutes remaining"
+  from samples it trusts; a stalled disk reads as slow, not "2 minutes remaining"
   forever.
+- **No polling.** The panel renders what it read and Refresh re-reads with
+  `?refresh=1`; **Rehearse**, **Run** and **Stop** call the same routes, so progress
+  arrives on demand, not on a timer.
 
 Element, focus, recovery, slow-copy and bridge-disappears mechanics are in
 [`automatic-storage-reclaim-experience-plan.md`](automatic-storage-reclaim-experience-plan.md).
@@ -404,11 +408,10 @@ the live database still validates, not that a function ran.
 2. `node --test tests/frontend/unit/admin-storage-reclaim-dialog.test.mjs` and the
    existing `admin-storage-rebuild-controller.test.mjs`, which must stay green —
    the manual path is not allowed to change.
-3. `python -m tools.repo_health` / the repo guardrail suite for route inventory,
-   docs links, and plan tripwires.
+3. `python -m tools.repo_health` for route inventory, docs links and plan tripwires.
 4. One live run against a **copy** of a bloated `data/` directory, printing the
-   verdict and blockers before anything is deleted, then a full run on that copy
-   with the modal observed.
+   verdict and blockers before anything is deleted, then a full run with the modal
+   observed.
 
 ### Dry run: the rehearsal that replaces the assumptions
 
@@ -441,14 +444,14 @@ its own, and a pass longer than the stall timeout would otherwise release the ho
 mid-run. The pulse only beats the hold the run already took: no phase, no renewal
 of the hard maximum.
 
-That is what makes auto mode honest: `BALUFFO_RECLAIM_AUTO_ENABLED` stays `0`, and the
-turn-on step is a rehearsal whose report shows staging size, reclaimed bytes and
-duration. Without it, auto reclaim spends an assumption.
+That is what makes auto mode honest: a host arms only from a rehearsal whose report
+shows staging size, reclaimed bytes and duration, and the decision is journaled with
+that evidence. Without it, auto reclaim spends an assumption.
 
 ## 10. Is retention keeping up?
 
-Reclaim is a shortcut for a retention backlog, so this section says how to tell a
-temporary backlog from a structural one. Counters ship in `/ops/storage-health` under
+Reclaim is a shortcut for a retention backlog, so this section tells a temporary
+backlog from a structural one. Counters ship in `/ops/storage-health` under
 `runtimeRetention`; `docs/storage-contract.md` defines them. Two frame the reading:
 `truncated` (surfaced as `completionState: "follow-up-scheduled"`) is draining, not
 stalled; `nothing-to-prune` beside a multi-GB feed table is the historical failure,
@@ -466,16 +469,16 @@ caught-up pass starts at zero candidates:
 **Recurrence threshold.** Reclaim is recurring when a completed run is followed by
 another `bloat` verdict at the first allowed re-run — 512 MiB and 10 % again inside the
 7-day cooldown, roughly **one superseded generation per week not removed** (both sizes
-0.5–1.5 GB). Then every cooldown buys a copy, and the fix is retention or the schedule.
+0.5–1.5 GB). Then every cooldown buys a copy; the fix is retention or the schedule.
 
 ## 11. Settled decisions
 
 Recorded so implementation does not relitigate them:
 
 - **Seven knobs → three.** The generation-count gate read a capped list (max 4) and
-  could never see a real backlog; the absolute-bytes knob collapsed into the 512 MiB
-  constant; the freelist ratio merged into `reclaimable`, which covers dropped
-  generations and free pages together.
+  blind to real backlog; the absolute-bytes knob became the 512 MiB constant;
+  the freelist ratio merged into `reclaimable`, covering dropped generations and free
+  pages together.
 - **The verdict is a conservative payload lower bound, not `tableSizes` minus the
   current generation.** Mixing allocated-page bytes with payload bytes would count
   current-feed indexes as reclaimable; the bounded all-history sample can only
@@ -485,14 +488,14 @@ Recorded so implementation does not relitigate them:
   as the run begins. `<db>.reclaim.json` also makes the latest non-rehearsal
   `finishedAt` the cooldown source and keeps a rehearsal out of rebuild recovery.
 - **The rehearsal is a background job with a scratch journal.** The copy helper
-  always writes a journal, so reusing the real path would either clobber recovery or
-  block an HTTP thread for the duration of a multi-GB copy.
-- **Cooldown and auto-disabled gate only automatic starts, per §5.** The manual
-  controls remain available when auto mode is off; an explicit start overrides both
-  trigger guards but never a safety blocker.
+  always writes a journal, so reusing the real path would clobber recovery or block an
+  HTTP thread for a multi-GB copy.
+- **Cooldown and auto-disabled gate only automatic starts, per §5.** Manual controls
+  stay available when auto mode is off; an explicit start overrides both trigger
+  guards, never a safety blocker.
 - **The age check was dropped.** Candidates carry no timestamp
-  (`_generations_before_current` orders by `feed_generation`), and adding one means new
-  SQL over the largest table to prove what retention already asserts.
+  (`_generations_before_current` orders by `feed_generation`); adding one means new SQL
+  over the largest table to prove what retention asserts.
 - **`needs-review` was dropped.** It duplicated journal `complete` plus **Delete old
   database**, whose route re-validates the feed — a terminal state and a resume test
   for no new capability.
@@ -509,9 +512,9 @@ Recorded so implementation does not relitigate them:
 - **The modal and the hold are container-only; the operation is not, per §4 and §6.**
   Desktop runs it inline and unheld: same copy, seconds not minutes, and a bridge that
   dies with the app.
-- **Auto-start is opt-in until measured, per §9.** The default is `0`, and the
-  turn-on step is a rehearsal report on that host: the one place the operation deletes
-  a rollback copy without a click, so it earns that with measured numbers.
+- **Auto-start arms itself on measurement, per §9.** A host with no recorded arm
+  rehearses once; the journal records the decision and its evidence, and the env var
+  stays a kill switch, not the enablement step.
 
 ## 12. Stop conditions
 
@@ -522,6 +525,6 @@ Stop and ask instead of improvising when:
 - the retained copy is missing after a completed rebuild, or rollback is unavailable;
 - a non-feed digest mismatches at either checkpoint, or verification hashes/counts
   differ from the journal;
-- the modal cannot render the active run on load (stale route, older build);
+- the modal cannot render the active run on load (stale route or build);
 - a rehearsal leaves its scratch journal or staging file behind, or the reclaim
   journal and rebuild journal disagree about the active `rebuildRunId`.
