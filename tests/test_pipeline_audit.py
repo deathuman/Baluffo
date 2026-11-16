@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,67 @@ def test_summarize_fetch_counts_provider_url_as_old_url_surface(tmp_path: Path) 
     assert int(summary.get("siteChangedDiagnosedCount") or 0) == 1
     assert int(summary.get("siteChangedMissingOldUrlCount") or 0) == 0
     assert int(summary.get("parserRegressionQueueCount") or 0) == 0
+
+
+def test_summarize_fetch_distinguishes_fallback_calls_pages_sources_and_queue(
+    tmp_path: Path,
+) -> None:
+    queue_path = tmp_path / "jobs-browser-fallback-queue.json"
+    queue_path.write_text(
+        json.dumps([{"pageUrl": f"https://example.com/page-{index}"} for index in range(16)]),
+        encoding="utf-8",
+    )
+    fetch_report = {
+        "summary": {"successfulSources": 0, "failedSources": 2, "outputCount": 0},
+        "runtime": {
+            "timingSummary": {"totalDurationMs": 1000},
+            "browserFallbackDemand": {
+                "attempts": 390,
+                "refused": 388,
+                "pages": 2,
+                "servedWithHtml": 0,
+                "servedEmpty": 2,
+                "servedEmptyEnvironment": 2,
+                "servedEmptyPage": 0,
+            },
+        },
+        "sourceHealth": {
+            "browserFallbackAttemptedSources": 207,
+            "browserFallbackFailedSources": 207,
+        },
+        "sources": [],
+        "outputs": {"report": str(tmp_path / "jobs-fetch-report.json")},
+    }
+
+    summary = audit.summarize_fetch(fetch_report, [])
+
+    assert summary["browserFallbackAccounting"] == {
+        "calls": 390,
+        "refusedCalls": 388,
+        "pageAttempts": 2,
+        "sourceRows": 207,
+        "failedSourceRows": 207,
+        "queuePages": 16,
+    }
+    assert summary["browserFallbackCalls"] == 390
+    assert summary["browserFallbackPageAttempts"] == 2
+    assert summary["browserFallbackSourceRows"] == 207
+    assert summary["browserFallbackQueueCount"] == 16
+
+
+def test_summarize_fetch_derives_legacy_page_attempts(tmp_path: Path) -> None:
+    fetch_report = {
+        "summary": {},
+        "runtime": {
+            "browserFallbackDemand": {"attempts": 5, "refused": 3},
+        },
+        "sources": [],
+        "outputs": {"report": str(tmp_path / "jobs-fetch-report.json")},
+    }
+
+    summary = audit.summarize_fetch(fetch_report, [])
+
+    assert summary["browserFallbackPageAttempts"] == 2
 
 
 def test_render_markdown_includes_key_sections() -> None:

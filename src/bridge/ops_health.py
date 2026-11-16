@@ -351,6 +351,61 @@ def derive_ops_severity(alerts: list[dict[str, Any]]) -> str:
     return "healthy"
 
 
+def browser_fallback_health_alert(
+    value: Any,
+    *,
+    environment_blocked: bool = False,
+    environment_blocked_sources: int = 0,
+    now_iso: str = "",
+) -> dict[str, Any] | None:
+    """Turn a failed browser probe into the warning both summary surfaces show.
+
+    A failed probe is not a healthy fetch: the browser lane may have produced no
+    rendered HTML, and a preflight-blocked run skipped it for every source. The
+    fetch KPI used to answer `status: "healthy"` because only history and storage
+    alerts contributed severity. This alert makes the failure visible without
+    pretending the board data itself failed.
+    """
+    health = as_json_object(value)
+    probe_failed = value is False or health.get("ok") is False
+    blocked_sources = max(0, _safe_int(environment_blocked_sources, 0))
+    # A positive count is itself proof of an environment block. Callers project
+    # the flag and the count independently, so neither alone may hide the warning.
+    environment_blocked = environment_blocked or blocked_sources > 0
+    if not probe_failed and not environment_blocked:
+        return None
+    stage = str(health.get("stage") or "").strip()
+    if not stage:
+        stage = "preflight" if environment_blocked else "unknown"
+    error_type = str(health.get("errorType") or "").strip()
+    error = " ".join(
+        str(health.get(key) or "") for key in ("error", "lastLaunchError", "lastNavigationError")
+    ).strip()
+    error = " ".join(error.split())[:240]
+
+    if environment_blocked:
+        message = f"Browser fallback environment blocked at {stage}"
+        if blocked_sources:
+            message += f" for {blocked_sources} source{'s' if blocked_sources != 1 else ''}"
+    else:
+        message = f"Browser fallback probe failed at {stage}"
+    if error_type:
+        message += f" ({error_type})"
+    if error:
+        message += f": {error}"
+
+    return {
+        "id": "browser_fallback_health",
+        "severity": "warning",
+        "message": message,
+        "value": blocked_sources if environment_blocked else stage,
+        "triggeredAt": str(health.get("lastFailureAt") or now_iso),
+        # Appended after acknowledgement resolution, like the storage alert: a probe
+        # failure is current evidence, not a dismissible historical warning.
+        "dismissible": False,
+    }
+
+
 def _finalize_alerts(
     active_conditions: list[dict[str, Any]],
     *,

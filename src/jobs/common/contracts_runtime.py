@@ -41,6 +41,17 @@ _float_or_zero = _coerce_as_float
 
 _REGISTRY_ASSET_AUDIT_SOURCES_LIMIT = 20
 _REGISTRY_ASSET_AUDIT_SAMPLES_LIMIT = 3
+_BROWSER_FORENSICS_EVENT_KEYS = (
+    "low",
+    "high",
+    "max",
+    "oom",
+    "oom_kill",
+    "failcnt",
+    "oom_kill_disable",
+    "under_oom",
+)
+_BROWSER_STDERR_TAIL_LIMIT = 8192
 
 
 def _normalize_registry_asset_page_audit(value: Any) -> dict[str, Any]:
@@ -269,11 +280,90 @@ def _normalize_phase_timings(rows: Any) -> list[dict[str, Any]]:
     return result
 
 
+def _normalize_browser_forensics_events(value: Any) -> dict[str, int]:
+    src = as_json_object(value)
+    return {
+        key: _clamped_int(src.get(key), 0, 0) for key in _BROWSER_FORENSICS_EVENT_KEYS if key in src
+    }
+
+
+def _normalize_browser_forensics(value: Any) -> dict[str, Any]:
+    """Allowlist-clamp the bounded S2.5 browser-death forensics block."""
+    src = as_json_object(value)
+    if not src:
+        return {}
+    cgroup_src = as_json_object(src.get("cgroup"))
+    cgroup: dict[str, Any] = {
+        "available": bool(cgroup_src.get("available")),
+        "version": clean_text(cgroup_src.get("version"))[:8],
+        "path": clean_text(cgroup_src.get("path"))[:512],
+        "memoryMax": clean_text(cgroup_src.get("memoryMax"))[:32],
+        "memoryMaxBytes": _clamped_int(cgroup_src.get("memoryMaxBytes"), 0, 0),
+        "memoryCurrentBytes": _clamped_int(cgroup_src.get("memoryCurrentBytes"), 0, 0),
+        "memoryPeakBytes": _clamped_int(cgroup_src.get("memoryPeakBytes"), 0, 0),
+        "events": _normalize_browser_forensics_events(cgroup_src.get("events")),
+        "eventsBefore": _normalize_browser_forensics_events(cgroup_src.get("eventsBefore")),
+        "eventsAfter": _normalize_browser_forensics_events(cgroup_src.get("eventsAfter")),
+        "eventsDelta": _normalize_browser_forensics_events(cgroup_src.get("eventsDelta")),
+        "oomKilledDuringProbe": bool(cgroup_src.get("oomKilledDuringProbe")),
+        "oomKillObserved": bool(cgroup_src.get("oomKillObserved")),
+        "reason": clean_text(cgroup_src.get("reason"))[:200],
+    }
+    shm_src = as_json_object(src.get("shm"))
+    shm = {
+        "available": bool(shm_src.get("available")),
+        "path": clean_text(shm_src.get("path"))[:256],
+        "sizeBytes": _clamped_int(shm_src.get("sizeBytes"), 0, 0),
+        "freeBytes": _clamped_int(shm_src.get("freeBytes"), 0, 0),
+        "usedBytes": _clamped_int(shm_src.get("usedBytes"), 0, 0),
+        "freePercent": min(100, _clamped_int(shm_src.get("freePercent"), 0, 0)),
+        "reason": clean_text(shm_src.get("reason"))[:200],
+    }
+    stderr_src = as_json_object(src.get("browserStderr"))
+    stderr = {
+        "available": bool(stderr_src.get("available")),
+        "source": clean_text(stderr_src.get("source"))[:64],
+        "reason": clean_text(stderr_src.get("reason"))[:200],
+        "bytes": _clamped_int(stderr_src.get("bytes"), 0, 0),
+        "truncated": bool(stderr_src.get("truncated")),
+        "tail": clean_text(stderr_src.get("tail"))[:_BROWSER_STDERR_TAIL_LIMIT],
+    }
+    disconnect_src = as_json_object(src.get("disconnect"))
+    disconnect = {
+        "observed": bool(disconnect_src.get("observed")),
+        "at": clean_text(disconnect_src.get("at"))[:64],
+        "duringProbe": bool(disconnect_src.get("duringProbe")),
+        "intentional": bool(disconnect_src.get("intentional")),
+        "count": _clamped_int(disconnect_src.get("count"), 0, 0),
+    }
+    return {
+        "available": bool(src.get("available")),
+        "capturedAt": clean_text(src.get("capturedAt"))[:64],
+        "cgroup": cgroup,
+        "shm": shm,
+        "browserStderr": stderr,
+        "disconnect": disconnect,
+    }
+
+
+def _browser_forensics_payload(value: Any) -> dict[str, Any]:
+    forensics = _normalize_browser_forensics(value)
+    return {"forensics": forensics} if forensics else {}
+
+
 def normalize_runtime_payload(
     runtime: dict[str, Any], *, selected_source_count: int
 ) -> dict[str, Any]:
     src = as_json_object(runtime)
     lifecycle = as_json_object(src.get("lifecycle"))
+    demand_src = as_json_object(src.get("browserFallbackDemand") or {})
+    demand_attempts = _clamped_int(demand_src.get("attempts"), 0, 0)
+    demand_refused = _clamped_int(demand_src.get("refused"), 0, 0)
+    demand_pages = (
+        _clamped_int(demand_src.get("pages"), 0, 0)
+        if demand_src.get("pages") is not None
+        else max(0, demand_attempts - demand_refused)
+    )
     payload = {
         "selectedSourceCount": _clamped_int(
             src.get("selectedSourceCount"), selected_source_count, 0
@@ -304,34 +394,28 @@ def normalize_runtime_payload(
             src.get("browserFallbackCooldownMinutes"), 0, 0
         ),
         "browserFallbackEnabled": bool(src.get("browserFallbackEnabled")),
+        "browserFallbackEnvironmentBlocked": bool(src.get("browserFallbackEnvironmentBlocked")),
+        "browserFallbackEnvironmentBlockedSources": _clamped_int(
+            src.get("browserFallbackEnvironmentBlockedSources"), 0, 0
+        ),
+        "browserFallbackQueueCount": _clamped_int(src.get("browserFallbackQueueCount"), 0, 0),
         "browserFallbackCap": _clamped_int(src.get("browserFallbackCap"), 0, 0),
         "browserFallbackDemand": {
-            "attempts": _clamped_int(
-                as_json_object(src.get("browserFallbackDemand") or {}).get("attempts"), 0, 0
-            ),
-            "refused": _clamped_int(
-                as_json_object(src.get("browserFallbackDemand") or {}).get("refused"), 0, 0
-            ),
-            "servedWithHtml": _clamped_int(
-                as_json_object(src.get("browserFallbackDemand") or {}).get("servedWithHtml"), 0, 0
-            ),
-            "servedEmpty": _clamped_int(
-                as_json_object(src.get("browserFallbackDemand") or {}).get("servedEmpty"), 0, 0
-            ),
+            "attempts": demand_attempts,
+            "refused": demand_refused,
+            "pages": demand_pages,
+            "servedWithHtml": _clamped_int(demand_src.get("servedWithHtml"), 0, 0),
+            "servedEmpty": _clamped_int(demand_src.get("servedEmpty"), 0, 0),
             # The empty-served split: a browser that could not launch is an environment
             # failure and trips the cooldown, while a page that rendered with nothing in it is
             # a fact about the board. One bucket for both is why the refused population could
             # not be read at all.
             "servedEmptyEnvironment": _clamped_int(
-                as_json_object(src.get("browserFallbackDemand") or {}).get(
-                    "servedEmptyEnvironment"
-                ),
+                demand_src.get("servedEmptyEnvironment"),
                 0,
                 0,
             ),
-            "servedEmptyPage": _clamped_int(
-                as_json_object(src.get("browserFallbackDemand") or {}).get("servedEmptyPage"), 0, 0
-            ),
+            "servedEmptyPage": _clamped_int(demand_src.get("servedEmptyPage"), 0, 0),
         },
         "registryAssetPageAudit": _normalize_registry_asset_page_audit(
             src.get("registryAssetPageAudit")
@@ -354,7 +438,7 @@ def normalize_runtime_payload(
     }
     health = as_json_object(src.get("browserFallbackHealth"))
     if health:
-        payload["browserFallbackHealth"] = {
+        browser_health: dict[str, Any] = {
             "ok": bool(health.get("ok")),
             "stage": clean_text(health.get("stage"))[:32],
             "error": clean_text(health.get("error"))[:2000],
@@ -368,6 +452,8 @@ def normalize_runtime_payload(
             "lastNavigationError": clean_text(health.get("lastNavigationError"))[:2000],
             "lastNavigationErrorType": clean_text(health.get("lastNavigationErrorType"))[:160],
         }
+        browser_health.update(_browser_forensics_payload(health.get("forensics")))
+        payload["browserFallbackHealth"] = browser_health
     if lifecycle:
         payload["lifecycle"] = {
             "owner": clean_text(lifecycle.get("owner")),

@@ -1066,8 +1066,9 @@ tombstone, suppress, reject, or delete sources.
 | `zeroKeptNeedsReviewSources` | `number` | Zero-kept rows not classified as a known legitimate empty/no-openings result. |
 | `zeroKeptNeedsReviewNonFailedSources` | `number` | The subset of `zeroKeptNeedsReviewSources` with `status!=error`, separating review work from actual failed sources. |
 | `browserFallbackRecommendedSources` | `number` | Rows with `browserFallbackRecommended=true`. |
-| `browserFallbackAttemptedSources` | `number` | Rows where a browser fallback was actually launched, excluding recommendations skipped by budget or a missing helper. |
-| `browserFallbackFailedSources` | `number` | Attempted rows whose browser fallback returned no HTML. |
+| `browserFallbackAttemptedSources` | `number` | Unique source report rows with at least one browser-fallback call, including calls the breaker refused. Not a page or call count. |
+| `browserFallbackFailedSources` | `number` | Those source rows whose fallback calls returned no HTML, including refusals. |
+| `browserFallbackEnvironmentBlockedSources` | `number` | Attempted rows whose browser fallback returned the run-level `environment blocked` error. |
 | `browserFallbackLastRefusalReason` | `string` | Why the last fallback attempt was refused (`cooldown_active`); empty when the last attempt was served. Never overwrites `browserFallbackLastError`, which is the environment cause that closed the breaker. |
 | `browserFallbackLastRefusedAt` | `string` | Timestamp of the last refusal. |
 | `browserFallbackRunLastError` | `string` | **Run-level**: the environment error that closed the breaker, stamped only on rows with `browserFallbackRecommended=true`. The cause belongs to the run, not the row, which is why the field is `Run`-prefixed. |
@@ -1098,7 +1099,9 @@ during canonicalization, for example because every row is missing `jobLink`, rem
 ### Browser fallback queue provenance
 
 The browser fallback queue (`jobs-browser-fallback-queue.json`) carries additive per-row
-provenance alongside its existing source, page, classification, and reason fields.
+provenance alongside its existing source, page, classification, and reason fields. Its
+row count is a count of unique canonical queue pages, not source rows: `build_browser_fallback_queue`
+deduplicates by canonical page, so several source rows can contribute one queue page.
 `browserFallbackAttempted` and `browserFallbackUsed` are the actual per-row outcomes;
 `browserFallbackProvenance` is `attempted_used`, `attempted_not_used`, `not_attempted`, or
 `used_without_attempt`. `browserFallbackAttemptError` and `browserFallbackSkippedReason` copy the
@@ -1649,21 +1652,79 @@ same facts as scalars so they survive task-row compaction. The holder operation,
 
 `runtime.browserFallbackDemand` is an allowlisted block: absent input normalizes to a
 zeroed block rather than being omitted. It counts wrapped `try_playwright` calls per fetch
-run, where attempts = refused + servedWithHtml + servedEmpty.
+run, where attempts = refused + pages, and pages normally equals
+servedWithHtml + servedEmpty. A call, a page attempt, and a source row are deliberately
+separate dimensions: one source can issue several fallback calls, and a refused call never
+reaches a page.
 
 | Field | Type | Description |
 |---|---|---|
-| `attempts` | `number` | Every wrapped fallback call. |
-| `refused` | `number` | Attempts the circuit breaker refused while in cooldown. |
-| `servedWithHtml` | `number` | Attempts that returned HTML. |
+| `attempts` | `number` | Every wrapped fallback call, including calls refused before the browser. |
+| `refused` | `number` | Calls the circuit breaker refused while in cooldown. |
+| `pages` | `number` | Calls that passed the breaker and reached the browser lane; a page attempt can still launch-fail or render empty. |
+| `servedWithHtml` | `number` | Page attempts that returned HTML. |
 | `servedEmpty` | `number` | Attempts that returned no HTML; the sum of the two fields below. |
 | `servedEmptyEnvironment` | `number` | Empty because the browser could not run (the environment-failure kind, and the only kind that opens the cooldown). |
 | `servedEmptyPage` | `number` | Empty because the rendered page held no jobs (a fact about the board, not the browser). |
+
+`runtime.browserFallbackQueueCount` is the number of rows in
+`jobs-browser-fallback-queue.json` after canonical-page deduplication. It is a page count,
+not a source count; the audit report exposes it as `browserFallbackQueuePages` together with
+the call, page-attempt, and unique-source-row counters.
 
 The two split fields are additive and were absent before v0.3.014; a report written without
 them normalizes both to `0`. Splitting `servedEmpty` is what makes the refused population
 readable — 716 of 843 attempts were refused in the v8 replay and nothing said whether that
 was a closed breaker or a missing browser.
+
+### Browser environment-blocked preflight
+
+`runtime.browserFallbackEnvironmentBlocked` is a boolean (normalized to `false` when absent).
+Before sources execute, the fetch run probes the browser once and retries once. If neither
+probe can launch and render, the flag is `true`, `runtime.browserFallbackHealth` carries the
+failed probe's stage and error, and both browser lanes return
+`browser fallback unavailable (environment blocked)` without calling the pool or breaker.
+This keeps `browserFallbackDemand.attempts` and `pages` at `0`: the run did not ask the
+browser for anything, so it must not look like refused demand. The flag and demand counters are carried
+in `jobs-fetch-report-summary.json`; the sidecar also carries
+`browserFallbackEnvironmentBlockedSources` (from `sourceHealth` or the runtime rollup). The
+KPI exposes them as `kpis.browserFallbackEnvironmentBlocked` and
+`kpis.browserFallbackEnvironmentBlockedSources`, and a failed or blocked browser probe
+adds a `browser_fallback_health` warning alert so the fetch KPI does not report healthy.
+
+### Browser-death forensics
+
+`runtime.browserFallbackHealth.forensics` is additive, allowlisted, and bounded. It is
+populated by the health probe when browser forensics are enabled (the default; set
+`BALUFFO_BROWSER_FORENSICS=0` to disable). It records read-only container evidence for the
+OOM-versus-crash question; unavailable reads carry `available: false` and a `reason` rather
+than failing the health probe.
+
+| Field | Type | Description |
+|---|---|---|
+| `available` | `boolean` | At least one source produced evidence. |
+| `capturedAt` | `string` | Timestamp of the after-probe snapshot. |
+| `cgroup.memoryMaxBytes` | `number` | cgroup memory limit; `0` when `memoryMax` is `max`/unlimited. |
+| `cgroup.memoryMax` | `string` | Raw `memory.max` value (`max` or bytes). |
+| `cgroup.memoryCurrentBytes` / `memoryPeakBytes` | `number` | Current and peak cgroup usage. |
+| `cgroup.eventsBefore` / `eventsAfter` | `object` | `memory.events` counters, including `oom`/`oom_kill`. |
+| `cgroup.eventsDelta` | `object` | Counter movement across the probe. |
+| `cgroup.oomKilledDuringProbe` | `boolean` | True when `oom_kill` moved during the probe: direct cgroup-OOM evidence. |
+| `cgroup.oomKillObserved` | `boolean` | True when the after-snapshot still carries a nonzero `oom_kill` (including a pre-probe OOM). |
+| `shm.sizeBytes` / `freeBytes` / `usedBytes` / `freePercent` | `number` | `/dev/shm` capacity and availability at the after snapshot. |
+| `browserStderr.source` | `string` | `chromium_stderr` for the pipe-backed raw-stderr sink; `chromium_log_file` only when the Playwright driver hook is unavailable. |
+| `browserStderr.tail` | `string` | At most 8 KiB of the latest raw browser stderr tail, truncated when more was emitted. |
+| `disconnect.observed` / `duringProbe` / `intentional` | `boolean` | Whether Chromium emitted `disconnected`, whether the probe was active, and whether the close was intentional. |
+| `disconnect.at` / `count` | `string` / `number` | First disconnect timestamp and count for the current browser. |
+
+The block never changes reactor policy, browser flags, or source outcomes. A nonzero
+`oomKilledDuringProbe` is the only field that directly proves a kernel cgroup kill; a clean
+delta points at `/dev/shm`, a Chromium crash, or the GPU/crashpad path instead. The raw-stderr
+sink is a pipe with a reader thread that keeps only the latest 8 KiB, so crashpad/GPU lines
+survive without letting the browser block on a full pipe or growing the report. When a death
+triggers the pool's relaunch, the death block is captured before the live disconnect snapshot
+is reset and the raw-stderr sink is closed, so the later health probe still carries the death's
+stderr, disconnect signal, and cgroup evidence.
 
 ### Advisory registry hygiene audit
 

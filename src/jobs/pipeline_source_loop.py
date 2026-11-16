@@ -17,7 +17,11 @@ from threading import Lock
 from typing import Any, Protocol, cast
 
 from src.jobs import pipeline_root
-from src.jobs.browser_fallback import REFUSAL_ERROR_TEXT, BrowserFallbackCircuitBreaker
+from src.jobs.browser_fallback import (
+    ENVIRONMENT_BLOCKED_ERROR_TEXT,
+    REFUSAL_ERROR_TEXT,
+    BrowserFallbackCircuitBreaker,
+)
 from src.jobs.browser_fallback_pool import BrowserFallbackPool, browser_pool_enabled
 from src.jobs.common import config as common_config
 from src.jobs.models import CanonicalJob
@@ -39,6 +43,9 @@ from .pipeline_source_results import execute_loader
 # more than once a minute, so a browser that is genuinely gone is not relaunched for
 # every source that asks for fallback.
 _MIDRUN_BROWSER_PROBE_INTERVAL_SECONDS = 60
+# One probe plus one bounded retry. A browser that cannot render twice in a row is an
+# environment failure for this run, not demand worth spending on every browser source.
+_BROWSER_PREFLIGHT_MAX_ATTEMPTS = 2
 
 
 class _RootLike(Protocol):
@@ -196,7 +203,6 @@ def run_source_execution_stage(
             ),
             pool=pool,
         )
-        _emit_browser_fallback_status(bool(config.show_progress), guarded_try_playwright, config)
         guarded_try_playwright_json = _browser_fallback_capture_runtime(
             root_mod,
             browser_fallback_guard,
@@ -208,11 +214,42 @@ def run_source_execution_stage(
             ),
             pool=pool,
         )
-        guarded_try_playwright, guarded_try_playwright_json = _wire_mid_run_browser_recovery(
-            pool,
-            browser_fallback_guard,
+        preflight_blocked = False
+        if (
+            pool is not None
+            and browser_fallback_guard is not None
+            and (guarded_try_playwright is not None or guarded_try_playwright_json is not None)
+        ):
+            preflight_health, preflight_blocked, preflight_attempts = _run_browser_preflight(
+                pool, browser_fallback_guard
+            )
+            if preflight_blocked:
+                browser_fallback_guard.mark_environment_blocked()
+                guarded_try_playwright = _environment_blocked_try_playwright
+                guarded_try_playwright_json = _environment_blocked_try_playwright_json
+                pool.close()
+                pool = None
+                if runtime_payload is not None:
+                    runtime_payload["browserFallbackEnvironmentBlocked"] = True
+                    if preflight_health is not None:
+                        runtime_payload["browserFallbackHealth"] = preflight_health
+                stage = clean_text((preflight_health or {}).get("stage")) or "unknown"
+                emit_progress_line(
+                    "[jobs_fetcher] WARN browserFallbackEnvironmentBlocked=true "
+                    f"attempts={preflight_attempts} stage={stage}"
+                )
+        if not preflight_blocked:
+            guarded_try_playwright, guarded_try_playwright_json = _wire_mid_run_browser_recovery(
+                pool,
+                browser_fallback_guard,
+                guarded_try_playwright,
+                guarded_try_playwright_json,
+            )
+        _emit_browser_fallback_status(
+            bool(config.show_progress),
             guarded_try_playwright,
-            guarded_try_playwright_json,
+            config,
+            environment_blocked=preflight_blocked,
         )
 
         def execute_started(source_name, loader):
@@ -266,6 +303,7 @@ def run_source_execution_stage(
             runtime_payload["browserFallbackDemand"] = {
                 "attempts": int(browser_fallback_guard.demand_attempts),
                 "refused": int(browser_fallback_guard.demand_refused),
+                "pages": int(browser_fallback_guard.demand_pages),
                 "servedWithHtml": int(browser_fallback_guard.demand_served_with_html),
                 "servedEmpty": int(browser_fallback_guard.demand_served_empty),
                 # `servedEmpty` alone was one bucket for two opposite findings: a browser
@@ -279,6 +317,10 @@ def run_source_execution_stage(
                 "servedEmptyPage": int(browser_fallback_guard.demand_served_empty_page),
             }
         _stamp_browser_fallback_cause(source_reports, browser_fallback_guard)
+        if runtime_payload is not None:
+            runtime_payload["browserFallbackEnvironmentBlockedSources"] = (
+                _environment_blocked_source_count(source_reports)
+            )
     finally:
         if heap_stop is not None:
             heap_stop.set()
@@ -344,6 +386,53 @@ def _browser_health_probe(
         + (" " + " ".join(retained) if retained else "")
     )
     return dict(health)
+
+
+def _run_browser_preflight(
+    pool: BrowserFallbackPool | None,
+    guard: BrowserFallbackCircuitBreaker | None,
+    *,
+    max_attempts: int = _BROWSER_PREFLIGHT_MAX_ATTEMPTS,
+) -> tuple[dict[str, Any] | None, bool, int]:
+    """Probe the browser once before sources run, with one bounded retry.
+
+    Returns ``(health, blocked, attempts)``. A run whose first probe cannot launch or
+    render gets one fresh attempt; if that also fails, the run is environment-blocked
+    and neither browser lane should touch the pool or breaker again. A successful probe
+    clears a cooldown carried in from an earlier run.
+    """
+    if pool is None or guard is None:
+        return None, False, 0
+    attempts = 0
+    health: dict[str, Any] | None = None
+    for _ in range(max(1, int(max_attempts or 1))):
+        attempts += 1
+        try:
+            health = _browser_health_probe(pool, guard, force=True)
+        except Exception as exc:  # noqa: BLE001 - a failed probe must not abort the run
+            health = {
+                "ok": False,
+                "stage": "preflight",
+                "error": str(exc),
+                "errorType": type(exc).__name__,
+                "durationMs": 0,
+            }
+        if health is None:
+            return None, False, attempts
+        if bool(health.get("ok")):
+            return health, False, attempts
+    return health, health is not None and not bool(health.get("ok")), attempts
+
+
+def _environment_blocked_try_playwright(_url: str, _timeout_s: int) -> tuple[str, str]:
+    """A browser lane that answers without touching the pool or the breaker."""
+    return "", ENVIRONMENT_BLOCKED_ERROR_TEXT
+
+
+def _environment_blocked_try_playwright_json(
+    _url: str, _timeout_s: int
+) -> tuple[str, str, list[tuple[str, str]]]:
+    return "", ENVIRONMENT_BLOCKED_ERROR_TEXT, []
 
 
 class _MidRunBrowserProbe:
@@ -522,6 +611,24 @@ def _row_recommends_browser_fallback(row: Mapping[str, Any]) -> bool:
     return False
 
 
+def _environment_blocked_source_count(source_reports: list[dict[str, Any]] | None) -> int:
+    count = 0
+    for row in source_reports or []:
+        if not isinstance(row, dict):
+            continue
+        text = " ".join(
+            clean_text(row.get(key))
+            for key in (
+                "browserFallbackAttemptError",
+                "browserFallbackRunLastError",
+                "error",
+            )
+        ).lower()
+        if "environment blocked" in text:
+            count += 1
+    return count
+
+
 def _browser_fallback_runtime(
     root_mod: _RootLike,
     source_state_rows: dict[str, dict[str, Any]] | None,
@@ -593,8 +700,15 @@ def _emit_browser_fallback_status(
     show_progress: bool,
     guarded_try_playwright: Callable[[str, int], tuple[str, str]] | None,
     config: Any,
+    *,
+    environment_blocked: bool = False,
 ) -> None:
     if not show_progress:
+        return
+    if environment_blocked:
+        emit_progress_line(
+            "[jobs_fetcher] INFO browserFallbackEnabled=true browserFallbackEnvironmentBlocked=true"
+        )
         return
     if guarded_try_playwright is not None:
         fallback_cap = int(

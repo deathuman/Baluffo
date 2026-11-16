@@ -490,7 +490,7 @@ row missing availability state/evidence or any identity spanning multiple URL fi
 To see how much the job count changed after scraping improvements:
 
 1. Total public jobs: `data/jobs-unified-light.json` - count the top-level array length (or `keptCount` / output count from the pipeline summary).
-2. Browser fallback queue size: `data/jobs-browser-fallback-queue.json` - number of entries (sources that were recommended for browser/Playwright).
+2. Browser fallback queue size: `data/jobs-browser-fallback-queue.json` - number of unique canonical pages (queue rows), not source rows; one source can contribute several pages.
 3. Per-source status: `data/jobs-fetch-report.json` - for each source: `status`, `fetchedCount`, `keptCount`, `classification`, `error`. Compare counts of `blocked_or_challenge`, `needs_review`, and `ok` / `ok_with_jobs` before and after.
 4. Discovery: `data/source-discovery-report.json` - `summary.lossAccounting`, probe failed / low_evidence_skipped; Playwright probe fallback aims to reduce those.
 

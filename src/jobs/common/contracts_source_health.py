@@ -156,6 +156,10 @@ def _zero_kept_needs_review(row: dict[str, Any]) -> bool:
     return True
 
 
+def _browser_fallback_environment_blocked(row: dict[str, Any]) -> bool:
+    return "environment blocked" in norm_text(row.get("browserFallbackAttemptError"))
+
+
 def _provider_child_rows(source_rows: Any) -> list[dict[str, Any]]:
     """Provider boards inside multi-board families, as health rows.
 
@@ -202,6 +206,9 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
     browser_rows = [row for row in rows if row["browserFallbackRecommended"]]
     browser_attempted_rows = [row for row in rows if row["browserFallbackAttempted"]]
     browser_failed_rows = [row for row in browser_attempted_rows if not row["browserFallbackUsed"]]
+    browser_environment_blocked_rows = [
+        row for row in browser_attempted_rows if _browser_fallback_environment_blocked(row)
+    ]
 
     failure_counts: Counter[str] = Counter()
     failure_examples: dict[str, list[str]] = {}
@@ -267,6 +274,7 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
         "browserFallbackRecommendedSources": len(browser_rows),
         "browserFallbackAttemptedSources": len(browser_attempted_rows),
         "browserFallbackFailedSources": len(browser_failed_rows),
+        "browserFallbackEnvironmentBlockedSources": len(browser_environment_blocked_rows),
         "sourcesNeedingAttention": attention_rows[:_TRIAGE_ROW_LIMIT],
         "zeroKeptNeedsReview": sorted(
             zero_review_rows,
@@ -318,6 +326,7 @@ def normalize_source_health_payload(payload: Any, source_rows: Any) -> dict[str,
         "browserFallbackRecommendedSources",
         "browserFallbackAttemptedSources",
         "browserFallbackFailedSources",
+        "browserFallbackEnvironmentBlockedSources",
         "providerChildFailureCount",
     ):
         normalized[key] = _clamped_int(src.get(key), normalized[key], 0)

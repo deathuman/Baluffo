@@ -273,6 +273,7 @@ def test_compact_summary_projects_only_source_health_counts() -> None:
                 "zeroKeptSources": 7,
                 "zeroKeptNeedsReviewSources": 6,
                 "browserFallbackRecommendedSources": 2,
+                "browserFallbackEnvironmentBlockedSources": 4,
                 "providerChildFailureCount": 1,
                 "topFailureBuckets": [{"key": "site_changed", "count": 3}],
                 "sourcesNeedingAttention": [{"name": "large-row"}],
@@ -288,6 +289,7 @@ def test_compact_summary_projects_only_source_health_counts() -> None:
         "zeroKeptSources": 7,
         "zeroKeptNeedsReviewSources": 6,
         "browserFallbackRecommendedSources": 2,
+        "browserFallbackEnvironmentBlockedSources": 4,
         "providerChildFailureCount": 1,
     }
     assert "topFailureBuckets" not in compact["sourceHealth"]
@@ -322,6 +324,88 @@ def test_compact_summary_preserves_bounded_browser_fallback_health() -> None:
     assert health["durationMs"] == 0
     assert health["lastLaunchError"] == "Executable doesn't exist"
     assert health["lastNavigationError"] == "net::ERR_FAILED"
+
+
+def test_compact_summary_preserves_bounded_browser_forensics() -> None:
+    compact = compact_fetch_report_summary_payload(
+        {
+            "runtime": {
+                "browserFallbackHealth": {
+                    "ok": False,
+                    "stage": "navigation",
+                    "forensics": {
+                        "available": True,
+                        "capturedAt": "2026-11-16T00:00:02Z",
+                        "cgroup": {
+                            "available": True,
+                            "version": "v2",
+                            "path": "/docker/test",
+                            "memoryMax": "2684354560",
+                            "memoryMaxBytes": 2_684_354_560,
+                            "eventsDelta": {"oom_kill": 1},
+                            "oomKilledDuringProbe": True,
+                        },
+                        "shm": {
+                            "available": True,
+                            "path": "/dev/shm",
+                            "sizeBytes": 67_108_864,
+                            "freeBytes": 1_000_000,
+                            "freePercent": 1,
+                        },
+                        "browserStderr": {
+                            "available": True,
+                            "source": "chromium_log_file",
+                            "tail": "y" * 9000,
+                        },
+                        "disconnect": {"observed": True, "duringProbe": True},
+                    },
+                }
+            }
+        },
+        detail_level="summary",
+    )
+
+    forensics = compact["runtime"]["browserFallbackHealth"]["forensics"]
+    assert forensics["cgroup"]["eventsDelta"] == {"oom_kill": 1}
+    assert forensics["cgroup"]["oomKilledDuringProbe"] is True
+    assert forensics["shm"]["freeBytes"] == 1_000_000
+    assert len(forensics["browserStderr"]["tail"]) == 4096
+    assert forensics["disconnect"]["observed"] is True
+
+
+def test_compact_summary_carries_environment_blocked_and_demand() -> None:
+    compact = compact_fetch_report_summary_payload(
+        {
+            "runtime": {
+                "browserFallbackEnvironmentBlocked": True,
+                "browserFallbackEnvironmentBlockedSources": 7,
+                "browserFallbackQueueCount": 16,
+                "browserFallbackDemand": {
+                    "attempts": 0,
+                    "refused": 0,
+                    "pages": 0,
+                    "servedWithHtml": 0,
+                    "servedEmpty": 0,
+                    "servedEmptyEnvironment": 0,
+                    "servedEmptyPage": 0,
+                },
+            }
+        },
+        detail_level="summary",
+    )
+
+    assert compact["runtime"]["browserFallbackEnvironmentBlocked"] is True
+    assert compact["runtime"]["browserFallbackEnvironmentBlockedSources"] == 7
+    assert compact["runtime"]["browserFallbackQueueCount"] == 16
+    assert compact["runtime"]["browserFallbackDemand"] == {
+        "attempts": 0,
+        "refused": 0,
+        "pages": 0,
+        "servedWithHtml": 0,
+        "servedEmpty": 0,
+        "servedEmptyEnvironment": 0,
+        "servedEmptyPage": 0,
+    }
 
 
 def test_compact_summary_omits_absent_browser_fallback_health() -> None:

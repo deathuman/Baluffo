@@ -148,6 +148,15 @@ test("browser fallback probe failure is visible in the action center", async () 
             sourceOutcomeSummary: {
               browserFallbackRecommendedSources: 206
             },
+            browserFallbackDemand: {
+              attempts: 264,
+              refused: 250,
+              pages: 14,
+              servedWithHtml: 0,
+              servedEmpty: 14,
+              servedEmptyEnvironment: 14,
+              servedEmptyPage: 0
+            },
             browserFallbackHealth: {
               ok: false,
               stage: "launch",
@@ -172,11 +181,56 @@ test("browser fallback probe failure is visible in the action center", async () 
   assert.match(html, /Probe failed at launch \(executable_does_not_exist\): browserType\.launch/);
   assert.match(html, /206 sources need browser fallback/);
   assert.ok(
+    html.includes(
+      "264 browser fallback calls (14 page attempts): 250 refused in cooldown / 14 empty-environment / 0 empty-page"
+    ),
+    "the row must separate refused demand from a crashed browser"
+  );
+  assert.ok(
     html.includes(`last failure ${expectedLastFailureAt} (3h ago)`),
     "the signal must show when the last probe failed and how old that failure is"
   );
   assert.match(html, /Copy diagnostics/);
   assert.doesNotMatch(html, /\n {2}at \/snap\/chromium/, "multi-line probe errors must collapse to one row");
+});
+
+test("environment-blocked browser fallback reports a warning and a source count", async () => {
+  const { refs, controller } = createFixture({
+    getBridge: async path => {
+      if (path === "/ops/fetch-kpis?view=summary") {
+        return {
+          alerts: [],
+          kpis: {
+            lastSuccessfulFetchAge: "1h",
+            failedSourceRatioLatest: 0,
+            browserFallbackHealth: {
+              ok: false,
+              stage: "launch",
+              errorType: "RuntimeError",
+              error: "Executable doesn't exist at /snap/chromium"
+            },
+            browserFallbackEnvironmentBlocked: true,
+            browserFallbackEnvironmentBlockedSources: 12,
+            sourceOutcomeSummary: { browserFallbackRecommendedSources: 206 }
+          }
+        };
+      }
+      if (path === "/sync/status?view=summary") return cleanSyncPayload();
+      if (path === "/ops/storage-health") return cleanStoragePayload();
+      return null;
+    }
+  });
+
+  await controller.pollActionCenter({ includeStorage: true });
+
+  const html = refs.actionCenterItemsEl.innerHTML;
+  assert.match(html, /data-signal="browser_fallback_health"/);
+  assert.match(html, /Browser environment blocked at launch/);
+  assert.match(html, /12 sources environment-blocked/);
+  assert.doesNotMatch(html, /All systems operational/);
+  assert.doesNotMatch(html, /Healthy/);
+  assert.match(refs.actionCenterStatusChipEl.innerHTML, /1 issue/);
+  assert.match(refs.actionCenterStatusChipEl.innerHTML, /warning/);
 });
 
 test("a passing browser fallback probe adds no action center signal", async () => {

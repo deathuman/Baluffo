@@ -1,8 +1,8 @@
 {
   "scope": "src",
-  "max_total_comments": 10,
+  "max_total_comments": 11,
   "max_by_code": {
-    "BLE001": 2,
+    "BLE001": 3,
     "PLC2701": 1,
     "S310": 2,
     "S603": 1,
@@ -10,8 +10,9 @@
   },
   "allowed_by_code_file": {
     "BLE001": [
-      "src/bridge/routes/error_boundary.py"
+      "src/bridge/routes/error_boundary.py",
+      "src/jobs/pipeline_source_loop.py"
     ]
   },
-  "rationale": "Ratchet after the source exception cleanup pass. Remaining BLE001 suppressions are intentional HTTP route JSON boundaries only; future suppressions must be removed or this budget must be updated explicitly with the same change."
+  "rationale": "Ratchet after the source exception cleanup pass. Remaining BLE001 suppressions are intentional HTTP route JSON boundaries and the browser-preflight guard that keeps a failed probe from aborting the run; future suppressions must be removed or this budget must be updated explicitly with the same change."
 }

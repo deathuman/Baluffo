@@ -216,7 +216,12 @@ def render_text_summary(summary: dict[str, Any]) -> str:
         f"- Successful sources: {int(fetch.get('successfulSources') or 0)}",
         f"- Failed sources: {int(fetch.get('failedSourcesCount') or 0)}",
         f"- Output rows: {int(fetch.get('outputCount') or 0)}",
-        f"- Browser fallback queue: {int(fetch.get('browserFallbackQueueCount') or 0)}",
+        f"- Browser fallback calls: {int(fetch.get('browserFallbackCalls') or 0)} "
+        f"({int(fetch.get('browserFallbackRefusedCalls') or 0)} refused)",
+        f"- Browser fallback page attempts: {int(fetch.get('browserFallbackPageAttempts') or 0)}",
+        f"- Browser fallback source rows: {int(fetch.get('browserFallbackSourceRows') or 0)}",
+        f"- Browser fallback failed source rows: {int(fetch.get('browserFallbackFailedSourceRows') or 0)}",
+        f"- Browser fallback queue pages: {int(fetch.get('browserFallbackQueuePages') or 0)}",
         f"- Static domain-gate wait: {int(fetch_runtime_static.get('staticDomainGateWaitMs') or 0)} ms",
         f"- Static detail batches: {int(fetch_runtime_static.get('staticDetailBatchCount') or 0)}",
         f"- Static adaptive stops: {int(fetch_runtime_static.get('staticAdaptiveStops') or 0)}",

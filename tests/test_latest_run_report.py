@@ -82,12 +82,26 @@ def _write_report_bundle(
             "startedAt": fetch_started,
             "finishedAt": fetch_finished,
             "summary": {"successfulSources": 1, "failedSources": 1, "outputCount": 2},
+            "sourceHealth": {
+                "browserFallbackAttemptedSources": 3,
+                "browserFallbackFailedSources": 2,
+            },
             "runtime": {
                 "staticDomainGateWaitMs": 2100,
                 "staticDetailBatchCount": 7,
                 "staticAdaptiveStops": 2,
                 "staticListingTimeoutStops": 3,
                 "staticListingBrowserFallbacks": 4,
+                "browserFallbackQueueCount": 1,
+                "browserFallbackDemand": {
+                    "attempts": 5,
+                    "refused": 3,
+                    "pages": 2,
+                    "servedWithHtml": 1,
+                    "servedEmpty": 1,
+                    "servedEmptyEnvironment": 0,
+                    "servedEmptyPage": 1,
+                },
                 "timingSummary": {
                     "totalDurationMs": 10000,
                     "wallClockDurationMs": 12000,
@@ -146,7 +160,10 @@ def _write_report_bundle(
         if listing_url
         else [],
     )
-    _write_json(browser_queue_path, [])
+    _write_json(
+        browser_queue_path,
+        [{"source": fetch_source_name, "pageUrl": "https://example.com/careers"}],
+    )
 
 
 def test_latest_run_report_picks_newest_report_paths(tmp_path: Path) -> None:
@@ -223,6 +240,11 @@ def test_latest_run_report_summary_includes_key_metrics_and_queue_preview(tmp_pa
     assert "Static adaptive stops: 2" in text
     assert "Static listing timeout stops: 3" in text
     assert "Static listing browser fallbacks: 4" in text
+    assert "Browser fallback calls: 5 (3 refused)" in text
+    assert "Browser fallback page attempts: 2" in text
+    assert "Browser fallback source rows: 3" in text
+    assert "Browser fallback failed source rows: 2" in text
+    assert "Browser fallback queue pages: 1" in text
     assert "oldUrl=https://example.com/careers" in text
     assert "Top Fetch Failures" in text
     assert "Top Discovery Failures" in text

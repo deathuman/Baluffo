@@ -12,11 +12,13 @@ import gc
 import sys
 import threading
 import warnings
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
 from src.jobs.browser_fallback import (
+    REFUSAL_ERROR_TEXT,
     BrowserFallbackCircuitBreaker,
     is_browser_fallback_environment_error,
 )
@@ -69,6 +71,111 @@ def http_server():
     yield f"http://{host}:{port}"
     server.shutdown()
     server.server_close()
+
+
+class _FakeBrowser:
+    """The slice of Playwright's Browser the pool actually touches."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def is_connected(self) -> bool:
+        return not self.closed
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _TargetClosedError(Exception):
+    """Playwright's error type by name, without importing Playwright here."""
+
+
+def _install_fake_launcher(pool: BrowserFallbackPool) -> list[_FakeBrowser]:
+    """Replace the Chromium launch with a fake so these cases stay fast."""
+    launches: list[_FakeBrowser] = []
+
+    async def start() -> None:
+        browser = _FakeBrowser()
+        launches.append(browser)
+        pool._browser = browser
+        pool._playwright = None
+
+    pool._start_browser = start  # type: ignore[method-assign]
+    return launches
+
+
+def test_pool_replaces_a_disconnected_handle_before_use() -> None:
+    # S2.2: a non-None handle is not evidence of a live browser. Chromium can close
+    # underneath the pool and leave `_browser` set; the next start must notice.
+    pool = BrowserFallbackPool()
+    launches = _install_fake_launcher(pool)
+    pool._ensure_started()
+    launches[0].closed = True
+
+    pool._ensure_started()
+
+    assert len(launches) == 2, "a disconnected handle must be replaced, not reused"
+    assert pool._browser is launches[1]
+    pool.close()
+
+
+def test_pool_relaunches_a_dead_browser_and_retries_the_fetch() -> None:
+    pool = BrowserFallbackPool()
+    launches = _install_fake_launcher(pool)
+    attempts = {"count": 0}
+
+    async def fetch(
+        url: str, timeout_s: int, *, settle_ms: int
+    ) -> tuple[str, list[tuple[str, str]]]:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            # The 0.3.062 shape: the browser is closed, and the failure arrives at
+            # new_page before any navigation has been attempted.
+            raise _TargetClosedError(
+                "BrowserContext.new_page: Target page, context or browser has been closed"
+            )
+        return "<html>board</html>", []
+
+    pool._fetch_captured = fetch  # type: ignore[method-assign]
+
+    def health_probe(_timeout_s: int = 0) -> dict[str, object]:
+        return {"ok": True, "stage": "ready", "durationMs": 1}
+
+    pool.health_probe = health_probe  # type: ignore[method-assign, assignment]
+    try:
+        html, error, captured = pool.fetch_captured("http://boards.test/list", 5, settle_ms=0)
+        # Later fallbacks in the same run must keep using the replacement.
+        later_html, later_error, _ = pool.fetch_captured("http://boards.test/other", 5, settle_ms=0)
+    finally:
+        pool.close()
+
+    assert (html, error, captured) == ("<html>board</html>", "", [])
+    assert (later_html, later_error) == ("<html>board</html>", "")
+    assert attempts["count"] == 3, "the death must be retried once on a fresh browser"
+    assert len(launches) == 2, "the pool must launch a replacement, not reuse the dead handle"
+    assert pool.metrics.snapshot()["pool_relaunch_on_death"] == 1
+
+
+def test_pool_refusal_in_cooldown_is_not_counted_as_a_crash() -> None:
+    breaker = BrowserFallbackCircuitBreaker(cooldown_minutes=30)
+    breaker.disabled_until_at = (datetime.now(UTC) + timedelta(minutes=5)).isoformat()
+    pool = BrowserFallbackPool()
+    reached_pool: list[str] = []
+
+    def delegate(url: str, timeout_s: int) -> tuple[str, str]:
+        reached_pool.append(url)
+        return pool.fetch(url, timeout_s)
+
+    html, error = breaker.wrap(delegate)("http://boards.test/list", 5)
+    pool.close()
+
+    assert (html, error) == ("", REFUSAL_ERROR_TEXT)
+    assert reached_pool == [], "a refusal must never start or touch the browser pool"
+    assert breaker.demand_attempts == 1
+    assert breaker.demand_refused == 1
+    metrics = pool.metrics.snapshot()
+    assert metrics["pool_acquisitions"] == 0
+    assert metrics["pool_relaunch_on_death"] == 0
 
 
 def test_browser_pool_enabled_defaults_on_and_respects_kill_switch():
@@ -216,18 +323,22 @@ def test_pool_double_close_is_idempotent(http_server) -> None:
     assert pool._thread is None
 
 
-@pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs
 def test_pool_error_strings_match_circuit_breaker_tokens(http_server) -> None:
     # Browser-death errors normalize to a circuit-breaker-recognized token.
     assert is_browser_fallback_environment_error(
         "browser fallback unavailable (playwright transport closed)"
     )
     assert is_browser_fallback_environment_error("browser has been closed")
-    # End-to-end: a fetch on a pool whose browser is gone trips the breaker.
+    # End-to-end: a browser that cannot start yields an environment error, so the
+    # breaker sees one failed attempt and arms its cooldown. A single death no
+    # longer disables the lane: S2.1/S2.3 relaunch it instead.
     pool = BrowserFallbackPool()
+
+    async def fail_to_start() -> None:
+        raise RuntimeError("browserType.launch: Executable doesn't exist at /snap/chromium")
+
+    pool._start_browser = fail_to_start  # type: ignore[method-assign]
     try:
-        pool.fetch(f"{http_server}/y", 15)
-        pool._mark_unavailable()  # simulate detected browser death
         breaker = BrowserFallbackCircuitBreaker(cooldown_minutes=30)
         wrapped = breaker.wrap(pool.fetch)
         html, error = wrapped(f"{http_server}/z", 15)

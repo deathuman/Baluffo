@@ -18,6 +18,7 @@ import { escapeHtml, tooltipAttrs } from "../../shared/ui/index.js";
 // class; `icon` and `chip` are the visible affordances that distinguish states.
 const STATE_META = new Map([
   ["healthy", { tone: "ok", icon: "check", chip: "Healthy", line: "All systems operational" }],
+  ["warning", { tone: "warning", icon: "alert", chip: "Attention", line: "" }],
   ["partial", { tone: "neutral", icon: "clock", chip: "Partial", line: "" }],
   ["checking", { tone: "neutral", icon: "clock", chip: "Checking", line: "" }],
   ["active-work-delayed", { tone: "neutral", icon: "pause", chip: "Delayed", line: "" }],

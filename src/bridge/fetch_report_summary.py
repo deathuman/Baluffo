@@ -71,12 +71,26 @@ _SOURCE_HEALTH_SUMMARY_KEYS = (
     "browserFallbackRecommendedSources",
     "browserFallbackAttemptedSources",
     "browserFallbackFailedSources",
+    "browserFallbackEnvironmentBlockedSources",
     "providerChildFailureCount",
 )
 
 # The run-level browser probe is only meaningful when it carries the normalized
 # stage/error fields. Keep the Action Center's poll payload to the same bounded
 # shape the runtime contract already enforces on the full report.
+# S2.4: the run-level demand split. ``attempted == failed`` in a fetch report cannot
+# separate a refused fallback (breaker in cooldown) from a crashed one; these counters
+# are the only field that does, and the Action Center polls this sidecar.
+_BROWSER_FALLBACK_DEMAND_KEYS = (
+    "attempts",
+    "refused",
+    "pages",
+    "servedWithHtml",
+    "servedEmpty",
+    "servedEmptyEnvironment",
+    "servedEmptyPage",
+)
+
 _BROWSER_FALLBACK_HEALTH_TEXT_LIMITS = {
     "stage": 32,
     "error": 2000,
@@ -88,6 +102,17 @@ _BROWSER_FALLBACK_HEALTH_TEXT_LIMITS = {
     "lastNavigationError": 2000,
     "lastNavigationErrorType": 160,
 }
+_BROWSER_FORENSICS_EVENT_KEYS = (
+    "low",
+    "high",
+    "max",
+    "oom",
+    "oom_kill",
+    "failcnt",
+    "oom_kill_disable",
+    "under_oom",
+)
+_BROWSER_STDERR_TAIL_LIMIT = 4096
 
 
 def fetch_report_summary_path(report_path: Path | str) -> Path:
@@ -110,6 +135,74 @@ def compact_source_health_summary(source_health: Any) -> dict[str, int]:
     return summary
 
 
+def _compact_browser_forensics_events(value: Any) -> dict[str, int]:
+    src = _as_dict(value)
+    return {
+        key: max(0, _safe_int(src.get(key), 0))
+        for key in _BROWSER_FORENSICS_EVENT_KEYS
+        if key in src
+    }
+
+
+def compact_browser_fallback_forensics(value: Any) -> dict[str, Any]:
+    """Bounded S2.5 death facts for the polling path."""
+    src = _as_dict(value)
+    if not src:
+        return {}
+    cgroup_src = _as_dict(src.get("cgroup"))
+    cgroup = {
+        "available": bool(cgroup_src.get("available")),
+        "version": _clean_text(cgroup_src.get("version"))[:8],
+        "path": _clean_text(cgroup_src.get("path"))[:512],
+        "memoryMax": _clean_text(cgroup_src.get("memoryMax"))[:32],
+        "memoryMaxBytes": max(0, _safe_int(cgroup_src.get("memoryMaxBytes"), 0)),
+        "memoryCurrentBytes": max(0, _safe_int(cgroup_src.get("memoryCurrentBytes"), 0)),
+        "memoryPeakBytes": max(0, _safe_int(cgroup_src.get("memoryPeakBytes"), 0)),
+        "events": _compact_browser_forensics_events(cgroup_src.get("events")),
+        "eventsBefore": _compact_browser_forensics_events(cgroup_src.get("eventsBefore")),
+        "eventsAfter": _compact_browser_forensics_events(cgroup_src.get("eventsAfter")),
+        "eventsDelta": _compact_browser_forensics_events(cgroup_src.get("eventsDelta")),
+        "oomKilledDuringProbe": bool(cgroup_src.get("oomKilledDuringProbe")),
+        "oomKillObserved": bool(cgroup_src.get("oomKillObserved")),
+        "reason": _clean_text(cgroup_src.get("reason"))[:200],
+    }
+    shm_src = _as_dict(src.get("shm"))
+    shm = {
+        "available": bool(shm_src.get("available")),
+        "path": _clean_text(shm_src.get("path"))[:256],
+        "sizeBytes": max(0, _safe_int(shm_src.get("sizeBytes"), 0)),
+        "freeBytes": max(0, _safe_int(shm_src.get("freeBytes"), 0)),
+        "usedBytes": max(0, _safe_int(shm_src.get("usedBytes"), 0)),
+        "freePercent": max(0, min(100, _safe_int(shm_src.get("freePercent"), 0))),
+        "reason": _clean_text(shm_src.get("reason"))[:200],
+    }
+    stderr_src = _as_dict(src.get("browserStderr"))
+    stderr = {
+        "available": bool(stderr_src.get("available")),
+        "source": _clean_text(stderr_src.get("source"))[:64],
+        "reason": _clean_text(stderr_src.get("reason"))[:200],
+        "bytes": max(0, _safe_int(stderr_src.get("bytes"), 0)),
+        "truncated": bool(stderr_src.get("truncated")),
+        "tail": _clean_text(stderr_src.get("tail"))[:_BROWSER_STDERR_TAIL_LIMIT],
+    }
+    disconnect_src = _as_dict(src.get("disconnect"))
+    disconnect = {
+        "observed": bool(disconnect_src.get("observed")),
+        "at": _clean_text(disconnect_src.get("at"))[:64],
+        "duringProbe": bool(disconnect_src.get("duringProbe")),
+        "intentional": bool(disconnect_src.get("intentional")),
+        "count": max(0, _safe_int(disconnect_src.get("count"), 0)),
+    }
+    return {
+        "available": bool(src.get("available")),
+        "capturedAt": _clean_text(src.get("capturedAt"))[:64],
+        "cgroup": cgroup,
+        "shm": shm,
+        "browserStderr": stderr,
+        "disconnect": disconnect,
+    }
+
+
 def compact_browser_fallback_health(value: Any) -> dict[str, Any]:
     """The bounded run-level browser probe safe to carry on the poll path."""
     src = _as_dict(value)
@@ -123,7 +216,21 @@ def compact_browser_fallback_health(value: Any) -> dict[str, Any]:
         text = _clean_text(src.get(key))[:limit]
         if text:
             health[key] = text
+    forensics = compact_browser_fallback_forensics(src.get("forensics"))
+    if forensics:
+        health["forensics"] = forensics
     return health
+
+
+def compact_browser_fallback_demand(value: Any) -> dict[str, int]:
+    """The per-run fallback demand split safe to carry on the poll path."""
+    src = _as_dict(value)
+    if not src:
+        return {}
+    demand = {key: max(0, _safe_int(src.get(key), 0)) for key in _BROWSER_FALLBACK_DEMAND_KEYS}
+    if src.get("pages") is None:
+        demand["pages"] = max(0, demand["attempts"] - demand["refused"])
+    return demand
 
 
 def _source_health_summary(payload: dict[str, Any]) -> dict[str, int]:
@@ -185,6 +292,20 @@ def compact_fetch_report_summary_payload(
     browser_health = compact_browser_fallback_health(runtime.get("browserFallbackHealth"))
     if browser_health:
         runtime_payload["browserFallbackHealth"] = browser_health
+    browser_demand = compact_browser_fallback_demand(runtime.get("browserFallbackDemand"))
+    if browser_demand:
+        runtime_payload["browserFallbackDemand"] = browser_demand
+    environment_blocked = bool(runtime.get("browserFallbackEnvironmentBlocked"))
+    environment_blocked_sources = max(
+        0, _safe_int(runtime.get("browserFallbackEnvironmentBlockedSources"), 0)
+    )
+    if environment_blocked:
+        runtime_payload["browserFallbackEnvironmentBlocked"] = True
+    queue_count = max(0, _safe_int(runtime.get("browserFallbackQueueCount"), 0))
+    if queue_count:
+        runtime_payload["browserFallbackQueueCount"] = queue_count
+    if environment_blocked or environment_blocked_sources:
+        runtime_payload["browserFallbackEnvironmentBlockedSources"] = environment_blocked_sources
     result: dict[str, Any] = {
         "ok": bool(report.get("ok", True)),
         "summaryView": True,

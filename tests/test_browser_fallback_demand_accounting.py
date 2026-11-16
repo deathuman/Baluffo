@@ -106,10 +106,10 @@ def test_mixed_run_accounting_adds_up() -> None:
     assert calls["n"] == 4  # the delegate never ran for the refused call
     assert breaker.demand_attempts == 5
     assert breaker.demand_refused == 1
-    # The invariant: attempts == refused + served.
-    assert breaker.demand_attempts == (
-        breaker.demand_refused + breaker.demand_served_with_html + breaker.demand_served_empty
-    )
+    assert breaker.demand_pages == 4
+    # The invariant: every call was either refused or became a page attempt.
+    assert breaker.demand_attempts == breaker.demand_refused + breaker.demand_pages
+    assert breaker.demand_pages == (breaker.demand_served_with_html + breaker.demand_served_empty)
 
 
 def test_runtime_payload_stamping_shape() -> None:
@@ -122,6 +122,7 @@ def test_runtime_payload_stamping_shape() -> None:
         "browserFallbackDemand": {
             "attempts": 4030,
             "refused": 4010,
+            "pages": 20,
             "servedWithHtml": 20,
             "servedEmpty": 0,
             "servedEmptyEnvironment": 0,
@@ -133,6 +134,7 @@ def test_runtime_payload_stamping_shape() -> None:
     assert demand == {
         "attempts": 4030,
         "refused": 4010,
+        "pages": 20,
         "servedWithHtml": 20,
         "servedEmpty": 0,
         # The empty split: a browser that could not launch, and a page that rendered with
@@ -146,6 +148,7 @@ def test_runtime_payload_stamping_shape() -> None:
     assert normalized_absent["browserFallbackDemand"] == {
         "attempts": 0,
         "refused": 0,
+        "pages": 0,
         "servedWithHtml": 0,
         "servedEmpty": 0,
         "servedEmptyEnvironment": 0,
@@ -167,6 +170,7 @@ def test_runtime_payload_stamping_shape() -> None:
     assert normalized_junk["browserFallbackDemand"] == {
         "attempts": 0,
         "refused": 0,
+        "pages": 0,
         "servedWithHtml": 7,
         "servedEmpty": 0,
         "servedEmptyEnvironment": 0,
@@ -175,14 +179,21 @@ def test_runtime_payload_stamping_shape() -> None:
 
 
 def test_breaker_snapshot_matches_payload_stamping() -> None:
-    """The fields the pipeline stamps are exactly the four demand counters."""
+    """The fields the pipeline stamps are exactly the demand counters."""
     breaker = _breaker()
     wrapped = breaker.wrap(lambda url, timeout: (f"<html>{url}</html>", ""))
     wrapped("https://x.com/1", 5)
     stamped = {
         "attempts": int(breaker.demand_attempts),
         "refused": int(breaker.demand_refused),
+        "pages": int(breaker.demand_pages),
         "servedWithHtml": int(breaker.demand_served_with_html),
         "servedEmpty": int(breaker.demand_served_empty),
     }
-    assert stamped == {"attempts": 1, "refused": 0, "servedWithHtml": 1, "servedEmpty": 0}
+    assert stamped == {
+        "attempts": 1,
+        "refused": 0,
+        "pages": 1,
+        "servedWithHtml": 1,
+        "servedEmpty": 0,
+    }

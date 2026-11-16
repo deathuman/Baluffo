@@ -1,3 +1,4 @@
+import { formatBytes } from "../../shared/format-utils.js";
 import { createVisibilityPausedInterval } from "../../shared/visibility-poll.js";
 import { createFetchKpisSummaryFeed } from "./fetch-kpis-summary-feed.js";
 import {
@@ -152,28 +153,135 @@ function parseAge(value) {
   return num;
 }
 
+// The store latches unhealthy with a code now, so the panel can name what happened
+// instead of asserting an integrity failure for every unhealthy verdict. A deferred
+// quick check (large database) is not a failure, and it used to render as one.
+const STORAGE_REASON_LABELS = {
+  write_lock_timeout: "Storage write lock timed out",
+  busy_exhausted_write: "SQLite stayed busy during a write",
+  busy_exhausted_read: "SQLite stayed busy during a read",
+  busy_exhausted_vacuum: "SQLite stayed busy during a database rebuild",
+  write_error: "SQLite write failed",
+  vacuum_error: "Database rebuild failed",
+  wal_checkpoint_error: "WAL checkpoint failed",
+  wal_checkpoint_busy: "WAL checkpoint could not finish",
+  integrity_check: "SQLite integrity check failed",
+  startup_probe: "SQLite startup probe failed",
+  pragma: "SQLite could not enable a required setting",
+  reopen_failed: "The store could not reopen after a database swap"
+};
+
+function storageReason(storage) {
+  const reason = storage?.unhealthyReason;
+  return reason && typeof reason === "object" && !Array.isArray(reason) ? reason : {};
+}
+
+function storageReasonAt(storage) {
+  const at = String(storageReason(storage).at || "").trim();
+  return at || String(storage?.walMaintenance?.attemptedAt || "").trim();
+}
+
+function storageReasonMessage(storage) {
+  const text = String(storageReason(storage).message || "").trim();
+  return text.replace(/\s+/g, " ").slice(0, 240);
+}
+
+// Mirrors the store's own rule: a check that was skipped for size is not a result.
+function quickCheckFailed(storage) {
+  if (storage?.quickCheckDeferred === true || storage?.quickCheckDeferred === 1) return false;
+  const check = String(storage?.quickCheck || "").trim().toLowerCase();
+  if (!check || check === "ok" || check === "deferred-large-database") return false;
+  return true;
+}
+
+function walCheckpointCopy(storage) {
+  const wal = storage?.walMaintenance || {};
+  const walBytes = Number(wal.walBytes ?? storage?.walBytes ?? 0);
+  const databaseBytes = Number(wal.databaseBytes ?? storage?.databaseBytes ?? 0);
+  const sizes = [];
+  if (Number.isFinite(walBytes) && walBytes > 0) sizes.push(`${formatBytes(walBytes)} WAL`);
+  if (Number.isFinite(databaseBytes) && databaseBytes > 0) {
+    sizes.push(`${formatBytes(databaseBytes)} database`);
+  }
+  const failed = String(wal.status || "").trim() === "failed";
+  const headline = failed ? "WAL checkpoint failed" : "WAL checkpoint could not finish";
+  return sizes.length ? `${headline} — ${sizes.join(" on ")}` : headline;
+}
+
 function evaluateStorageHealth(storageData) {
   if (!storageData) return null;
   const storage = storageData.storage;
   if (!storage) return null;
 
-  const healthy = storage.healthy !== false;
-  if (healthy) {
-    const diagnostics = Array.isArray(storage.diagnostics) ? storage.diagnostics : [];
-    if (!diagnostics.some(d => d && d.ok === false)) return null;
+  const diagnostics = Array.isArray(storage.diagnostics) ? storage.diagnostics : [];
+  const diagFailures = diagnostics.filter(d => d && d.ok === false).length;
+  const unhealthy = storage.healthy === false;
+  // S1.2 makes a busy checkpoint a maintenance state, so the store reports
+  // healthy: true while its WAL keeps growing. The warning must follow the
+  // maintenance record, or the original 1 GB-WAL symptom goes silent.
+  const walStatus = String(storage?.walMaintenance?.status || "").trim();
+  const walNeedsAttention = walStatus === "busy" || walStatus === "failed";
+  if (!unhealthy && diagFailures === 0 && !walNeedsAttention) return null;
+
+  const actions = ["review", "copy_diagnostics", "dismiss"];
+  const at = storageReasonAt(storage);
+  const failureMs = isoMs(at);
+  const when = failureMs ? ` on ${formatFailureTimestamp(failureMs)}` : "";
+  const deferredNote = storage.quickCheckDeferred === true
+    ? "; integrity check deferred at this database size"
+    : "";
+  if (!unhealthy) {
+    if (diagFailures === 0 && walNeedsAttention) {
+      const dateNote = when || "; attempt date not recorded";
+      return {
+        id: "storage_health",
+        severity: "warning",
+        summary: `${walCheckpointCopy(storage)}${dateNote}${deferredNote}`,
+        actions
+      };
+    }
+    return {
+      id: "storage_health",
+      severity: "critical",
+      // Specific rather than "Storage is unhealthy", which only restated the label.
+      summary: `${diagFailures} storage diagnostic${diagFailures !== 1 ? "s" : ""} reported errors`,
+      actions
+    };
   }
 
-  const diagFailures = (Array.isArray(storage.diagnostics) ? storage.diagnostics : [])
-    .filter(d => d && d.ok === false).length;
+  const code = String(storageReason(storage).code || "").trim();
+  const reasonMessage = storageReasonMessage(storage);
 
+  if (quickCheckFailed(storage)) {
+    const detail = String(storage.quickCheck || "").trim().slice(0, 160);
+    return {
+      id: "storage_health",
+      severity: "critical",
+      summary: `SQLite integrity check failed${detail ? `: ${detail}` : ""}${when}`,
+      actions
+    };
+  }
+
+  // A busy checkpoint leaves the WAL intact and retryable. Payloads from before the
+  // reason code existed (0.3.062) carry only `walMaintenance.status: "failed"`, so
+  // the failed checkpoint record is what names their cause.
+  if (code === "wal_checkpoint_busy" || code === "wal_checkpoint_error"
+    || (!code && walStatus === "failed")) {
+    const dateNote = when || "; attempt date not recorded";
+    return {
+      id: "storage_health",
+      severity: "warning",
+      summary: `${walCheckpointCopy(storage)}${reasonMessage ? `: ${reasonMessage}` : ""}${dateNote}${deferredNote}`,
+      actions
+    };
+  }
+
+  const label = STORAGE_REASON_LABELS[code] || "Storage reported unhealthy";
   return {
     id: "storage_health",
     severity: "critical",
-    // Specific rather than "Storage is unhealthy", which only restated the label.
-    summary: healthy
-      ? `${diagFailures} storage diagnostic${diagFailures !== 1 ? "s" : ""} reported errors`
-      : "SQLite integrity check failed",
-    actions: ["review", "copy_diagnostics", "dismiss"]
+    summary: `${label}${reasonMessage ? `: ${reasonMessage}` : ""}${when}${deferredNote}`,
+    actions
   };
 }
 
@@ -262,6 +370,26 @@ function formatCount(value) {
   return Number.isFinite(count) ? count.toLocaleString("en-US") : "0";
 }
 
+// S2.4: refused demand (breaker in cooldown) and a crashed browser both count as an
+// attempted-but-failed fallback, so the row must name the split, not just the total.
+function browserFallbackDemandCopy(demand) {
+  if (!demand || typeof demand !== "object" || Array.isArray(demand)) return "";
+  const attempts = Number(demand.attempts || 0);
+  if (!(attempts > 0)) return "";
+  const refused = Number(demand.refused || 0);
+  // Older sidecars lack `pages`; derive the calls that reached the browser.
+  const pages = demand.pages == null ? Math.max(0, attempts - refused) : Number(demand.pages || 0);
+  const emptyEnvironment = Number(demand.servedEmptyEnvironment || 0);
+  const emptyPage = Number(demand.servedEmptyPage || 0);
+  return (
+    `${formatCount(attempts)} browser fallback call${attempts === 1 ? "" : "s"} ` +
+    `(${formatCount(pages)} page attempt${pages === 1 ? "" : "s"}): ` +
+    `${formatCount(refused)} refused in cooldown / ` +
+    `${formatCount(emptyEnvironment)} empty-environment / ` +
+    `${formatCount(emptyPage)} empty-page`
+  );
+}
+
 function evaluateFailedSources(healthData) {
   if (!healthData) return null;
   const kpis = healthData.kpis || {};
@@ -294,6 +422,8 @@ function evaluateFailedSources(healthData) {
     const attempted = browserAttempted > 0 ? ` (${formatCount(browserAttempted)} attempted)` : "";
     details.push(`${formatCount(browserFallback)} need browser fallback${attempted}`);
   }
+  const demandCopy = browserFallbackDemandCopy(kpis.browserFallbackDemand);
+  if (demandCopy) details.push(demandCopy);
   const breakdown = details.length ? `; ${details.join("; ")}` : "";
 
   const pct = Math.round(failedRatio * 100);
@@ -314,12 +444,20 @@ function evaluateFailedSources(healthData) {
 
 function evaluateBrowserFallbackHealth(healthData) {
   if (!healthData) return null;
-  const health = healthData.kpis?.browserFallbackHealth;
-  if (!health || typeof health !== "object" || Array.isArray(health) || health.ok === true) {
-    return null;
-  }
+  const kpis = healthData.kpis || {};
+  const rawHealth = kpis.browserFallbackHealth;
+  const health = rawHealth && typeof rawHealth === "object" && !Array.isArray(rawHealth)
+    ? rawHealth
+    : {};
+  const failed = rawHealth === false || health.ok === false;
+  const rawBlocked = kpis.browserFallbackEnvironmentBlockedSources
+    ?? kpis.sourceOutcomeSummary?.browserFallbackEnvironmentBlockedSources;
+  const blocked = Math.max(0, Number(rawBlocked));
+  const environmentBlocked = kpis.browserFallbackEnvironmentBlocked === true
+    || (Number.isFinite(blocked) && blocked > 0);
+  if (!failed && !environmentBlocked) return null;
 
-  const stage = String(health.stage || "").trim() || "unknown";
+  const stage = String(health.stage || "").trim() || (environmentBlocked ? "preflight" : "unknown");
   const errorType = String(health.errorType || "").trim();
   const error = [health.error, health.lastLaunchError, health.lastNavigationError]
     .map(value => String(value || "").trim().replace(/\s+/g, " "))
@@ -329,15 +467,24 @@ function evaluateBrowserFallbackHealth(healthData) {
   const failureCopy = failureMs
     ? `; last failure ${formatFailureTimestamp(failureMs)} (${formatElapsedAge(failureMs)})`
     : "";
-  const rawNeeded = healthData.kpis?.sourceOutcomeSummary?.browserFallbackRecommendedSources;
+  const rawNeeded = kpis.sourceOutcomeSummary?.browserFallbackRecommendedSources;
   const needed = Math.max(0, Number(rawNeeded));
   const neededCopy = rawNeeded != null && Number.isFinite(needed)
     ? `; ${formatCount(needed)} source${needed === 1 ? " needs" : "s need"} browser fallback`
     : "";
+  const blockedCopy = Number.isFinite(blocked) && blocked > 0
+    ? `; ${formatCount(blocked)} source${blocked === 1 ? "" : "s"} environment-blocked`
+    : environmentBlocked
+      ? "; browser environment blocked"
+      : "";
+  const demandCopy = browserFallbackDemandCopy(kpis.browserFallbackDemand);
+  const headline = environmentBlocked
+    ? `Browser environment blocked at ${stage}`
+    : `Probe failed at ${stage}`;
   return {
     id: "browser_fallback_health",
     severity: "warning",
-    summary: `Probe failed at ${stage}${errorType ? ` (${errorType})` : ""}${clipped ? `: ${clipped}` : ""}${neededCopy}${failureCopy}`,
+    summary: `${headline}${errorType ? ` (${errorType})` : ""}${clipped ? `: ${clipped}` : ""}${neededCopy}${blockedCopy}${failureCopy}${demandCopy ? `; ${demandCopy}` : ""}`,
     actions: ["review", "copy_diagnostics", "dismiss"]
   };
 }
@@ -409,9 +556,15 @@ export function createActionCenterController({
   // The five states used to render through one function, so a passing check was
   // pixel-identical to a failed one. The renderer now owns state presentation and
   // gives each its own tone, icon and chip.
-  function resolveStatusState(pollMeta = {}) {
+  function resolveStatusState(pollMeta = {}, signals = []) {
     if (pollMeta.activeWorkDeferred) {
       return { state: "active-work-delayed", summary: ACTIVE_WORK_SUMMARY };
+    }
+    // A poll can complete every check and still have a visible warning. The signal
+    // rows replace the status line, but the state must not claim "healthy" here:
+    // the browser probe is one of those warnings.
+    if (signals.length > 0) {
+      return { state: "warning", summary: "" };
     }
     if (pollMeta.allRequiredChecked) {
       return { state: "healthy", summary: "" };
@@ -439,7 +592,7 @@ export function createActionCenterController({
     // has been removed — if a sixth signal is added, that row should come back.
     const visible = allSignals.filter(s => !isDismissed(s.id, nowMs)).slice(0, MAX_ITEMS);
 
-    const status = resolveStatusState(pollMeta);
+    const status = resolveStatusState(pollMeta, visible);
     itemsContainer.innerHTML = renderActionCenterBody({
       state: status.state,
       summary: status.summary,

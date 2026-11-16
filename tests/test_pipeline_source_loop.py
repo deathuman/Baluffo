@@ -7,6 +7,7 @@ from typing import Any, cast
 import pytest
 
 from src.jobs import pipeline_root, pipeline_source_loop
+from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
 
 
@@ -31,6 +32,25 @@ def test_emit_browser_fallback_status_reports_disabled_when_helper_missing(
     )
 
     assert messages == ["[jobs_fetcher] INFO browserFallbackEnabled=false"]
+
+
+def test_browser_preflight_stops_after_one_rendering_probe() -> None:
+    class ReadyPool:
+        calls = 0
+
+        def health_probe(self) -> dict[str, Any]:
+            self.calls += 1
+            return {"ok": True, "stage": "ready", "error": "", "durationMs": 4}
+
+    pool = ReadyPool()
+    health, blocked, attempts = pipeline_source_loop._run_browser_preflight(
+        cast(Any, pool), BrowserFallbackCircuitBreaker()
+    )
+
+    assert pool.calls == 1
+    assert attempts == 1
+    assert blocked is False
+    assert health is not None and health["ok"] is True
 
 
 def test_browser_fallback_runtime_returns_no_helper_when_root_has_none() -> None:

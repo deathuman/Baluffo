@@ -29,6 +29,9 @@ BROWSER_FALLBACK_STATE_KEY = "__browser_fallback__"
 DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES = 30
 REFUSAL_COOLDOWN = "cooldown_active"
 REFUSAL_ERROR_TEXT = "browser fallback unavailable (cooldown active)"
+# Run-level preflight outcome: the probe could not render after one retry, so this run's
+# browser lanes short-circuit instead of asking the pool or breaker once per source.
+ENVIRONMENT_BLOCKED_ERROR_TEXT = "browser fallback unavailable (environment blocked)"
 
 
 def is_browser_fallback_environment_error(error_text: str) -> bool:
@@ -53,6 +56,9 @@ class BrowserFallbackCircuitBreaker:
     # with-html and empty outcomes.
     demand_attempts: int = 0
     demand_refused: int = 0
+    # Calls that passed the breaker and reached the browser lane. This is a page
+    # attempt, not a unique source row: one source can ask for several pages.
+    demand_pages: int = 0
     demand_served_with_html: int = 0
     demand_served_empty: int = 0
     # "Empty" was one bucket for two opposite findings: a browser that could not launch (an
@@ -114,6 +120,7 @@ class BrowserFallbackCircuitBreaker:
                 self.last_refusal_reason = REFUSAL_COOLDOWN
                 return REFUSAL_ERROR_TEXT
             self.last_attempt_at = stamp
+            self.demand_pages += 1
         return ""
 
     def _record_served_html(self, stamp: str) -> None:
@@ -139,6 +146,20 @@ class BrowserFallbackCircuitBreaker:
             if cooldown_minutes > 0:
                 self.disabled_until_at = (now_dt + timedelta(minutes=cooldown_minutes)).isoformat()
             self.demand_served_empty_environment += 1
+
+    def mark_environment_blocked(self, error: str = ENVIRONMENT_BLOCKED_ERROR_TEXT) -> None:
+        """Record a run-level preflight failure without opening a cooldown.
+
+        The run is already blocked by its preflight, so setting a cooldown here would only
+        add another reason for the next run to refuse work. The error is retained for the
+        report rows that asked for fallback and for the persisted breaker diagnostics; the
+        next successful preflight clears it.
+        """
+        with self._lock:
+            self.last_error = clean_text(error)
+            self.last_failure_at = now_iso()
+            self.last_refused_at = ""
+            self.last_refusal_reason = ""
 
     def record_health_probe_success(self) -> None:
         """Reopen the breaker after a fresh browser proves it can render again.

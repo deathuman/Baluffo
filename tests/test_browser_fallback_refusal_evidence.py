@@ -120,6 +120,7 @@ def test_a_launch_failure_is_an_environment_finding_and_does_cooldown() -> None:
 def test_a_successful_render_counts_neither_empty_bucket() -> None:
     breaker = BrowserFallbackCircuitBreaker()
     breaker.wrap(lambda url, timeout: ("<html>jobs</html>", ""))("https://x.test/jobs", 5)
+    assert breaker.demand_pages == 1
     assert breaker.demand_served_empty_environment == 0
     assert breaker.demand_served_empty_page == 0
 
@@ -135,10 +136,8 @@ def test_the_split_adds_up_to_the_total() -> None:
         breaker.demand_served_empty_environment + breaker.demand_served_empty_page
         == breaker.demand_served_empty
     )
-    assert (
-        breaker.demand_attempts
-        == breaker.demand_refused + breaker.demand_served_with_html + breaker.demand_served_empty
-    )
+    assert breaker.demand_attempts == breaker.demand_refused + breaker.demand_pages
+    assert breaker.demand_pages == (breaker.demand_served_with_html + breaker.demand_served_empty)
 
 
 # --- the pipeline surfaces both --------------------------------------------------------
@@ -149,6 +148,7 @@ def test_the_run_payload_carries_the_split() -> None:
         "browserFallbackDemand": {
             "attempts": 843,
             "refused": 716,
+            "pages": 127,
             "servedWithHtml": 121,
             "servedEmpty": 6,
             "servedEmptyEnvironment": 1,
@@ -157,6 +157,7 @@ def test_the_run_payload_carries_the_split() -> None:
     }
     normalized = normalize_runtime_payload(payload, selected_source_count=10)
     demand = normalized["browserFallbackDemand"]
+    assert demand["pages"] == 127
     assert demand["servedEmptyEnvironment"] == 1
     assert demand["servedEmptyPage"] == 5
 
@@ -179,6 +180,7 @@ def test_a_report_missing_the_split_still_normalizes() -> None:
         {"browserFallbackDemand": {"attempts": 10, "refused": 2}}, selected_source_count=1
     )["browserFallbackDemand"]
     assert demand["attempts"] == 10
+    assert demand["pages"] == 8
     assert demand["servedEmptyEnvironment"] == 0
     assert demand["servedEmptyPage"] == 0
 

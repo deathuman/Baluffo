@@ -14,14 +14,23 @@ thread that starts it, so a pool-of-one cannot be shared across the fetch
 ThreadPoolExecutor workers. Async contexts on one loop preserve concurrency
 without per-call browser launches.
 
-Crash handling: a dead browser marks the pool unavailable; the resulting
-error string matches is_browser_fallback_environment_error tokens, so the
-existing BrowserFallbackCircuitBreaker owns the 30-min cooldown.
+Crash handling: a death marker tears down the pooled browser and retries the
+fetch once on a fresh one, bounded to two relaunches per death episode and
+counted as ``pool_relaunch_on_death``. A successful acquisition resets that
+relaunch budget, so two early deaths do not close the lane for the rest of the
+run. The first death also earns one immediate health probe, capped per run,
+to distinguish a broken replacement from a transient page failure. If that probe
+still cannot render, the fetch returns the environment error immediately rather
+than spending the second relaunch on a retry that cannot work. A browser that
+keeps failing to launch closes the lane for the breaker's cooldown instead of
+latching it for the run; the resulting error string matches
+is_browser_fallback_environment_error tokens, so the existing
+BrowserFallbackCircuitBreaker still owns the 30-min policy.
 
 AI boundary owns: pooled browser lifetime and per-call context acquisition.
 AI boundary implement in: this file for pool mechanics; fallback gating stays in browser_fallback.py.
 AI boundary search before contracts: pipeline source loop, source execution stage, source_check_http.
-AI boundary verify: `npm run lint:repo-guardrails` plus tests/test_browser_fallback_pool.py.
+AI boundary verify: `npm run lint:repo-guardrails` plus tests/test_browser_fallback_pool.py and tests/test_browser_fallback_death_breaker.py.
 """
 
 from __future__ import annotations
@@ -33,7 +42,22 @@ import threading
 import time
 from typing import Any
 
-from src.bridge.source_check_http import normalize_browser_fallback_error
+from src.bridge.source_check_http import (
+    is_browser_fallback_environment_error,
+    normalize_browser_fallback_error,
+)
+from src.jobs.browser_death_forensics import (
+    BrowserStderrSink,
+    browser_forensics_enabled,
+    browser_raw_stderr_chromium_args,
+    browser_stderr_chromium_args,
+    build_browser_forensics,
+    capture_browser_environment,
+    capture_browser_stderr_for_driver,
+    cleanup_browser_stderr_file,
+    prepare_browser_stderr_file,
+    read_browser_stderr,
+)
 from src.shared.browser_launch_args import browser_fallback_chromium_args
 from src.shared.utils import now_iso
 
@@ -46,6 +70,22 @@ _POOL_THREAD_JOIN_TIMEOUT_S = 5.0
 # acquisitions (relaunch ≈560 ms vs 90–215 s legacy launch-per-call).
 _BROWSER_POOL_RECYCLE_ENV = "BALUFFO_BROWSER_POOL_RECYCLE_ACQUISITIONS"
 _BROWSER_POOL_RECYCLE_DEFAULT = 20
+# A death marker earns one fresh browser and one retry, but a crash loop must not
+# spend the run launching Chromium: two relaunches per death episode. A
+# successful acquisition starts a new death episode and resets this budget.
+_BROWSER_POOL_RELAUNCH_LIMIT = 2
+# One health probe immediately after the first death distinguishes a broken
+# replacement from a transient page failure. A probe is a browser launch, so cap
+# the recovery probes for the run; unlike the relaunch budget, this is not reset
+# by an acquisition.
+_BROWSER_POOL_RECOVERY_PROBE_LIMIT = 1
+# Consecutive launch failures before the lane closes. One failed start is a launch
+# error the breaker handles; repeated failures mean the environment is unusable and
+# the lane should idle rather than relaunch for every source.
+_BROWSER_POOL_LAUNCH_FAILURE_LIMIT = 3
+# Mirrors DEFAULT_BROWSER_FALLBACK_COOLDOWN_MINUTES: the pool never closes the lane
+# for longer than the circuit breaker that owns fallback policy.
+_BROWSER_POOL_UNAVAILABLE_COOLDOWN_S = 30 * 60.0
 
 # A health probe must be cheap and must not depend on a real board. A data URL
 # exercises the browser's page/navigation path without network access; the
@@ -70,12 +110,18 @@ class _PoolMetrics:
             "pool_startup_ms": 0,
             "pool_acquisitions": 0,
             "pool_relaunch_count": 0,
+            "pool_relaunch_on_death": 0,
+            "pool_recovery_probes": 0,
             "last_failure_stage": "",
             "last_failure_at": "",
             "last_launch_error": "",
             "last_launch_error_type": "",
             "last_navigation_error": "",
             "last_navigation_error_type": "",
+            "last_disconnect_at": "",
+            "last_disconnect_during_probe": False,
+            "last_disconnect_intentional": False,
+            "disconnect_count": 0,
         }
 
     def incr(self, key: str, delta: int = 1) -> None:
@@ -115,7 +161,13 @@ class BrowserFallbackPool:
         self._thread: threading.Thread | None = None
         self._playwright: Any = None
         self._browser: Any = None
-        self._available = True
+        # S2.3: no sticky availability latch. A death demands one relaunch; repeated
+        # launch failures close the lane only for the breaker's cooldown.
+        self._pending_relaunch = False
+        self._relaunches_on_death = 0
+        self._recovery_probes = 0
+        self._consecutive_launch_failures = 0
+        self._unavailable_until_monotonic = 0.0
         self._start_lock = threading.Lock()
         self._diagnostics_lock = threading.Lock()
         self._last_launch_error = ""
@@ -127,18 +179,43 @@ class BrowserFallbackPool:
         self.metrics = _PoolMetrics()
         self._recycle_after = browser_pool_recycle_acquisitions()
         self._acquisitions_since_launch = 0
+        # S2.5: keep the death observation independent of the Playwright error. The
+        # browser log sink is bounded and removed when the browser is closed.
+        self._forensics_enabled = browser_forensics_enabled()
+        self._browser_stderr_path = ""
+        self._browser_stderr_sink: BrowserStderrSink | None = None
+        self._probe_active = False
+        self._closing_browser = False
+        self._disconnect_lock = threading.Lock()
+        self._last_disconnect_at = ""
+        self._last_disconnect_during_probe = False
+        self._last_disconnect_intentional = False
+        self._disconnect_count = 0
+        self._browser_environment_baseline: dict[str, Any] | None = None
+        # A death is followed by a relaunch that resets the live disconnect
+        # snapshot and deletes the Chromium log. Preserve the death block so
+        # the later health probe can still report what killed the browser.
+        self._last_death_forensics: dict[str, Any] = {}
         atexit.register(self._atexit_close)
 
     def _ensure_started(self) -> None:
-        if not self._available:
-            # This is a pool-lifecycle error, not a Playwright launch error; recording it
-            # here would overwrite the real launch/navigation failure that closed the pool.
-            raise RuntimeError("browser fallback unavailable (browser has been closed)")
-        if self._browser is not None and self._loop is not None:
+        self._raise_if_lane_closed()
+        if (
+            self._browser is not None
+            and self._loop is not None
+            and not self._pending_relaunch
+            and self._browser_connected(self._browser)
+        ):
             return
         with self._start_lock:
+            self._raise_if_lane_closed()
             if self._browser is not None and self._loop is not None:
-                return
+                if not self._pending_relaunch and self._browser_connected(self._browser):
+                    return
+                # S2.2: a non-None handle can be a closed browser (0.3.062's observed
+                # failure was at new_page). Drop it and launch a fresh one below.
+                self._remember_death_forensics()
+                self._hard_close_locked()
             if self._loop is None:
                 self._loop = asyncio.new_event_loop()
                 loop = self._loop
@@ -153,8 +230,7 @@ class BrowserFallbackPool:
                 try:
                     future.result(timeout=120)
                 except BaseException as exc:
-                    self._record_failure("launch", exc)
-                    self._hard_close_locked()
+                    self._note_launch_failure(exc)
                     raise
                 self.metrics.incr("pool_startup_ms", int((time.monotonic() - t0) * 1000))
             else:
@@ -163,9 +239,103 @@ class BrowserFallbackPool:
                 try:
                     future.result(timeout=120)
                 except BaseException as exc:
-                    self._record_failure("launch", exc)
-                    self._hard_close_locked()
+                    self._note_launch_failure(exc)
                     raise
+            self._note_launch_success()
+
+    def _raise_if_lane_closed(self) -> None:
+        remaining_s = self._unavailable_until_monotonic - time.monotonic()
+        if remaining_s > 0:
+            raise RuntimeError(
+                "browser fallback unavailable (relaunch cooldown "
+                f"{int(remaining_s + 0.999)}s remaining)"
+            )
+
+    @staticmethod
+    def _browser_connected(browser: Any) -> bool:
+        """A handle is usable only while Chromium still reports it connected."""
+        is_connected = getattr(browser, "is_connected", None)
+        if not callable(is_connected):
+            return True
+        try:
+            return bool(is_connected())
+        except BaseException:
+            return False
+
+    def _note_launch_success(self) -> None:
+        self._pending_relaunch = False
+        self._consecutive_launch_failures = 0
+        self._unavailable_until_monotonic = 0.0
+
+    def _note_launch_failure(self, exc: BaseException) -> None:
+        """Count one failed start; close the lane only after repeated failures."""
+        self._record_failure("launch", exc)
+        self._consecutive_launch_failures += 1
+        if self._consecutive_launch_failures >= _BROWSER_POOL_LAUNCH_FAILURE_LIMIT:
+            self._unavailable_until_monotonic = (
+                time.monotonic() + _BROWSER_POOL_UNAVAILABLE_COOLDOWN_S
+            )
+        # A failed launch can still have written crashpad/GPU lines to stderr. Keep
+        # them before _hard_close_locked closes the sink and its driver.
+        self._remember_death_forensics()
+        self._hard_close_locked()
+
+    def _relaunch_after_death(self) -> None:
+        """Tear down a dead browser so the next ``_ensure_started`` launches fresh."""
+        with self._start_lock:
+            self._relaunches_on_death += 1
+            self.metrics.incr("pool_relaunch_on_death")
+            self._pending_relaunch = False
+            self._remember_death_forensics()
+            self._hard_close_locked()
+
+    def _note_acquisition_success(self) -> None:
+        """A served fetch ends the death episode that preceded it.
+
+        The relaunch budget is per death episode, not per pool lifetime: without
+        this reset two deaths early in a long run permanently spent the budget,
+        so the next death closed the lane for the breaker's 30-minute cooldown.
+        Recovery probes stay capped for the run because each one is a browser
+        launch and two early deaths must not turn into an unbounded probe loop.
+        """
+        with self._start_lock:
+            self._acquisitions_since_launch += 1
+            self._relaunches_on_death = 0
+
+    def _probe_after_death(self) -> dict[str, Any] | None:
+        """Probe the replacement browser once after the first death of the run.
+
+        The fetch loop uses this result: a replacement that still cannot render
+        returns an environment error instead of spending the second relaunch on
+        a retry with no evidence it can work.
+        """
+        with self._start_lock:
+            if self._recovery_probes >= _BROWSER_POOL_RECOVERY_PROBE_LIMIT:
+                return None
+            self._recovery_probes += 1
+        self.metrics.incr("pool_recovery_probes")
+        try:
+            return self.health_probe()
+        except BaseException as exc:
+            return {
+                "ok": False,
+                "stage": "probe",
+                "error": str(exc).strip() or type(exc).__name__,
+                "errorType": type(exc).__name__,
+                "durationMs": 0,
+            }
+
+    @staticmethod
+    def _probe_failure_error(health: dict[str, Any]) -> str:
+        """Turn a failed replacement-probe result into a breaker-owned error."""
+        detail = normalize_browser_fallback_error(str(health.get("error") or "").strip())
+        if is_browser_fallback_environment_error(detail):
+            return detail
+        stage = str(health.get("stage") or "unknown").strip() or "unknown"
+        return (
+            "browser fallback unavailable "
+            f"(post-death health probe failed at {stage}: {detail or 'no error detail'})"
+        )
 
     def _maybe_recycle_browser(self) -> None:
         """Relaunch the pooled browser after N acquisitions (0 disables)."""
@@ -198,14 +368,195 @@ class BrowserFallbackPool:
     async def _start_browser(self) -> None:
         from playwright.async_api import async_playwright
 
-        self._playwright = await async_playwright().start()
+        self._reset_disconnect_snapshot()
+        self._browser_environment_baseline = self._forensics_start()
+        args = browser_fallback_chromium_args()
+        self._close_browser_stderr_sink()
+        cleanup_browser_stderr_file(self._browser_stderr_path)
+        self._browser_stderr_path = ""
+        stderr_path = ""
+        sink: BrowserStderrSink | None = None
+        if self._forensics_enabled:
+            try:
+                sink = BrowserStderrSink()
+            except OSError:
+                sink = None
+            self._browser_stderr_sink = sink
+        if sink is not None:
+            raw_stderr = False
+            with capture_browser_stderr_for_driver(sink) as active:
+                self._playwright = await async_playwright().start()
+                raw_stderr = bool(active)
+            if raw_stderr:
+                sink.detach_writer()
+                args.extend(browser_raw_stderr_chromium_args())
+            else:
+                # A future Playwright may not expose the driver hooks. Keep the
+                # old bounded Chromium log file as the fallback rather than losing
+                # stderr evidence entirely.
+                self._close_browser_stderr_sink()
+        else:
+            self._playwright = await async_playwright().start()
+        if self._forensics_enabled and self._browser_stderr_sink is None:
+            try:
+                stderr_path = prepare_browser_stderr_file()
+            except OSError:
+                stderr_path = ""
+            args.extend(browser_stderr_chromium_args(stderr_path))
+        self._browser_stderr_path = stderr_path
         # ponytail: bound pooled-Chromium footprint inside tight cgroups —
         # renderer pages are separate processes the body-cap cannot reach;
         # heavy SPA renders were pinning 2.5g seats during full-coverage fetch.
         self._browser = await self._playwright.chromium.launch(
             headless=True,
-            args=browser_fallback_chromium_args(),
+            args=args,
         )
+        self._attach_browser_listener(self._browser)
+
+    def _attach_browser_listener(self, browser: Any) -> None:
+        """Record Chromium's own disconnected event without altering pool policy."""
+        on = getattr(browser, "on", None)
+        if not callable(on):
+            return
+        try:
+            on("disconnected", self._on_browser_disconnected)
+        except Exception:
+            pass
+
+    def _on_browser_disconnected(self, _browser: Any = None) -> None:
+        self._record_disconnect(intentional=bool(self._closing_browser))
+
+    def _reset_disconnect_snapshot(self) -> None:
+        with self._disconnect_lock:
+            self._last_disconnect_at = ""
+            self._last_disconnect_during_probe = False
+            self._last_disconnect_intentional = False
+            self._disconnect_count = 0
+        self.metrics.set("last_disconnect_at", "")
+        self.metrics.set("last_disconnect_during_probe", False)
+        self.metrics.set("last_disconnect_intentional", False)
+        self.metrics.set("disconnect_count", 0)
+
+    def _record_disconnect(self, *, intentional: bool) -> None:
+        stamp = now_iso()
+        with self._disconnect_lock:
+            if self._last_disconnect_at:
+                return
+            self._last_disconnect_at = stamp
+            self._last_disconnect_during_probe = bool(self._probe_active)
+            self._last_disconnect_intentional = bool(intentional)
+            self._disconnect_count += 1
+        self.metrics.set("last_disconnect_at", stamp)
+        self.metrics.set("last_disconnect_during_probe", bool(self._probe_active))
+        self.metrics.set("last_disconnect_intentional", bool(intentional))
+        self.metrics.set("disconnect_count", self._disconnect_count)
+
+    def _record_disconnect_if_dead(self) -> None:
+        browser = self._browser
+        if browser is not None and not self._browser_connected(browser):
+            self._record_disconnect(intentional=False)
+
+    def _set_probe_active(self, active: bool) -> None:
+        with self._disconnect_lock:
+            self._probe_active = bool(active)
+
+    def _disconnect_snapshot(self) -> dict[str, Any]:
+        with self._disconnect_lock:
+            return {
+                "observed": bool(self._last_disconnect_at),
+                "at": self._last_disconnect_at,
+                "duringProbe": bool(self._last_disconnect_during_probe),
+                "intentional": bool(self._last_disconnect_intentional),
+                "count": int(self._disconnect_count),
+            }
+
+    def _forensics_start(self) -> dict[str, Any] | None:
+        if not self._forensics_enabled:
+            return None
+        try:
+            return capture_browser_environment()
+        except Exception:
+            return {"capturedAt": now_iso()}
+
+    def _browser_stderr_snapshot(self) -> dict[str, Any]:
+        """Prefer the live raw-stderr ring; keep the log-file fallback for old pools/tests."""
+        sink = self._browser_stderr_sink
+        if sink is not None:
+            try:
+                return sink.snapshot()
+            except Exception:
+                pass
+        return read_browser_stderr(self._browser_stderr_path)
+
+    def _close_browser_stderr_sink(self) -> None:
+        sink = self._browser_stderr_sink
+        self._browser_stderr_sink = None
+        if sink is not None:
+            try:
+                sink.close()
+            except Exception:
+                pass
+
+    def _remember_death_forensics(self) -> None:
+        """Preserve the death block before a relaunch clears its live evidence."""
+        if not self._forensics_enabled:
+            return
+        self._record_disconnect_if_dead()
+        after: dict[str, Any] = {}
+        try:
+            after = capture_browser_environment()
+        except Exception:
+            pass
+        try:
+            stderr = self._browser_stderr_snapshot()
+        except Exception:
+            stderr = {}
+        try:
+            forensics = build_browser_forensics(
+                self._browser_environment_baseline,
+                after,
+                browser_stderr=stderr,
+                disconnect=self._disconnect_snapshot(),
+            )
+        except Exception:
+            return
+        if not forensics.get("available"):
+            return
+        with self._diagnostics_lock:
+            self._last_death_forensics = forensics
+
+    def _forensics_snapshot(self, before: dict[str, Any] | None) -> dict[str, Any]:
+        if not self._forensics_enabled:
+            return {}
+        with self._diagnostics_lock:
+            death = dict(self._last_death_forensics)
+        if death:
+            return death
+        after: dict[str, Any] = {}
+        try:
+            after = capture_browser_environment()
+        except Exception:
+            pass
+        try:
+            stderr = self._browser_stderr_snapshot()
+        except Exception:
+            stderr = {}
+        try:
+            return build_browser_forensics(
+                before,
+                after,
+                browser_stderr=stderr,
+                disconnect=self._disconnect_snapshot(),
+            )
+        except Exception:
+            return {
+                "available": False,
+                "capturedAt": now_iso(),
+                "cgroup": {},
+                "shm": {},
+                "browserStderr": stderr,
+                "disconnect": self._disconnect_snapshot(),
+            }
 
     async def _fetch(self, url: str, timeout_s: int) -> str:
         context = await self._browser.new_context()
@@ -248,6 +599,10 @@ class BrowserFallbackPool:
 
     @staticmethod
     def _browser_death_marker(exc: BaseException) -> bool:
+        # The observed container failure arrives as TargetClosedError from new_page;
+        # its message tokens are not guaranteed, so match the type as well.
+        if type(exc).__name__ == "TargetClosedError":
+            return True
         text = str(exc).lower()
         return any(
             token in text
@@ -262,9 +617,14 @@ class BrowserFallbackPool:
         )
 
     def _mark_unavailable(self) -> None:
+        """Record a death marker: this handle is dead, the lane is not.
+
+        The old ``_available`` flag was itself a latch: one death made every later
+        call raise until the probe or ``close()`` reset the pool. The next start now
+        drops the dead handle and relaunches instead, bounded per pool.
+        """
         with self._start_lock:
-            if self._available:
-                self._available = False
+            self._pending_relaunch = True
 
     def _record_failure(self, stage: str, exc: BaseException) -> None:
         """Keep the original Playwright error before the breaker normalizes it.
@@ -295,6 +655,12 @@ class BrowserFallbackPool:
         elif stage == "navigation":
             self.metrics.set("last_navigation_error", message)
             self.metrics.set("last_navigation_error_type", error_type)
+            # A TargetClosedError at new_page may arrive before the disconnected
+            # callback. Record the same signal here so the health result is not
+            # empty just because Playwright delivered the exception first.
+            self._record_disconnect_if_dead()
+            if self._browser_death_marker(exc):
+                self._remember_death_forensics()
 
     def _failure_snapshot(self) -> dict[str, Any]:
         with self._diagnostics_lock:
@@ -342,6 +708,7 @@ class BrowserFallbackPool:
         stage: str,
         started: float,
         exc: BaseException | None = None,
+        environment_before: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         result = {
             "ok": bool(ok),
@@ -352,6 +719,9 @@ class BrowserFallbackPool:
             "probeUrl": BROWSER_HEALTH_PROBE_URL,
             **self._failure_snapshot(),
         }
+        forensics = self._forensics_snapshot(environment_before)
+        if forensics:
+            result["forensics"] = forensics
         self.metrics.set("last_health_probe", dict(result))
         return result
 
@@ -366,31 +736,55 @@ class BrowserFallbackPool:
         """
         started = time.monotonic()
         effective_timeout_s = max(1, min(int(timeout_s or BROWSER_HEALTH_PROBE_TIMEOUT_S), 30))
+        environment_before = self._forensics_start()
         self.metrics.incr("pool_health_probes")
-        if not self._available:
-            # _hard_close_locked assumes _start_lock. Re-check under the lock so a
-            # concurrent close/restart is not torn down by a stale availability read.
-            with self._start_lock:
-                if not self._available:
-                    self._hard_close_locked()
+        self._set_probe_active(True)
         try:
-            self._ensure_started()
-        except BaseException as exc:
-            return self._health_result(ok=False, stage="launch", started=started, exc=exc)
-        loop = self._loop
-        if loop is None:
-            loop_exc = RuntimeError("browser pool event loop not started")
-            self._record_failure("launch", loop_exc)
-            return self._health_result(ok=False, stage="launch", started=started, exc=loop_exc)
-        try:
-            future = asyncio.run_coroutine_threadsafe(self._probe_page(effective_timeout_s), loop)
-            future.result(timeout=effective_timeout_s + 5)
-        except BaseException as exc:
-            self._record_failure("navigation", exc)
-            if self._browser_death_marker(exc):
-                self._mark_unavailable()
-            return self._health_result(ok=False, stage="navigation", started=started, exc=exc)
-        return self._health_result(ok=True, stage="ready", started=started)
+            try:
+                self._ensure_started()
+            except BaseException as exc:
+                return self._health_result(
+                    ok=False,
+                    stage="launch",
+                    started=started,
+                    exc=exc,
+                    environment_before=environment_before,
+                )
+            loop = self._loop
+            if loop is None:
+                loop_exc = RuntimeError("browser pool event loop not started")
+                self._record_failure("launch", loop_exc)
+                return self._health_result(
+                    ok=False,
+                    stage="launch",
+                    started=started,
+                    exc=loop_exc,
+                    environment_before=environment_before,
+                )
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    self._probe_page(effective_timeout_s), loop
+                )
+                future.result(timeout=effective_timeout_s + 5)
+            except BaseException as exc:
+                self._record_failure("navigation", exc)
+                if self._browser_death_marker(exc):
+                    self._mark_unavailable()
+                return self._health_result(
+                    ok=False,
+                    stage="navigation",
+                    started=started,
+                    exc=exc,
+                    environment_before=environment_before,
+                )
+            return self._health_result(
+                ok=True,
+                stage="ready",
+                started=started,
+                environment_before=environment_before,
+            )
+        finally:
+            self._set_probe_active(False)
 
     async def _capture_json_response(self, response: Any, captured: list[tuple[str, str]]) -> None:
         """Record one JSON response worth keeping. A failed sub-request is not a failure.
@@ -509,20 +903,49 @@ class BrowserFallbackPool:
             self._ensure_started()
         except BaseException as exc:
             return "", normalize_browser_fallback_error(str(exc)), []
-        try:
-            loop = self._loop
-            if loop is None:
-                raise RuntimeError("browser pool event loop not started")
-            future = asyncio.run_coroutine_threadsafe(
-                self._fetch_captured(url, timeout_s, settle_ms=settle_ms), loop
-            )
-            html, captured = future.result(timeout=max(1, int(timeout_s)) + 30)
-        except BaseException as exc:
-            self._record_failure("navigation", exc)
-            return "", normalize_browser_fallback_error(str(exc)), []
+        while True:
+            try:
+                loop = self._loop
+                if loop is None:
+                    raise RuntimeError("browser pool event loop not started")
+                future = asyncio.run_coroutine_threadsafe(
+                    self._fetch_captured(url, timeout_s, settle_ms=settle_ms), loop
+                )
+                html, captured = future.result(timeout=max(1, int(timeout_s)) + 30)
+                break
+            except BaseException as exc:
+                if (
+                    self._browser_death_marker(exc)
+                    and self._relaunches_on_death < _BROWSER_POOL_RELAUNCH_LIMIT
+                ):
+                    # A new_context/new_page/goto failure on a closed browser is a
+                    # death, not a board failure: relaunch and retry this fetch once.
+                    self._relaunch_after_death()
+                    try:
+                        self._ensure_started()
+                    except BaseException as launch_exc:
+                        # _ensure_started already recorded the launch stage; a start
+                        # failure is not a navigation failure.
+                        return "", normalize_browser_fallback_error(str(launch_exc)), []
+                    # A fresh browser may have launched into the same broken
+                    # environment. Probe once, immediately, before spending the
+                    # second relaunch on a retry that cannot render. A failed
+                    # probe returns now; the breaker owns the cooldown policy.
+                    probe_health = self._probe_after_death()
+                    if probe_health is not None and not probe_health.get("ok"):
+                        return "", self._probe_failure_error(probe_health), []
+                    continue
+                if self._browser_death_marker(exc):
+                    # Relaunch budget spent: idle the lane for the breaker's cooldown
+                    # instead of launching Chromium once per remaining source.
+                    with self._start_lock:
+                        self._unavailable_until_monotonic = (
+                            time.monotonic() + _BROWSER_POOL_UNAVAILABLE_COOLDOWN_S
+                        )
+                self._record_failure("navigation", exc)
+                return "", normalize_browser_fallback_error(str(exc)), []
         self.metrics.incr("pool_acquisitions")
-        with self._start_lock:
-            self._acquisitions_since_launch += 1
+        self._note_acquisition_success()
         if not html:
             return "", "browser fallback returned empty content", captured
         return html, "", captured
@@ -530,14 +953,24 @@ class BrowserFallbackPool:
     def close(self) -> None:
         with self._start_lock:
             self._hard_close_locked()
+            self._pending_relaunch = False
+            self._relaunches_on_death = 0
+            self._recovery_probes = 0
+            self._consecutive_launch_failures = 0
+            self._unavailable_until_monotonic = 0.0
+        with self._diagnostics_lock:
+            self._last_death_forensics = {}
+        self._browser_environment_baseline = None
 
     def _hard_close_locked(self) -> None:
         loop = self._loop
         thread = self._thread
         self._loop = None
         self._thread = None
-        self._available = True
         if loop is None:
+            self._close_browser_stderr_sink()
+            cleanup_browser_stderr_file(self._browser_stderr_path)
+            self._browser_stderr_path = ""
             return
         # Grab the live handles BEFORE dropping our references: _shutdown
         # runs on the pool loop thread, and nulling these first would leave
@@ -550,11 +983,17 @@ class BrowserFallbackPool:
         playwright = self._playwright
         self._browser = None
         self._playwright = None
+        self._closing_browser = True
         try:
             future = asyncio.run_coroutine_threadsafe(self._shutdown(browser, playwright), loop)
             future.result(timeout=10)
         except BaseException:
             pass
+        finally:
+            self._closing_browser = False
+        self._close_browser_stderr_sink()
+        cleanup_browser_stderr_file(self._browser_stderr_path)
+        self._browser_stderr_path = ""
         loop.call_soon_threadsafe(loop.stop)
         if thread is not None:
             thread.join(timeout=_POOL_THREAD_JOIN_TIMEOUT_S)

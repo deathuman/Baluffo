@@ -133,6 +133,25 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
     report_output_path = Path(str(outputs.get("report") or ""))
     sources = json_object_rows(report.get("sources"))
     detail_rows = flatten_fetch_detail_rows(report)
+    source_health = as_json_object(report.get("sourceHealth"))
+    browser_demand = as_json_object(runtime.get("browserFallbackDemand"))
+    fallback_calls = safe_int(browser_demand.get("attempts"))
+    fallback_refused = safe_int(browser_demand.get("refused"))
+    # Older reports lack `pages`; a call reaches a page exactly when the breaker
+    # did not refuse it.
+    fallback_pages = (
+        safe_int(browser_demand.get("pages"))
+        if browser_demand.get("pages") is not None
+        else max(0, fallback_calls - fallback_refused)
+    )
+    fallback_source_rows = safe_int(source_health.get("browserFallbackAttemptedSources"))
+    fallback_failed_source_rows = safe_int(source_health.get("browserFallbackFailedSources"))
+    browser_queue_count = len(
+        read_json(
+            report_output_path.parent / "jobs-browser-fallback-queue.json",
+            [],
+        )
+    )
     failed_sources = [
         {
             "name": safe_text(row.get("name")) or "unknown",
@@ -166,12 +185,24 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
         "successfulSources": safe_int(summary.get("successfulSources")),
         "failedSourcesCount": safe_int(summary.get("failedSources")),
         "outputCount": safe_int(summary.get("outputCount")),
-        "browserFallbackQueueCount": len(
-            read_json(
-                report_output_path.parent / "jobs-browser-fallback-queue.json",
-                [],
-            )
-        ),
+        # Four different dimensions. `browserFallbackCalls` is demand; `pageAttempts`
+        # is calls that passed the breaker; `sourceRows` is unique source report rows;
+        # `queuePages` is the canonical-page-deduplicated browser queue.
+        "browserFallbackCalls": fallback_calls,
+        "browserFallbackRefusedCalls": fallback_refused,
+        "browserFallbackPageAttempts": fallback_pages,
+        "browserFallbackSourceRows": fallback_source_rows,
+        "browserFallbackFailedSourceRows": fallback_failed_source_rows,
+        "browserFallbackQueueCount": browser_queue_count,
+        "browserFallbackQueuePages": browser_queue_count,
+        "browserFallbackAccounting": {
+            "calls": fallback_calls,
+            "refusedCalls": fallback_refused,
+            "pageAttempts": fallback_pages,
+            "sourceRows": fallback_source_rows,
+            "failedSourceRows": fallback_failed_source_rows,
+            "queuePages": browser_queue_count,
+        },
         "siteChangedDiagnosedCount": sum(
             1 for row in sources if safe_text(row.get("failureBucket")).lower() == "site_changed"
         ),
@@ -422,6 +453,12 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Discovery duration: {safe_int(discovery.get('totalDurationMs'))} ms",
         f"- Fetch duration: {safe_int(fetch.get('totalDurationMs'))} ms",
         f"- Fetch wall-clock: {safe_int(fetch.get('wallClockDurationMs'))} ms",
+        f"- Browser fallback calls: {safe_int(fetch.get('browserFallbackCalls'))} "
+        f"({safe_int(fetch.get('browserFallbackRefusedCalls'))} refused)",
+        f"- Browser fallback page attempts: {safe_int(fetch.get('browserFallbackPageAttempts'))}",
+        f"- Browser fallback source rows: {safe_int(fetch.get('browserFallbackSourceRows'))}",
+        f"- Browser fallback failed source rows: {safe_int(fetch.get('browserFallbackFailedSourceRows'))}",
+        f"- Browser fallback queue pages: {safe_int(fetch.get('browserFallbackQueuePages'))}",
         f"- Total jobs: {safe_int(totals.get('totalJobs'))}",
         f"- Top-level failed fetch sources: {safe_int(totals.get('topLevelFailedSources'))}",
         f"- Top-level high-cost/low-yield sources: {safe_int(totals.get('topLevelHighCostLowYieldSources'))}",

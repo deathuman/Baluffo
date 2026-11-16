@@ -702,6 +702,9 @@ def finalize_pipeline_run(
             lifecycle_finished_at=lifecycle_finished_at,
             redirect_resolver=redirect_resolver,
         )
+        # The queue is deduplicated by canonical page, so this count is unique
+        # queue pages, not fallback calls or unique source report rows.
+        runtime_payload["browserFallbackQueueCount"] = len(_browser_fallback_queue_rows)
         _log_rss("after review queues")
         social_review_payload, social_review_path = _write_social_review_artifact(
             paths=paths,

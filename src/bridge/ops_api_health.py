@@ -22,6 +22,7 @@ from src.bridge.discovery_audit_artifacts import (
     load_probe_lifecycle_receipt as load_probe_lifecycle_receipt,
 )
 from src.bridge.fetch_report_summary import (
+    compact_browser_fallback_demand,
     compact_browser_fallback_health,
     compact_source_health_summary,
     load_fetch_report_summary_artifact,
@@ -30,6 +31,7 @@ from src.bridge.ops_api_core import OpsApiState, _latest_time_text, _row_active,
 from src.bridge.performance_profile import time_operation
 from src.build_info import read_build_info
 from src.shared.json_shapes import as_json_object
+from src.shared.utils import coerce_non_negative_int as _safe_int
 
 # Active runs recompute the KPI payload on every call so stage transitions
 # surface at once, but its expensive inputs only move when a fetch finishes or
@@ -399,11 +401,32 @@ class OpsApiHealthMixin(OpsApiState):
             if source_outcome:
                 kpis["sourceOutcomeSummary"] = source_outcome
             source_runtime = as_json_object(source_artifact.get("runtime"))
-            browser_health = compact_browser_fallback_health(
-                source_runtime.get("browserFallbackHealth")
-            )
+            raw_browser_health = source_runtime.get("browserFallbackHealth")
+            browser_health = compact_browser_fallback_health(raw_browser_health)
+            if raw_browser_health is False:
+                browser_health = {**browser_health, "ok": False}
             if browser_health:
                 kpis["browserFallbackHealth"] = browser_health
+            browser_demand = compact_browser_fallback_demand(
+                source_runtime.get("browserFallbackDemand")
+            )
+            if browser_demand:
+                kpis["browserFallbackDemand"] = browser_demand
+            queue_pages = max(0, _safe_int(source_runtime.get("browserFallbackQueueCount"), 0))
+            if queue_pages:
+                kpis["browserFallbackQueuePages"] = queue_pages
+            environment_blocked_sources = max(
+                _safe_int(source_outcome.get("browserFallbackEnvironmentBlockedSources"), 0),
+                _safe_int(source_runtime.get("browserFallbackEnvironmentBlockedSources"), 0),
+            )
+            environment_blocked = (
+                bool(source_runtime.get("browserFallbackEnvironmentBlocked"))
+                or environment_blocked_sources > 0
+            )
+            if environment_blocked:
+                kpis["browserFallbackEnvironmentBlocked"] = True
+            if environment_blocked or environment_blocked_sources:
+                kpis["browserFallbackEnvironmentBlockedSources"] = environment_blocked_sources
             if "pendingCount" in registry_summary:
                 pending_sources_count = int(registry_summary.get("pendingCount") or 0)
                 kpis["pendingSourcesCount"] = pending_sources_count
@@ -419,6 +442,14 @@ class OpsApiHealthMixin(OpsApiState):
                 state_lock=self._deps.ops_state_lock,
             )
             alerts = list(alert_result.get("alerts") or [])
+            browser_alert = _ops_health.browser_fallback_health_alert(
+                browser_health,
+                environment_blocked=environment_blocked,
+                environment_blocked_sources=environment_blocked_sources,
+                now_iso=self._deps.now_iso(),
+            )
+            if browser_alert:
+                alerts.append(browser_alert)
             return {
                 "ok": True,
                 "summaryView": True,
@@ -428,7 +459,11 @@ class OpsApiHealthMixin(OpsApiState):
                 "alerts": alerts,
                 "suppressedAlertsCount": int(alert_result.get("suppressedCount") or 0),
                 "alertsEvaluated": True,
-                "alertBasis": "history-active-run" if active_summary else "history",
+                "alertBasis": (
+                    "history-active-run+storage+browser"
+                    if active_summary
+                    else "history+storage+browser"
+                ),
                 **(
                     {
                         "activePipelineOrFetchRunning": True,

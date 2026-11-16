@@ -236,6 +236,46 @@ def test_split_brain_stale_aliases_do_not_override_fresh_counters() -> None:
     assert "zeroJobStreak" not in merged
 
 
+def test_derive_source_health_counts_environment_blocked_browser_sources() -> None:
+    rows = [
+        {
+            "name": "blocked_a",
+            "adapter": "static",
+            "status": "error",
+            "keptCount": 0,
+            "browserFallbackRecommended": True,
+            "browserFallbackAttempted": True,
+            "browserFallbackUsed": False,
+            "browserFallbackAttemptError": "browser fallback unavailable (environment blocked)",
+        },
+        {
+            "name": "blocked_b",
+            "adapter": "static",
+            "status": "error",
+            "keptCount": 0,
+            "browserFallbackRecommended": True,
+            "browserFallbackAttempted": True,
+            "browserFallbackUsed": False,
+            "browserFallbackAttemptError": "browser fallback unavailable (environment blocked)",
+        },
+        {
+            "name": "ordinary_empty",
+            "adapter": "static",
+            "status": "ok",
+            "keptCount": 0,
+            "browserFallbackRecommended": True,
+            "browserFallbackAttempted": True,
+            "browserFallbackUsed": False,
+            "browserFallbackAttemptError": "browser fallback returned empty content",
+        },
+    ]
+
+    health = derive_source_health(rows)
+
+    assert health["browserFallbackAttemptedSources"] == 3
+    assert health["browserFallbackEnvironmentBlockedSources"] == 2
+
+
 def test_state_derive_emits_canonical_counters_only() -> None:
     """Phase 4 of the counter collapse: the derive no longer dual-writes the
     legacy alias keys into persisted state — canonical counters only. A stale

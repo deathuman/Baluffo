@@ -3,13 +3,17 @@ from __future__ import annotations
 import io
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from src.jobs import pipeline_source_loop as _loop_mod
 from src.jobs import pipeline_stage_source_execution as stage_mod
-from src.jobs.browser_fallback import BROWSER_FALLBACK_STATE_KEY
+from src.jobs.browser_fallback import (
+    BROWSER_FALLBACK_STATE_KEY,
+    ENVIRONMENT_BLOCKED_ERROR_TEXT,
+)
 from src.jobs.pipeline_stage_source_execution import (
     SourceExecutionStageConfig,
     run_source_execution_stage,
@@ -21,6 +25,91 @@ from tests.helpers.source_loaders import empty_loader
 
 class _ThreadLocal:
     source_name = ""
+
+
+class _PreflightPool:
+    def __init__(self, healths: list[dict[str, Any]]) -> None:
+        self._healths = list(healths)
+        self.probe_calls = 0
+        self.fetch_calls = 0
+        self.capture_calls = 0
+        self.closed = False
+        self.metrics = SimpleNamespace(
+            snapshot=lambda: {
+                "pool_acquisitions": 0,
+                "pool_startup_ms": 0,
+                "pool_relaunch_count": 0,
+            }
+        )
+
+    def health_probe(self) -> dict[str, Any]:
+        index = min(self.probe_calls, len(self._healths) - 1)
+        self.probe_calls += 1
+        return dict(self._healths[index])
+
+    def fetch(self, _url: str, _timeout_s: int) -> tuple[str, str]:
+        self.fetch_calls += 1
+        return "<html>rendered</html>", ""
+
+    def fetch_captured(self, _url: str, _timeout_s: int) -> tuple[str, str, list[tuple[str, str]]]:
+        self.capture_calls += 1
+        return "<html>rendered</html>", "", [("https://example.com/api", "{}")]
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _run_preflight_stage(
+    monkeypatch: pytest.MonkeyPatch,
+    pool: _PreflightPool,
+    loader: Any,
+    runtime_payload: dict[str, Any],
+) -> None:
+    monkeypatch.setattr(_loop_mod, "browser_pool_enabled", lambda: True)
+    monkeypatch.setattr(_loop_mod, "BrowserFallbackPool", lambda: pool)
+    monkeypatch.setattr(stage_mod, "_default_adapter_for_loader", lambda _name, _meta: "static")
+    monkeypatch.setattr(
+        stage_mod,
+        "resolve_fetch_browser_fallback_helper",
+        lambda: lambda _url, _timeout: ("", ""),
+    )
+    run_source_execution_stage(
+        config=SourceExecutionStageConfig(
+            max_workers=1,
+            timeout_s=1,
+            retries=0,
+            backoff_s=0.0,
+            static_detail_concurrency=1,
+            google_sheets_redirect_concurrency=1,
+            started_at="2026-03-23T00:00:00Z",
+            show_progress=False,
+            force_refresh_all=False,
+            browser_fallback_cooldown_minutes=30,
+        ),
+        selected_loaders=[("preflight_source", loader)],
+        fetch_text_limited=lambda _url, _timeout: "",
+        source_state_rows={},
+        redirect_resolver=type("Resolver", (), {"resolve": staticmethod(lambda url: url)})(),
+        task_rows={
+            "preflight_source": {
+                "status": "pending",
+                "startedAt": "",
+                "finishedAt": "",
+                "heartbeatAt": "",
+                "durationMs": 0,
+                "error": "",
+                "_startedMonotonic": 0.0,
+                "_slowWarned": False,
+            }
+        },
+        task_lock=threading.Lock(),
+        thread_local=_ThreadLocal(),
+        write_task_state=lambda **_kwargs: None,
+        write_progress_report=lambda **_kwargs: None,
+        canonical_rows=[],
+        source_reports=[],
+        runtime_payload=runtime_payload,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -620,3 +709,81 @@ def test_stage_reclassifies_zero_kept_static_manual_no_jobs_sources(monkeypatch)
     assert report["failureBucket"] == "js_required"
     assert report["zeroKeptClassification"] == "broken_extraction"
     assert "no jobs extracted from source pages" in str(report["error"])
+
+
+def test_stage_preflight_blocks_browser_lanes_when_two_probes_cannot_render(monkeypatch) -> None:
+    health = {
+        "ok": False,
+        "stage": "launch",
+        "error": "Executable doesn't exist at /ms-playwright/chromium",
+        "errorType": "RuntimeError",
+        "durationMs": 12,
+    }
+    pool = _PreflightPool([health, health])
+    browser_calls: list[Any] = []
+    capture_calls: list[Any] = []
+    runtime_payload: dict[str, Any] = {}
+
+    def loader(**kwargs):  # noqa: ANN202
+        browser_calls.append(kwargs["try_playwright"]("https://example.com/board", 1))
+        capture_calls.append(kwargs["try_playwright_json"]("https://example.com/board", 1))
+        return []
+
+    _run_preflight_stage(monkeypatch, pool, loader, runtime_payload)
+
+    assert pool.probe_calls == 2
+    assert pool.fetch_calls == 0
+    assert pool.capture_calls == 0
+    assert pool.closed is True
+    assert browser_calls == [("", ENVIRONMENT_BLOCKED_ERROR_TEXT)]
+    assert capture_calls == [("", ENVIRONMENT_BLOCKED_ERROR_TEXT, [])]
+    assert runtime_payload["browserFallbackEnvironmentBlocked"] is True
+    assert runtime_payload["browserFallbackHealth"]["stage"] == "launch"
+    assert runtime_payload["browserFallbackDemand"] == {
+        "attempts": 0,
+        "refused": 0,
+        "pages": 0,
+        "servedWithHtml": 0,
+        "servedEmpty": 0,
+        "servedEmptyEnvironment": 0,
+        "servedEmptyPage": 0,
+    }
+
+
+def test_stage_preflight_retries_once_then_allows_browser_fallback(monkeypatch) -> None:
+    failed = {
+        "ok": False,
+        "stage": "navigation",
+        "error": "TargetClosedError",
+        "errorType": "TargetClosedError",
+        "durationMs": 8,
+    }
+    ready = {"ok": True, "stage": "ready", "error": "", "durationMs": 3}
+    pool = _PreflightPool([failed, ready])
+    browser_calls: list[Any] = []
+    capture_calls: list[Any] = []
+    runtime_payload: dict[str, Any] = {}
+
+    def loader(**kwargs):  # noqa: ANN202
+        browser_calls.append(kwargs["try_playwright"]("https://example.com/board", 1))
+        capture_calls.append(kwargs["try_playwright_json"]("https://example.com/board", 1))
+        return []
+
+    _run_preflight_stage(monkeypatch, pool, loader, runtime_payload)
+
+    assert pool.probe_calls == 2
+    assert pool.fetch_calls == 1
+    assert pool.capture_calls == 1
+    assert browser_calls == [("<html>rendered</html>", "")]
+    assert capture_calls == [("<html>rendered</html>", "", [("https://example.com/api", "{}")])]
+    assert "browserFallbackEnvironmentBlocked" not in runtime_payload
+    assert "browserFallbackHealth" not in runtime_payload
+    assert runtime_payload["browserFallbackDemand"] == {
+        "attempts": 2,
+        "refused": 0,
+        "pages": 2,
+        "servedWithHtml": 2,
+        "servedEmpty": 0,
+        "servedEmptyEnvironment": 0,
+        "servedEmptyPage": 0,
+    }

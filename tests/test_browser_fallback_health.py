@@ -140,13 +140,13 @@ def test_health_probe_reports_ready_and_keeps_prior_navigation_error(
     assert metrics["last_health_probe"]["ok"] is True
 
 
-def test_health_probe_resets_an_unavailable_browser_under_the_start_lock(
+def test_health_probe_relaunches_after_a_death_marker_instead_of_latching(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The health probe must not call the locked close helper unlocked.
+    """S2.3: a death marker must not close the lane for the rest of the run.
 
-    A stale unavailable read used to enter ``_hard_close_locked`` directly while
-    a concurrent close or restart could already own the pool handoff.
+    The old ``_available`` latch made this probe raise before it could relaunch;
+    now a death-marked pool still goes through ``_ensure_started``.
     """
 
     def complete(coro: Any, _loop: Any) -> _CompletedFuture:
@@ -155,26 +155,21 @@ def test_health_probe_resets_an_unavailable_browser_under_the_start_lock(
 
     monkeypatch.setattr(pool_mod.asyncio, "run_coroutine_threadsafe", complete)
     pool = BrowserFallbackPool()
-    pool._available = False
+    pool._mark_unavailable()
     typed_pool = cast(Any, pool)
     typed_pool._loop = _FakeLoop()
-    typed_pool._ensure_started = lambda: None
-    close_lock_states: list[bool] = []
-
-    def record_close() -> None:
-        close_lock_states.append(pool._start_lock.locked())
-
-    monkeypatch.setattr(pool, "_hard_close_locked", record_close)
+    ensure_started_calls: list[bool] = []
+    typed_pool._ensure_started = lambda: ensure_started_calls.append(pool._pending_relaunch)
     try:
         health = pool.health_probe(timeout_s=1)
-        assert close_lock_states == [True]
-        assert health["ok"] is True
     finally:
-        # The patched close is a no-op; detach the fake loop so atexit does not try
-        # to schedule a real shutdown coroutine on it.
         pool.close()
         pool._loop = None
         pool._thread = None
+
+    assert health["ok"] is True
+    assert health["stage"] == "ready"
+    assert ensure_started_calls == [True], "a death marker must not become a permanent latch"
 
 
 def test_runtime_payload_normalizes_browser_health_diagnostics() -> None:
@@ -209,6 +204,49 @@ def test_runtime_payload_normalizes_browser_health_diagnostics() -> None:
 def test_runtime_payload_omits_absent_browser_health() -> None:
     payload = normalize_runtime_payload({}, selected_source_count=0)
     assert "browserFallbackHealth" not in payload
+    assert payload["browserFallbackEnvironmentBlocked"] is False
+
+
+def test_runtime_payload_preserves_browser_environment_blocked() -> None:
+    payload = normalize_runtime_payload(
+        {"browserFallbackEnvironmentBlocked": True}, selected_source_count=0
+    )
+    assert payload["browserFallbackEnvironmentBlocked"] is True
+
+
+def test_runtime_payload_clamps_environment_blocked_source_count() -> None:
+    payload = normalize_runtime_payload(
+        {
+            "browserFallbackEnvironmentBlocked": True,
+            "browserFallbackEnvironmentBlockedSources": 12,
+        },
+        selected_source_count=0,
+    )
+    assert payload["browserFallbackEnvironmentBlockedSources"] == 12
+
+    junk = normalize_runtime_payload(
+        {"browserFallbackEnvironmentBlockedSources": "not-a-number"},
+        selected_source_count=0,
+    )
+    assert junk["browserFallbackEnvironmentBlockedSources"] == 0
+
+
+def test_emit_browser_fallback_status_reports_environment_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    messages: list[str] = []
+    monkeypatch.setattr(pipeline_source_loop, "emit_progress_line", messages.append)
+
+    pipeline_source_loop._emit_browser_fallback_status(
+        True,
+        pipeline_source_loop._environment_blocked_try_playwright,
+        SimpleNamespace(max_workers=4),
+        environment_blocked=True,
+    )
+
+    assert messages == [
+        "[jobs_fetcher] INFO browserFallbackEnabled=true browserFallbackEnvironmentBlocked=true"
+    ]
 
 
 def test_browser_health_probe_runs_only_after_environment_failure(
