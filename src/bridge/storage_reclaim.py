@@ -651,10 +651,16 @@ class StorageReclaimJob:
         """Measure a copy and discard it: no install, no backup, no delete."""
         with self._lock:
             run_id = str(self._state["runId"])
+        deadline = time.monotonic() + RECLAIM_MAX_RUN_S
         try:
-            self._rehearse()
+            self._rehearse(deadline)
         except (CurrentFeedRebuildCancelled, RetentionCancelled):
-            self._settle("cancelled")
+            # The copy stops on either our Stop or the run limit; only the
+            # operator asked for one of those.
+            if time.monotonic() > deadline:
+                self._settle("failed", error="the rehearsal did not finish within the run limit")
+            else:
+                self._settle("cancelled")
         except (
             BaluffoStoreError,
             CurrentFeedRebuildError,
@@ -669,7 +675,7 @@ class StorageReclaimJob:
             self._cleanup_rehearsal(run_id)
             self._release_run_hold(run_id)
 
-    def _rehearse(self) -> None:
+    def _rehearse(self, deadline: float) -> None:
         """Run the real copy on the live database and report what it cost.
 
         The copy helper validates its staging file and computes the content
@@ -680,10 +686,24 @@ class StorageReclaimJob:
         if refusal is not None:
             self._settle("cancelled", error=refusal)
             return
+        # A real run stops retention before its copy; measuring a database the
+        # reclaimer will be deleting from would not describe the copy it makes.
+        self._set_phase("stopping-retention")
+        store = get_storage_store(self.data_dir, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
+        rebuild_mod.stop_runtime_retention_for_copy(store)
+        if self._cancel_event.is_set():
+            self._settle("cancelled")
+            return
         self._set_phase("copying")
         with self._lock:
             run_id = str(self._state["runId"])
         started = time.monotonic()
+
+        def cancel_requested() -> bool:
+            # The copy has no deadline of its own, so the run limit is enforced
+            # at the same batch boundaries as an operator's Stop.
+            return self._cancel_event.is_set() or time.monotonic() > deadline
+
         source_bytes = file_size(self.db_path)
         free_bytes = _free_space_bytes(self.data_dir)
         required_free = rebuild_required_free_bytes(source_bytes)
@@ -693,7 +713,7 @@ class StorageReclaimJob:
             staging,
             journal_path=rehearsal_journal_path(self.data_dir),
             run_id=run_id,
-            cancel_requested=self._cancel_event.is_set,
+            cancel_requested=cancel_requested,
             # A multi-GB copy must refresh the hold's stall clock while it reads.
             on_progress=lambda _progress: self._heartbeat(),
         )

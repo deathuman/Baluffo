@@ -140,6 +140,31 @@ def _empty_state(data_dir: Path) -> dict[str, Any]:
     }
 
 
+def stop_runtime_retention_for_copy(store: Any) -> bool:
+    """Stop the background retention pass before a copy reads the database.
+
+    Retention writes batches of deletes. The install gate would reject the swap
+    as ``superseded`` while it runs, and a copy waited behind days of deletion
+    defeats the purpose, so ask the current bounded pass to stop at its next
+    batch boundary and wait for it to leave the write path. Both the rebuild and
+    the reclaim rehearsal call this, because the rehearsal must see the same
+    database a real run would copy.
+    """
+    status = store.runtime_retention_status()
+    if not bool(status.get("running")):
+        return False
+    run_id = str(status.get("runId") or "")
+    store.cancel_runtime_retention(run_id)
+    deadline = time.monotonic() + DEFAULT_REBUILD_RETENTION_STOP_WAIT_S
+    while time.monotonic() < deadline:
+        if not bool(store.runtime_retention_status().get("running")):
+            return True
+        time.sleep(DEFAULT_REBUILD_RETENTION_POLL_S)
+    raise CurrentFeedRebuildError(
+        "the background retention pass did not stop before the rebuild wait expired"
+    )
+
+
 class StorageRebuildJob:
     """One cancellable current-feed rebuild for one runtime database."""
 
@@ -578,34 +603,12 @@ class StorageRebuildJob:
             }
             self._state.update(self._disk_fields_locked())
 
-    def _stop_retention(self, store: Any) -> bool:
-        """Stop the background retention pass before the copy starts.
-
-        Retention writes batches of deletes. The install gate would reject the
-        swap as ``superseded`` while it runs, and a rebuild waited behind days of
-        deletion defeats the purpose, so ask the current bounded pass to stop at
-        its next batch boundary and wait for it to leave the write path.
-        """
-        status = store.runtime_retention_status()
-        if not bool(status.get("running")):
-            return False
-        run_id = str(status.get("runId") or "")
-        store.cancel_runtime_retention(run_id)
-        deadline = time.monotonic() + DEFAULT_REBUILD_RETENTION_STOP_WAIT_S
-        while time.monotonic() < deadline:
-            if not bool(store.runtime_retention_status().get("running")):
-                return True
-            time.sleep(DEFAULT_REBUILD_RETENTION_POLL_S)
-        raise CurrentFeedRebuildError(
-            "the background retention pass did not stop before the rebuild wait expired"
-        )
-
     def _run(self) -> None:
         staging: Path | None = None
         try:
             store = get_storage_store(self.data_dir, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
             self._update(phase="stopping-retention", stage="stopping-retention")
-            retention_stopped = self._stop_retention(store)
+            retention_stopped = stop_runtime_retention_for_copy(store)
             if self._cancel.is_set():
                 self._finish("cancelled")
                 return

@@ -26,10 +26,12 @@
   table's name. A write that races the copy settles `superseded` (the source
   moved, not the copy), so only a copy defect is reported as a mismatch. The
   rehearsal (§9) is implemented: `POST {dryRun: true}` starts a background
-  read-only copy on the same single-flight and hold, reports staging/reclaimed
-  bytes, duration, per-table counts, validation and the content digests under the
-  journal's `result`, and unlinks its staging file and scratch
-  `<db>.reclaim-rehearsal.json` in a `finally`. Triggers (§4), full-disk order (§3)
+  read-only copy on the same single-flight and hold, stops runtime retention
+  through the same helper the rebuild uses before it reads, is capped at
+  `RECLAIM_MAX_RUN_S` like a real run, reports staging/reclaimed bytes, duration,
+  per-table counts, validation and the content digests under the journal's
+  `result`, and unlinks its staging file and scratch `<db>.reclaim-rehearsal.json`
+  in a `finally`. Triggers (§4), full-disk order (§3)
   and presentation (§6) are unimplemented.
 
 ## Scope
