@@ -28,10 +28,15 @@ import { maybeUnrefTimer } from "../../shared/ui-helpers.js";
 
 const DEFAULT_TIMEOUT_MS = 5000;
 // A copy can take minutes, so the follow-up read outlasts a click-driven panel.
-// The window is the bound: past it the panel keeps the last status and says to
-// Refresh, rather than reading a stuck bridge forever.
+// It has no window of its own: the run's terminal status is what ends it, and the
+// bridge bounds every run, so a finished copy is never left showing a stale
+// phase because the operator walked away.
 const LIVE_READ_INTERVAL_MS = 3000;
-const LIVE_READ_MAX_MS = 30 * 60 * 1000;
+// A bridge that stopped answering must not be polled for the life of the tab.
+// One failed read is a blip — a restart, a busy route; five in a row is ~15 s
+// without an answer, so the follow-up stops and leaves the last status on screen.
+// Any read that answers again resumes it.
+const LIVE_READ_MAX_FAILURES = 5;
 
 const ELEMENT_IDS = {
   adminStorageReclaimHealthEl: "admin-storage-reclaim-health",
@@ -69,10 +74,8 @@ export function createStorageReclaimController({
   postBridge,
   formatBytes,
   timeoutMs = DEFAULT_TIMEOUT_MS,
-  liveReadMaxMs = LIVE_READ_MAX_MS,
   setTimer = callback => maybeUnrefTimer(globalThis.setTimeout(callback, LIVE_READ_INTERVAL_MS)),
-  clearTimer = timer => globalThis.clearTimeout(timer),
-  now = () => Date.now()
+  clearTimer = timer => globalThis.clearTimeout(timer)
 }) {
   let reclaim = null;
   let verdict = null;
@@ -85,10 +88,7 @@ export function createStorageReclaimController({
   // The container modal can be dismissed without cancelling: the run continues.
   let dismissedRunId = "";
   let liveReadTimer = null;
-  // The window belongs to one run, so a run that begins later on the same page
-  // gets its own follow-up instead of inheriting a closed window.
-  let liveReadRunId = "";
-  let liveReadStartedAt = null;
+  let liveReadFailures = 0;
 
   function el(name) {
     const injected = refs?.[name];
@@ -133,20 +133,6 @@ export function createStorageReclaimController({
     }
   }
 
-  /**
-   * Whether a live run has outlived its follow-up window: the panel stopped
-   * reading it, so the dialog and the modal must say so rather than keep
-   * promising updates. Derived from the timer's own state, so the note cannot
-   * claim something the scheduler is not doing.
-   */
-  function liveUpdatesStopped() {
-    return (
-      reclaimRunning(reclaim) &&
-      liveReadStartedAt !== null &&
-      now() - liveReadStartedAt >= liveReadMaxMs
-    );
-  }
-
   function renderModal() {
     const modal = el("adminStorageReclaimModalEl");
     if (!modal) return;
@@ -154,7 +140,7 @@ export function createStorageReclaimController({
     const html =
       runId && runId === dismissedRunId
         ? ""
-        : renderStorageReclaimModalHtml(reclaim, { followUpStopped: liveUpdatesStopped() });
+        : renderStorageReclaimModalHtml(reclaim);
     const body = el("adminStorageReclaimModalBodyEl");
     if (body) body.innerHTML = html;
     modal.hidden = !html;
@@ -165,9 +151,7 @@ export function createStorageReclaimController({
     setText(el("adminStorageReclaimStatusEl"), status.text, status.tone);
     const dialog = el("adminStorageReclaimDialogEl");
     if (dialog) {
-      const body = renderStorageReclaimDialogHtml(reclaim, formatBytes, {
-        followUpStopped: liveUpdatesStopped()
-      });
+      const body = renderStorageReclaimDialogHtml(reclaim, formatBytes);
       dialog.innerHTML = message
         ? `<p class="admin-storage-reclaim-blocked">${message}</p>${body}`
         : body;
@@ -185,7 +169,6 @@ export function createStorageReclaimController({
   function stopLiveRead() {
     if (liveReadTimer !== null) clearTimer(liveReadTimer);
     liveReadTimer = null;
-    liveReadStartedAt = null;
   }
 
   /**
@@ -198,22 +181,14 @@ export function createStorageReclaimController({
       stopLiveRead();
       return;
     }
+    if (liveReadFailures >= LIVE_READ_MAX_FAILURES) return;
     // One timer, however many payloads arrive: a pending read already covers them.
     if (liveReadTimer !== null) return;
-    const runId = String(reclaim?.runId || "");
-    if (runId !== liveReadRunId) {
-      liveReadRunId = runId;
-      liveReadStartedAt = null;
-    }
-    if (liveReadStartedAt === null) liveReadStartedAt = now();
-    // Past the window the panel stops reading. The read that carried the run's
-    // last status has already rendered, so it also rendered the stopped note.
-    if (now() - liveReadStartedAt >= liveReadMaxMs) return;
     liveReadTimer = setTimer(() => {
       liveReadTimer = null;
       // `refresh` is async, so it always answers with a promise; it still accepts
       // (and reschedules from) payloads that carry only the run's status.
-      void refresh({ followUp: true }).finally(scheduleLiveRead);
+      void refresh().finally(scheduleLiveRead);
     });
   }
 
@@ -229,6 +204,8 @@ export function createStorageReclaimController({
       if (String(reclaim.runId || "") !== dismissedRunId) dismissedRunId = "";
     }
     if (payload?.verdict && typeof payload.verdict === "object") verdict = payload.verdict;
+    // The bridge answered, so the follow-up has its footing back.
+    liveReadFailures = 0;
     render();
     scheduleLiveRead();
     return reclaim;
@@ -238,11 +215,8 @@ export function createStorageReclaimController({
    * Read the route once. `refreshVerdict` adds `?refresh=1` so the cached verdict
    * is recomputed, which is the panel's only way to see new measurements.
    */
-  async function refresh({ refreshVerdict = false, followUp = false } = {}) {
+  async function refresh({ refreshVerdict = false } = {}) {
     if (inFlight || typeof getBridge !== "function") return null;
-    // An operator read is also the way back from a closed window: it reopens the
-    // follow-up instead of leaving a stale "stopped" line on screen.
-    if (!followUp) liveReadStartedAt = null;
     inFlight = true;
     try {
       const query = refreshVerdict ? "?refresh=1" : "";
@@ -253,6 +227,8 @@ export function createStorageReclaimController({
       if (!messageIsRefusal) message = "";
       return accept(payload);
     } catch (err) {
+      // The last status stays on screen: it is the last thing the bridge said.
+      liveReadFailures += 1;
       message = `Reclaim status unavailable: ${err?.message || err || "unknown error"}`;
       messageIsRefusal = false;
       render();

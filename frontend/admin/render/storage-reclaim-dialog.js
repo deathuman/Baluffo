@@ -43,10 +43,6 @@ const SAFETY_BLOCKERS = [
   "sample-unavailable"
 ];
 
-// The claim that the panel stopped following must not drift between the inline
-// dialog and the container modal, so both open with this one sentence.
-const LIVE_UPDATES_STOPPED = "Live updates stopped for this run.";
-
 const NOT_BLOATED_TOOLTIP =
   "The database is not bloated enough to shrink right now. Rehearse still measures the copy.";
 
@@ -200,11 +196,8 @@ function formatBytesText(value, formatBytes) {
 /**
  * The panel body: what is happening, why a start is refused, and the copies
  * involved. Numbers only — no ETA, because a stalled disk would make it a lie.
- * `followUpStopped` is the panel's own state: it stops reading a run on its own
- * once the run outlives the follow-up window, and has to say so rather than keep
- * promising that it follows.
  */
-export function renderStorageReclaimDialogHtml(reclaim, formatBytes, { followUpStopped = false } = {}) {
+export function renderStorageReclaimDialogHtml(reclaim, formatBytes) {
   if (!reclaim || typeof reclaim !== "object") {
     return "<p class=\"admin-storage-reclaim-note\">Run <strong>Rehearse</strong> to measure what a shrink would cost before anything is installed.</p>";
   }
@@ -239,9 +232,7 @@ export function renderStorageReclaimDialogHtml(reclaim, formatBytes, { followUpS
   const runId = String(reclaim.runId || "").trim();
   if (runId && reclaimRunning(reclaim)) {
     parts.push(
-      followUpStopped
-        ? `<p class="admin-storage-reclaim-note">${LIVE_UPDATES_STOPPED} <strong>Refresh</strong> resumes them.</p>`
-        : "<p class=\"admin-storage-reclaim-note\">The run continues in the bridge if this page closes; only <strong>Stop</strong> cancels it. The panel follows it while it runs.</p>"
+      "<p class=\"admin-storage-reclaim-note\">The run continues in the bridge if this page closes; only <strong>Stop</strong> cancels it. The panel follows it while the bridge answers.</p>"
     );
   }
   return parts.join("");
@@ -251,17 +242,11 @@ export function renderStorageReclaimDialogHtml(reclaim, formatBytes, { followUpS
  * The container modal. Desktop renders nothing here: its payload says `inline`,
  * and the same dialog body is already on the panel.
  */
-export function renderStorageReclaimModalHtml(reclaim, { followUpStopped = false } = {}) {
+export function renderStorageReclaimModalHtml(reclaim) {
   if (String(reclaim?.scope || "") !== "modal" || !reclaimRunning(reclaim)) return "";
   const status = reclaimStatusText(reclaim);
-  // In a container the modal is the whole panel, so this is the only place the
-  // operator can learn that the status has stopped moving. It sits under the
-  // status it qualifies, above the note that explains closing the tab.
   return [
     `<p class="admin-storage-reclaim-modal-status" data-tone="${status.tone || ""}">${status.text}</p>`,
-    followUpStopped
-      ? `<p class="admin-storage-reclaim-modal-note">${LIVE_UPDATES_STOPPED} Hide this dialog and <strong>Refresh</strong> to resume them.</p>`
-      : "",
-    `<p class="admin-storage-reclaim-modal-note">Closing this tab is safe: the copy runs in the bridge and only Stop cancels it. Fetch starts are refused while it holds.</p>`
+    "<p class=\"admin-storage-reclaim-modal-note\">Closing this tab is safe: the copy runs in the bridge and only Stop cancels it. Fetch starts are refused while it holds.</p>"
   ].join("");
 }
