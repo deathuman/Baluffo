@@ -118,6 +118,11 @@ MAINTENANCE_STATUS_DEFERRED = "deferred"
 MAINTENANCE_STATUS_NOT_NEEDED = "not-needed"
 MAINTENANCE_STATUS_SKIPPED_BUSY = "skipped-busy"
 MAINTENANCE_STATUS_HELD_ACTIVE_TASK = "held-active-task"
+# A checkpoint that could not finish because a reader pins the WAL is a maintenance
+# state, not a store failure: the WAL is intact and the next attempt can still
+# checkpoint it. It used to be recorded as `failed` and latched the store unhealthy
+# for the life of the process.
+MAINTENANCE_STATUS_BUSY = "busy"
 MIGRATIONS_PACKAGE = "src.storage.migrations"
 STORAGE_SCHEMA_VERSION = 1
 
@@ -242,10 +247,12 @@ class BaluffoStore:
         self._write_attempts = 0
         self._write_transactions = 0
         self._healthy = True
+        self._unhealthy_reason: dict[str, str] = {}
         self._last_checkpoint: dict[str, Any] = {
             "status": "not-run",
             "reason": "",
             "mode": "",
+            "attemptedAt": "",
             "durationMs": 0,
             "error": "",
         }
@@ -340,9 +347,34 @@ class BaluffoStore:
         self._seed_authority_modes()
         startup_check = self.startup_probe()
         if startup_check != "ok":
-            self._healthy = False
+            self._mark_unhealthy("startup_probe", f"SQLite startup probe failed: {startup_check}")
             raise BaluffoStoreError(f"SQLite startup probe failed: {startup_check}")
         self.schedule_wal_maintenance_if_needed(reason="startup")
+
+    def _mark_unhealthy(self, code: str, message: str = "") -> None:
+        """Latch unhealthy with the cause that set it.
+
+        The bare flag was unattributable: the next successful write cleared
+        `_last_write_error` and left `healthy: false` with nothing explaining it, so
+        the Admin Action Center could only guess — and guessed an integrity failure.
+        """
+        self._healthy = False
+        self._unhealthy_reason = {
+            "code": str(code or "unknown"),
+            "message": str(message or ""),
+            "at": _now_iso(),
+        }
+
+    def _mark_healthy(self) -> None:
+        """Restore health once work proves the store is usable again."""
+        if self._healthy:
+            return
+        LOGGER.info(
+            "SQLite store recovered after %s",
+            str(self._unhealthy_reason.get("code") or "unknown"),
+        )
+        self._healthy = True
+        self._unhealthy_reason = {}
 
     def close(self) -> None:
         with self._maintenance_lock:
@@ -388,7 +420,7 @@ class BaluffoStore:
     def _initialize_writer(self) -> None:
         wal_mode = str(self._writer.execute("PRAGMA journal_mode=WAL").fetchone()[0] or "").lower()
         if wal_mode != "wal":
-            self._healthy = False
+            self._mark_unhealthy("pragma", f"Unable to enable SQLite WAL mode: {wal_mode}")
             raise BaluffoStoreError(f"Unable to enable SQLite WAL mode: {wal_mode}")
         self._last_known_wal_mode = wal_mode
         self._writer.execute("PRAGMA synchronous=NORMAL")
@@ -398,7 +430,7 @@ class BaluffoStore:
         self._writer.execute(f"PRAGMA journal_size_limit={DEFAULT_WAL_JOURNAL_SIZE_LIMIT_BYTES}")
         foreign_keys = int(self._writer.execute("PRAGMA foreign_keys").fetchone()[0] or 0)
         if foreign_keys != 1:
-            self._healthy = False
+            self._mark_unhealthy("pragma", "Unable to enable SQLite foreign key enforcement")
             raise BaluffoStoreError("Unable to enable SQLite foreign key enforcement")
         self._last_known_foreign_keys = foreign_keys
 
@@ -497,7 +529,7 @@ class BaluffoStore:
                     self._record_slow_write(
                         operation="write_lock_timeout", waited_s=waited_s, held_s=0.0
                     )
-                    self._healthy = False
+                    self._mark_unhealthy("write_lock_timeout", "store write lock still held")
                     self._last_write_error = "store write lock still held"
                     raise _WriteLockTimeout(
                         f"store write lock still held after {int(waited_s)}s "
@@ -516,20 +548,24 @@ class BaluffoStore:
                 )
                 self._last_write_error = ""
                 self._write_transactions += 1
+                # A committed transaction is proof the store is usable again. The
+                # flag used to stay false forever after one transient failure, which
+                # made every later health read report an unattributable problem.
+                self._mark_healthy()
                 self.schedule_wal_maintenance_if_needed(reason="write")
                 self.schedule_compaction_if_needed(reason="write")
                 return result
             except sqlite3.OperationalError as exc:
                 self._rollback_after_error()
                 if not _is_busy_error(exc):
-                    self._healthy = False
+                    self._mark_unhealthy("write_error", str(exc))
                     self._last_write_error = str(exc)
                     raise
                 last_busy_error = exc
                 self._busy_count += 1
                 self._last_write_error = str(exc)
                 if attempt + 1 >= self.busy_retry_attempts:
-                    self._healthy = False
+                    self._mark_unhealthy("busy_exhausted_write", str(exc))
                     break
                 self._sleep_for_retry(attempt)
             except BaseException as exc:
@@ -781,7 +817,7 @@ class BaluffoStore:
                 self._busy_count += 1
                 self._last_write_error = str(exc)
                 if attempt + 1 >= self.busy_retry_attempts:
-                    self._healthy = False
+                    self._mark_unhealthy("busy_exhausted_read", str(exc))
                     break
                 self._sleep_for_retry(attempt)
         message = f"SQLite read failed after busy retry attempts: {last_busy_error}"
@@ -958,44 +994,76 @@ class BaluffoStore:
         )
         return str(wal_mode or "").lower()
 
-    def checkpoint_required(self, *, mode: str = "TRUNCATE") -> dict[str, int]:
+    def checkpoint_required(self, *, mode: str = "TRUNCATE") -> dict[str, Any]:
+        """Checkpoint the WAL, escalating only when a passive pass completed.
+
+        A TRUNCATE checkpoint needs every reader out of the WAL. This store keeps a
+        reader connection and the pipeline reads continuously, so asking for TRUNCATE
+        first could only ever see `busy` — and that busy result used to latch the store
+        unhealthy for the rest of the process while the WAL kept growing. A passive
+        pass checkpoints every frame no reader is pinning; only when it reports every
+        frame is a stronger mode worth attempting. A busy result is a maintenance
+        state, not a store failure, so it is returned instead of raised.
+        """
         checkpoint_mode = mode.upper()
         if checkpoint_mode not in {"PASSIVE", "FULL", "RESTART", "TRUNCATE"}:
             raise ValueError(f"Unsupported SQLite checkpoint mode: {mode}")
-        last_result: tuple[int, int, int] | None = None
+        passive = self._checkpoint_pass("PASSIVE")
+        if not passive["complete"]:
+            return {**passive, "detail": "passive-incomplete"}
+        if checkpoint_mode == "PASSIVE":
+            return {**passive, "detail": ""}
+        escalated = self._checkpoint_pass(checkpoint_mode)
+        return {**escalated, "detail": "" if escalated["complete"] else "checkpoint-busy"}
+
+    def _checkpoint_pass(self, mode: str) -> dict[str, Any]:
+        """Run one checkpoint mode with busy retries; busy never latches health."""
+        last_result: dict[str, Any] = {
+            "busy": 1,
+            "logFrames": 0,
+            "checkpointedFrames": 0,
+            "mode": mode,
+            "complete": False,
+        }
+        last_error = ""
         for attempt in range(self.busy_retry_attempts):
             try:
-                row = self._execute_checkpoint(checkpoint_mode)
-                last_result = (int(row[0] or 0), int(row[1] or 0), int(row[2] or 0))
-                if last_result[0] == 0:
-                    self._last_write_error = ""
-                    return {
-                        "busy": last_result[0],
-                        "logFrames": last_result[1],
-                        "checkpointedFrames": last_result[2],
-                    }
-                self._busy_count += 1
-                self._last_write_error = f"SQLite WAL checkpoint busy: {last_result}"
-                if attempt + 1 >= self.busy_retry_attempts:
-                    self._healthy = False
-                    break
-                self._record_passive_checkpoint_busy_retry(checkpoint_mode)
-                self._sleep_for_retry(attempt)
+                row = self._execute_checkpoint(mode)
             except sqlite3.OperationalError as exc:
                 if not _is_busy_error(exc):
-                    self._healthy = False
+                    self._mark_unhealthy("wal_checkpoint_error", str(exc))
                     self._last_write_error = str(exc)
                     raise
                 self._busy_count += 1
                 self._last_write_error = str(exc)
+                last_error = str(exc)
                 if attempt + 1 >= self.busy_retry_attempts:
-                    self._healthy = False
                     break
-                self._record_passive_checkpoint_busy_retry(checkpoint_mode)
+                self._record_passive_checkpoint_busy_retry(mode)
                 self._sleep_for_retry(attempt)
-        message = f"SQLite WAL checkpoint failed after busy retry attempts: {last_result}"
-        LOGGER.error(message)
-        raise BaluffoStoreError(message)
+                continue
+            busy = int(row[0] or 0)
+            log_frames = int(row[1] or 0)
+            checkpointed = int(row[2] or 0)
+            last_result = {
+                "busy": busy,
+                "logFrames": log_frames,
+                "checkpointedFrames": checkpointed,
+                "mode": mode,
+                "complete": bool(busy == 0 and checkpointed >= log_frames),
+            }
+            if busy == 0:
+                self._last_write_error = ""
+                self._mark_healthy()
+                return last_result
+            self._busy_count += 1
+            last_error = f"SQLite WAL checkpoint busy: ({busy}, {log_frames}, {checkpointed})"
+            self._last_write_error = last_error
+            if attempt + 1 >= self.busy_retry_attempts:
+                break
+            self._record_passive_checkpoint_busy_retry(mode)
+            self._sleep_for_retry(attempt)
+        return {**last_result, "detail": last_error or "checkpoint-busy"}
 
     def _execute_checkpoint(self, mode: str) -> sqlite3.Row:
         lock_started = time.perf_counter()
@@ -1692,15 +1760,18 @@ class BaluffoStore:
         with self._maintenance_lock:
             self._wal_maintenance_cooldown_until_monotonic = now + self.wal_checkpoint_cooldown_s
         started = time.perf_counter()
+        attempted_at = _now_iso()
         before = self.file_sizes()
         checkpoint_mode = str(mode or "PASSIVE").upper()
         try:
             result = self.checkpoint_required(mode=checkpoint_mode)
             after = self.file_sizes()
+            complete = bool(result.get("complete"))
             status = {
-                "status": "ok",
+                "status": "ok" if complete else MAINTENANCE_STATUS_BUSY,
                 "reason": str(reason or ""),
                 "mode": checkpoint_mode,
+                "attemptedAt": attempted_at,
                 "durationMs": int(round((time.perf_counter() - started) * 1000)),
                 "error": "",
                 **before,
@@ -1714,6 +1785,7 @@ class BaluffoStore:
                 "status": "failed",
                 "reason": str(reason or ""),
                 "mode": checkpoint_mode,
+                "attemptedAt": attempted_at,
                 "durationMs": int(round((time.perf_counter() - started) * 1000)),
                 "error": str(exc),
                 **before,
@@ -1783,6 +1855,7 @@ class BaluffoStore:
                     held_s = time.perf_counter() - hold_started
                 self._record_slow_write(operation="vacuum", waited_s=waited_s, held_s=held_s)
                 self._last_write_error = ""
+                self._mark_healthy()
                 after_bytes = self._path_size(self.db_path)
                 reclaimed = max(0, before_bytes - after_bytes)
                 status = {
@@ -1800,14 +1873,14 @@ class BaluffoStore:
                 return status
             except sqlite3.OperationalError as exc:
                 if not _is_busy_error(exc):
-                    self._healthy = False
+                    self._mark_unhealthy("vacuum_error", str(exc))
                     self._last_write_error = str(exc)
                     raise
                 last_busy_error = exc
                 self._busy_count += 1
                 self._last_write_error = str(exc)
                 if attempt + 1 >= self.busy_retry_attempts:
-                    self._healthy = False
+                    self._mark_unhealthy("busy_exhausted_vacuum", str(exc))
                     break
                 self._sleep_for_retry(attempt)
         message = f"SQLite VACUUM failed after busy retry attempts: {last_busy_error}"
@@ -2026,7 +2099,9 @@ class BaluffoStore:
                 self._initialize_writer()
             except BaseException:
                 if replaced:
-                    self._healthy = False
+                    self._mark_unhealthy(
+                        "reopen_failed", "compact copy installed but reopen failed"
+                    )
                     self._last_write_error = "compact copy installed but reopen failed"
                 else:
                     self._writer = self._connect()
@@ -2141,7 +2216,10 @@ class BaluffoStore:
                 self._initialize_writer()
             except BaseException:
                 if replaced:
-                    self._healthy = False
+                    self._mark_unhealthy(
+                        "reopen_failed",
+                        "current-feed rebuild installed but the store could not reopen",
+                    )
                     self._last_write_error = (
                         "current-feed rebuild installed but the store could not reopen"
                     )
@@ -2215,7 +2293,10 @@ class BaluffoStore:
                 self._initialize_writer()
             except BaseException:
                 if replaced:
-                    self._healthy = False
+                    self._mark_unhealthy(
+                        "reopen_failed",
+                        "pre-rebuild database restored but the store could not reopen",
+                    )
                     self._last_write_error = (
                         "pre-rebuild database restored but the store could not reopen"
                     )
@@ -2443,7 +2524,9 @@ class BaluffoStore:
     def backup_to(self, target_path: Path | str) -> Path:
         quick_check = self.quick_check()
         if quick_check != "ok":
-            self._healthy = False
+            self._mark_unhealthy(
+                "integrity_check", f"SQLite quick_check failed before backup: {quick_check}"
+            )
             raise BaluffoStoreError(f"SQLite quick_check failed before backup: {quick_check}")
         self.checkpoint_required(mode="TRUNCATE")
         target = Path(target_path).expanduser().resolve()
@@ -2554,6 +2637,10 @@ class BaluffoStore:
             "quickCheckDeferred": quick_check_deferred,
             "quickCheckMaxDatabaseBytes": self.quick_check_max_database_bytes,
             "healthy": bool(self._healthy and quick_check_ok),
+            # The cause, not just the verdict: the Action Center used to render every
+            # unhealthy store as "SQLite integrity check failed", including a latched
+            # checkpoint busy and stores whose integrity check was never run.
+            "unhealthyReason": dict(self._unhealthy_reason),
             "lastWriteError": self._last_write_error,
             "writeLock": self.write_lock_status(),
             "busyCount": self._busy_count,

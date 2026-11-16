@@ -15,6 +15,7 @@ from typing import Any
 
 from src.bridge import active_task_snapshot as _active_snapshot
 from src.bridge import ops_health as _ops_health
+from src.bridge import storage_health as _storage_health
 from src.bridge.discovery_audit_artifacts import (
     load_page_fetch_lifecycle_receipt as load_page_fetch_lifecycle_receipt,
 )
@@ -431,6 +432,16 @@ class OpsApiHealthMixin(OpsApiState):
                 pending_sources_count = int(registry_summary.get("pendingCount") or 0)
                 kpis["pendingSourcesCount"] = pending_sources_count
                 kpis["pendingApprovalsCount"] = pending_sources_count
+            # S1.4: one storage verdict across both surfaces. Read the same bounded,
+            # cached payload the storage route serves; a stalled or unavailable read
+            # adds no alert rather than inventing a verdict the Action Center lacks.
+            with time_operation("ops.fetch_kpis.summary.storage"):
+                try:
+                    storage_payload = _storage_health.get_storage_health_payload(
+                        self._paths.jobs_fetch_report.parent
+                    )
+                except (OSError, TypeError, ValueError):
+                    storage_payload = {}
             alert_result = _ops_health.evaluate_alerts_summary(
                 history=history,
                 pending_count=int(registry_summary.get("pendingCount") or 0),
@@ -442,6 +453,9 @@ class OpsApiHealthMixin(OpsApiState):
                 state_lock=self._deps.ops_state_lock,
             )
             alerts = list(alert_result.get("alerts") or [])
+            storage_alert = _ops_health.storage_health_alert(storage_payload)
+            if storage_alert:
+                alerts.append(storage_alert)
             browser_alert = _ops_health.browser_fallback_health_alert(
                 browser_health,
                 environment_blocked=environment_blocked,

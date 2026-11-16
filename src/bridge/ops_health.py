@@ -351,6 +351,112 @@ def derive_ops_severity(alerts: list[dict[str, Any]]) -> str:
     return "healthy"
 
 
+# The Action Center labels storage failures by reason code; the summary alert uses the
+# same names so one condition does not read as two different findings.
+_STORAGE_REASON_LABELS = {
+    "write_lock_timeout": "Storage write lock timed out",
+    "busy_exhausted_write": "SQLite stayed busy during a write",
+    "busy_exhausted_read": "SQLite stayed busy during a read",
+    "busy_exhausted_vacuum": "SQLite stayed busy during a database rebuild",
+    "write_error": "SQLite write failed",
+    "vacuum_error": "Database rebuild failed",
+    "wal_checkpoint_error": "WAL checkpoint failed",
+    "wal_checkpoint_busy": "WAL checkpoint could not finish",
+    "integrity_check": "SQLite integrity check failed",
+    "startup_probe": "SQLite startup probe failed",
+    "pragma": "SQLite could not enable a required setting",
+    "reopen_failed": "The store could not reopen after a database swap",
+}
+
+
+def _human_bytes(value: Any) -> str:
+    size = float(_safe_int(value, 0))
+    if size >= 1024**3:
+        return f"{size / 1024**3:.1f} GB"
+    if size >= 1024**2:
+        return f"{size / 1024**2:.1f} MB"
+    return f"{int(size)} B"
+
+
+def _storage_size_copy(storage: dict[str, Any], wal: dict[str, Any]) -> str:
+    wal_bytes = _safe_int(wal.get("walBytes") or storage.get("walBytes"), 0)
+    database_bytes = _safe_int(wal.get("databaseBytes") or storage.get("databaseBytes"), 0)
+    parts: list[str] = []
+    if wal_bytes > 0:
+        parts.append(f"{_human_bytes(wal_bytes)} WAL")
+    if database_bytes > 0:
+        parts.append(f"{_human_bytes(database_bytes)} database")
+    return " on ".join(parts)
+
+
+def storage_health_alert(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """The storage verdict both the summary and the Action Center report.
+
+    S1.4: `/ops/fetch-kpis?view=summary` used to answer `status: "healthy"`,
+    `alerts: []` while the Action Center showed a critical storage signal. This
+    derives the same severity from the storage-health payload: a real integrity
+    failure is critical; a busy or errored checkpoint is a warning; and a store
+    that S1.2 left healthy while its WAL could not be checkpointed is still a
+    warning, because the disk risk is the point.
+    """
+    storage = as_json_object(payload.get("storage"))
+    if not storage:
+        return None
+    unhealthy = storage.get("healthy") is False
+    wal = as_json_object(storage.get("walMaintenance"))
+    wal_status = str(wal.get("status") or "").strip()
+    if not unhealthy and wal_status not in {"busy", "failed"}:
+        return None
+
+    reason = as_json_object(storage.get("unhealthyReason"))
+    code = str(reason.get("code") or "").strip()
+    reason_message = str(reason.get("message") or "").strip().replace("\n", " ")[:240]
+    at = str(reason.get("at") or wal.get("attemptedAt") or "").strip()
+    deferred = storage.get("quickCheckDeferred") in (True, 1)
+    quick_check = str(storage.get("quickCheck") or "").strip().lower()
+    quick_check_failed = not deferred and quick_check not in {
+        "",
+        "ok",
+        "deferred-large-database",
+    }
+    wal_reason = code in {"wal_checkpoint_busy", "wal_checkpoint_error"} or (
+        not code and wal_status == "failed"
+    )
+
+    if quick_check_failed:
+        severity = "critical"
+        detail = str(storage.get("quickCheck") or "").strip().replace("\n", " ")[:160]
+        message = (
+            f"SQLite integrity check failed: {detail}"
+            if detail
+            else "SQLite integrity check failed"
+        )
+    elif wal_reason or wal_status in {"busy", "failed"}:
+        severity = "warning"
+        headline = (
+            "WAL checkpoint failed" if wal_status == "failed" else "WAL checkpoint could not finish"
+        )
+        sizes = _storage_size_copy(storage, wal)
+        message = f"{headline} — {sizes}" if sizes else headline
+        if reason_message:
+            message += f": {reason_message}"
+    else:
+        severity = "critical"
+        label = _STORAGE_REASON_LABELS.get(code, "SQLite storage reported a problem")
+        message = f"{label}: {reason_message}" if reason_message else label
+    if at:
+        message += f"; attempt {at}"
+    return {
+        "id": "storage_unhealthy",
+        "severity": severity,
+        "message": message,
+        "value": code or wal_status or "unhealthy",
+        "triggeredAt": at,
+        # Appended after alert acknowledgement is resolved, so there is no ack path for it.
+        "dismissible": False,
+    }
+
+
 def browser_fallback_health_alert(
     value: Any,
     *,

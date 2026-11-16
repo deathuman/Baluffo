@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
 from src import admin_bridge
@@ -183,6 +184,87 @@ def test_compute_ops_health_guides_initial_fetch_when_none_has_succeeded(
     assert guidance["severity"] == "warning"
     assert guidance["dismissible"] is False
     assert "Run Jobs Fetcher" in guidance["message"]
+
+
+def _storage_health_payload(storage: dict[str, Any]) -> dict[str, Any]:
+    return {"ok": storage.get("healthy") is not False, "storage": storage}
+
+
+def test_fetch_kpis_summary_alert_matches_a_busy_checkpoint_on_a_healthy_store(
+    admin_bridge_entrypoint_root, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "src.bridge.ops_api_health._storage_health.get_storage_health_payload",
+        lambda _data_dir: _storage_health_payload(
+            {
+                "healthy": True,
+                "quickCheck": "deferred-large-database",
+                "quickCheckDeferred": True,
+                "walMaintenance": {
+                    "status": "busy",
+                    "attemptedAt": "2026-11-15T10:51:49+00:00",
+                    "walBytes": 997831072,
+                    "databaseBytes": 555212800,
+                },
+            }
+        ),
+    )
+
+    api: Any = admin_bridge._get_ops_api()
+    payload = api.compute_ops_fetch_kpis_summary()
+
+    alert = next(a for a in payload["alerts"] if a.get("id") == "storage_unhealthy")
+    assert alert["severity"] == "warning"
+    assert "WAL checkpoint could not finish" in alert["message"]
+    assert "951.6 MB WAL on 529.5 MB database" in alert["message"]
+    assert "2026-11-15T10:51:49+00:00" in alert["message"]
+    assert payload["alertBasis"] == "history+storage+browser"
+
+
+def test_fetch_kpis_summary_alert_is_critical_for_a_real_integrity_failure(
+    admin_bridge_entrypoint_root, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "src.bridge.ops_api_health._storage_health.get_storage_health_payload",
+        lambda _data_dir: _storage_health_payload(
+            {
+                "healthy": False,
+                "quickCheck": "*** in database main ***",
+                "quickCheckDeferred": False,
+                "unhealthyReason": {
+                    "code": "integrity_check",
+                    "message": "malformed database",
+                    "at": "2026-11-15T10:51:49+00:00",
+                },
+                "walMaintenance": {"status": "ok"},
+            }
+        ),
+    )
+
+    api: Any = admin_bridge._get_ops_api()
+    payload = api.compute_ops_fetch_kpis_summary()
+
+    alert = next(a for a in payload["alerts"] if a.get("id") == "storage_unhealthy")
+    assert alert["severity"] == "critical"
+    assert "SQLite integrity check failed" in alert["message"]
+    assert payload["status"] == "critical"
+
+
+def test_fetch_kpis_summary_omits_the_storage_alert_when_health_is_clean(
+    admin_bridge_entrypoint_root, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "src.bridge.ops_api_health._storage_health.get_storage_health_payload",
+        lambda _data_dir: _storage_health_payload(
+            {"healthy": True, "quickCheck": "ok", "walMaintenance": {"status": "ok"}}
+        ),
+    )
+
+    api: Any = admin_bridge._get_ops_api()
+    payload = api.compute_ops_fetch_kpis_summary()
+
+    assert all(alert.get("id") != "storage_unhealthy" for alert in payload["alerts"])
+    assert payload["alertBasis"] == "history+storage+browser"
 
 
 def test_compute_ops_health_reframes_stale_fetch_as_guidance(admin_bridge_entrypoint_root):

@@ -250,7 +250,10 @@ def test_checkpoint_required_retries_one_busy_passive_attempt(
 
             assert writer.checkpoint_rows == [(1, 8, 4), (0, 8, 8)]
             assert retry_attempts == [0]
-            assert result == {"busy": 0, "logFrames": 8, "checkpointedFrames": 8}
+            assert result["busy"] == 0
+            assert result["logFrames"] == 8
+            assert result["checkpointedFrames"] == 8
+            assert result["complete"] is True
             assert store._busy_count == 1
             status = store.wal_maintenance_status()
             assert status["passiveCheckpointBusyRetries"] == 1
@@ -287,10 +290,11 @@ def test_health_reports_passive_checkpoint_timing_counters() -> None:
             assert second["waitMsMax"] >= second["waitMsLast"]
             assert second["holdMsMax"] >= second["holdMsLast"]
 
-            # Only PASSIVE attempts belong in the passive counters.
+            # Only PASSIVE attempts belong in the passive counters. TRUNCATE now runs
+            # one passive pass first, so it moves the count by exactly one.
             store.checkpoint_required(mode="TRUNCATE")
             health_counters = store.health()["walMaintenance"]["passiveCheckpoint"]
-            assert health_counters == second
+            assert health_counters["count"] == second["count"] + 1
 
 
 def test_bulk_execute_partitions_rows_into_bounded_transactions() -> None:

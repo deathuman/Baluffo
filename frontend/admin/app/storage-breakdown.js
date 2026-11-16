@@ -11,6 +11,7 @@ import {
   storageMaintenanceRetryScheduled
 } from "../render/storage-tables.js";
 import { renderStorageDiagnosticHtml } from "../render/storage-diagnostic.js";
+import { renderStorageReclaimHealthHtml } from "../render/storage-reclaim.js";
 import {
   downloadStorageDiagnosticJson,
   serializeStorageDiagnosticExport,
@@ -22,6 +23,7 @@ const STORAGE_DIAGNOSTIC_ROUTE = "/ops/storage-diagnostic";
 const STORAGE_MAINTENANCE_ROUTE = "/ops/storage-maintenance";
 const STORAGE_MAINTENANCE_PREVIEW_ROUTE = "/ops/storage-maintenance/preview";
 const STORAGE_REBUILD_ROUTE = "/ops/storage-rebuild";
+const STORAGE_RECLAIM_ROUTE = "/ops/storage-reclaim";
 const DEFAULT_STORAGE_HEALTH_TIMEOUT_MS = 5000;
 // The preview reads cached generation stats and bounded 200-row samples, then
 // stays under the container gateway's existing 60 s heavy-route budget.
@@ -153,6 +155,28 @@ export function createStorageBreakdownController({
   function render(tableSizes) {
     if (!refs.adminStorageTablesBodyEl) return;
     refs.adminStorageTablesBodyEl.innerHTML = renderStorageTablesHtml(tableSizes, formatBytes);
+  }
+
+  function renderReclaimHealth(verdict) {
+    const healthEl = refs.adminStorageReclaimHealthEl;
+    if (!healthEl) return;
+    const html = renderStorageReclaimHealthHtml(verdict);
+    healthEl.innerHTML = html;
+    healthEl.hidden = !html;
+  }
+
+  // The verdict is advisory here: a failed read keeps the last warning rather
+  // than claiming the measured gate is healthy, and never fails the panel.
+  async function refreshReclaimHealth() {
+    try {
+      const payload = await getBridge(STORAGE_RECLAIM_ROUTE, {
+        timeoutMs,
+        affectsReachability: false
+      });
+      renderReclaimHealth(payload?.storageReclaim?.verdict);
+    } catch {
+      // Nothing rendered: the panel's own load path owns reporting the bridge.
+    }
   }
 
   function diagnosticStatusText(value) {
@@ -1171,6 +1195,7 @@ export function createStorageBreakdownController({
       });
       const tableSizes = acceptStorageHealth(payload);
       if (refs.adminStorageRebuildBodyEl) void refreshRebuildStatus();
+      await refreshReclaimHealth();
       if (!tableSizes) {
         setStatus("Unavailable", "warning");
         renderMessage("Storage health did not include a table-size breakdown.");

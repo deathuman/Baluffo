@@ -29,6 +29,10 @@ RECLAIM_MIN_RATIO_PCT_DEFAULT = 10.0
 # The verdict runs a bounded cleanup preview, while the reclaim modal polls its
 # route; this is how long the route may answer with the verdict it already has.
 RECLAIM_VERDICT_TTL_S = 60.0
+# A measured gate is a snapshot of one copy. The feed grows, so an anchor older
+# than this is reported stale — not wrong, but no longer a description of the
+# database that would be copied now.
+RECLAIM_ANCHOR_STALE_AFTER_S = 30 * 24 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,14 @@ class ReclaimContext:
     compaction_running: bool = False
     backup_exists: bool = False
     free_space_bytes: int | None = None
+    # Full-disk relief (§3): the measured staging gate, the copy size it is built
+    # from, the last rehearsal's own verdict on that margin, and the bytes an
+    # unowned artifact removal would release.
+    measured_required_bytes: int | None = None
+    measured_staging_bytes: int | None = None
+    measured_staging_age_s: int | None = None
+    last_rehearsal_gate_adequate: bool | None = None
+    relievable_bytes: int = 0
     cooldown_remaining_hours: float = 0.0
     auto_enabled: bool = True
 
@@ -106,8 +118,18 @@ def reclaim_verdict(
         blockers.append("backup-exists")
     required_free = rebuild_required_free_bytes(database_bytes)
     free_space = ctx.free_space_bytes
-    if free_space is None or int(free_space) <= 0 or int(free_space) < required_free:
+    relievable = max(0, int(ctx.relievable_bytes or 0))
+    measured_gate = ctx.measured_required_bytes
+    # An unreadable timestamp is not age zero: report "unknown", never "fresh".
+    age = None if ctx.measured_staging_age_s is None else max(0, int(ctx.measured_staging_age_s))
+    available = None if free_space is None else int(free_space) + relievable
+    if not free_space_satisfied(
+        available, required_bytes=required_free, measured_required_bytes=measured_gate
+    ):
         blockers.append("free-space")
+    # The measured gate is the operative ask once it exists; the heuristic stays
+    # in the payload so the panel can show both numbers.
+    operative_gate = required_free if measured_gate is None else max(0, int(measured_gate))
     cooldown_hours = max(0.0, float(ctx.cooldown_remaining_hours or 0.0))
     if cooldown_hours > 0:
         blockers.append("cooldown")
@@ -130,7 +152,36 @@ def reclaim_verdict(
         "capReached": bool(samples.get("capReached")),
         "blockers": blockers,
         "cooldownRemainingHours": cooldown_hours,
+        "freeBytes": int(free_space or 0),
+        "requiredBytes": required_free,
+        "measuredRequiredBytes": measured_gate,
+        "measuredStagingBytes": max(0, int(ctx.measured_staging_bytes or 0)),
+        "measuredStagingAgeS": age,
+        "measuredStagingStale": None if age is None else age >= RECLAIM_ANCHOR_STALE_AFTER_S,
+        "lastRehearsalGateAdequate": ctx.last_rehearsal_gate_adequate,
+        "relievableBytes": relievable,
+        "shortfallBytes": max(0, operative_gate - (available or 0)),
+        "measuredFreeSpaceOk": bool(
+            measured_gate is not None and (available or 0) >= int(measured_gate)
+        ),
     }
+
+
+def free_space_satisfied(
+    free_bytes: int | None,
+    *,
+    required_bytes: int,
+    measured_required_bytes: int | None = None,
+) -> bool:
+    """Whether free space clears the gate; the measured gate wins when it exists.
+
+    A non-positive reading is a failed ``stat``, not a small disk, so it fails
+    closed rather than letting a copy guess.
+    """
+    if free_bytes is None or int(free_bytes) <= 0:
+        return False
+    gate = int(required_bytes) if measured_required_bytes is None else int(measured_required_bytes)
+    return int(free_bytes) >= gate
 
 
 def _non_negative_int(value: Any) -> int | None:

@@ -10,7 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.storage.reclaim_policy import ReclaimContext, reclaim_verdict
+from src.storage.reclaim_policy import (
+    RECLAIM_ANCHOR_STALE_AFTER_S,
+    ReclaimContext,
+    reclaim_verdict,
+)
 
 MIB = 1024 * 1024
 GIB = 1024 * MIB
@@ -233,6 +237,110 @@ def test_free_space_is_asked_against_the_existing_rebuild_gate() -> None:
     # The rebuild gate asks 256 MiB + 64 MiB when 1% of the file is smaller.
     assert generous["blockers"] == []
     assert short["blockers"] == ["free-space"]
+
+
+def test_the_measured_gate_replaces_the_heuristic_once_it_is_measured() -> None:
+    sizes = _sizes(database_bytes=10 * GIB)
+    preview = _preview(historical_bytes=2 * GIB, historical_count=4)
+    # 300 MiB is below the 320 MiB heuristic but above a 100 MiB measured gate.
+    measured = reclaim_verdict(
+        preview,
+        sizes,
+        context=_quiet_context(free_space_bytes=300 * MIB, measured_required_bytes=100 * MIB),
+    )
+    heuristic_only = reclaim_verdict(
+        preview, sizes, context=_quiet_context(free_space_bytes=300 * MIB)
+    )
+
+    assert measured["blockers"] == []
+    assert measured["measuredFreeSpaceOk"] is True
+    assert measured["requiredBytes"] == 320 * MIB
+    assert measured["measuredRequiredBytes"] == 100 * MIB
+    assert measured["shortfallBytes"] == 0
+    assert heuristic_only["blockers"] == ["free-space"]
+    assert heuristic_only["shortfallBytes"] == 20 * MIB
+
+
+def test_relievable_bytes_defer_the_blocker_until_relief_runs() -> None:
+    sizes = _sizes(database_bytes=10 * GIB)
+    preview = _preview(historical_bytes=2 * GIB, historical_count=4)
+    deferred = reclaim_verdict(
+        preview,
+        sizes,
+        context=_quiet_context(free_space_bytes=100 * MIB, relievable_bytes=256 * MIB),
+    )
+    still_short = reclaim_verdict(
+        preview,
+        sizes,
+        context=_quiet_context(free_space_bytes=100 * MIB, relievable_bytes=100 * MIB),
+    )
+    unmeasured = reclaim_verdict(
+        preview,
+        sizes,
+        context=_quiet_context(free_space_bytes=None, relievable_bytes=32 * GIB),
+    )
+
+    # 100 + 256 clears the 320 MiB heuristic; relief will remove that much.
+    assert deferred["blockers"] == []
+    assert deferred["relievableBytes"] == 256 * MIB
+    assert still_short["blockers"] == ["free-space"]
+    assert still_short["shortfallBytes"] == 120 * MIB
+    # A failed stat is not relief: unmeasured space still fails closed.
+    assert unmeasured["blockers"] == ["free-space"]
+
+
+def test_the_verdict_reports_the_anchor_and_the_last_rehearsal_warning() -> None:
+    result = reclaim_verdict(
+        _preview(historical_bytes=1536 * MIB, historical_count=9),
+        _sizes(database_bytes=10 * GIB),
+        context=_quiet_context(
+            measured_staging_bytes=1500 * MIB, last_rehearsal_gate_adequate=False
+        ),
+    )
+
+    # The panel compares the anchor with the gate and warns when the flag is false.
+    assert result["measuredStagingBytes"] == 1500 * MIB
+    assert result["lastRehearsalGateAdequate"] is False
+    # No gate was handed in, so the payload does not invent one.
+    assert result["measuredRequiredBytes"] is None
+
+
+def test_a_host_with_no_measurement_reports_no_anchor_and_no_warning() -> None:
+    result = reclaim_verdict(
+        _preview(historical_bytes=1536 * MIB, historical_count=9),
+        _sizes(database_bytes=10 * GIB),
+        context=_quiet_context(),
+    )
+
+    assert result["measuredStagingBytes"] == 0
+    assert result["measuredStagingAgeS"] is None
+    assert result["measuredStagingStale"] is None
+    assert result["lastRehearsalGateAdequate"] is None
+
+
+def test_the_stale_threshold_is_inclusive() -> None:
+    stale_after = RECLAIM_ANCHOR_STALE_AFTER_S
+    fresh = reclaim_verdict(
+        _preview(historical_bytes=1536 * MIB, historical_count=9),
+        _sizes(database_bytes=10 * GIB),
+        context=_quiet_context(
+            measured_staging_bytes=1500 * MIB, measured_staging_age_s=stale_after - 1
+        ),
+    )
+    at_threshold = reclaim_verdict(
+        _preview(historical_bytes=1536 * MIB, historical_count=9),
+        _sizes(database_bytes=10 * GIB),
+        context=_quiet_context(
+            measured_staging_bytes=1500 * MIB, measured_staging_age_s=stale_after
+        ),
+    )
+
+    assert fresh["measuredStagingAgeS"] == stale_after - 1
+    assert fresh["measuredStagingStale"] is False
+    assert at_threshold["measuredStagingAgeS"] == stale_after
+    assert at_threshold["measuredStagingStale"] is True
+    # Staleness warns about the anchor's age; the measurement itself still applies.
+    assert at_threshold["measuredStagingBytes"] == 1500 * MIB
 
 
 def test_zero_database_bytes_is_a_zero_ratio_not_a_division_error() -> None:

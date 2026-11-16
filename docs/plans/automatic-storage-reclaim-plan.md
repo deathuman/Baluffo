@@ -26,20 +26,22 @@
   table's name. A write that races the copy settles `superseded` (the source
   moved, not the copy), so only a copy defect is reported as a mismatch. The
   rehearsal (§9) is implemented: `POST {dryRun: true}` starts a background
-  read-only copy on the same single-flight and hold, stops runtime retention
-  through the same helper the rebuild uses before it reads, is capped at
-  `RECLAIM_MAX_RUN_S` like a real run, reports staging/reclaimed bytes, duration,
-  per-table counts, validation and the content digests under the journal's
-  `result`, unlinks its staging file and scratch
-  `<db>.reclaim-rehearsal.json` in a `finally`, and refreshes the hold from a
-  pulse while it waits for retention and validates, because the copy's own
-  progress events stop before validation. Triggers (§4) are implemented in
+  read-only copy on the same single-flight and hold, stops runtime retention as
+  the rebuild does, is capped at `RECLAIM_MAX_RUN_S`, reports staging/reclaimed
+  bytes, duration, per-table counts, validation and content digests under the
+  journal's `result`, unlinks its staging file and scratch
+  `<db>.reclaim-rehearsal.json` in a `finally`, and pulses the hold while
+  retention and validation run. Triggers (§4) are implemented in
   `src/bridge/storage_reclaim_triggers.py`: the closeout transition that releases
   the compaction hold asks once, startup schedules one check `60` s after
   maintenance resumes, both go through `auto: true` so the verdict, every safety
   blocker and the cooldown still apply, and a running retention pass defers them
   into one coalesced re-check that waits for it (capped at `RECLAIM_MAX_RUN_S`).
-  Full-disk order (§3) and presentation (§6) are unimplemented.
+  The full-disk order (§3) is implemented in
+  `src/bridge/storage_reclaim_space.py`: a copy removes a staging file no live run
+  claims, starts on the measured gate when the heuristic is short, and reports the
+  relief and both gates. Step 5 stays the panel's **Delete old database** click.
+  Presentation (§6) is unimplemented.
 
 ## Scope
 
@@ -244,10 +246,10 @@ re-measures; the order stops at the first that satisfies the gate.
 
 | # | Step | Frees | Automatic |
 |---|---|---|---|
-| 1 | Measure `freeBytes`, heuristic `requiredBytes` (`rebuild_required_free_bytes`), measured staging estimate (verdict `currentGenerationEstimatedBytes` + non-feed allocation) | — | yes |
-| 2 | Remove orphaned staging (`<db>.<token>.rebuild.tmp`) whose token is not the journal's active `runId` and whose phase is not `running`/`staged`, with no thread alive — not the one-hour cutoff, which blocks a retry after a kill | ≤ one partial copy | yes |
+| 1 | Measure `freeBytes`, heuristic `requiredBytes` (`rebuild_required_free_bytes`) and the measured gate (1.25 × the last measured copy + 64 MiB) | — | yes |
+| 2 | Remove staging (`<db>.<token>.rebuild.tmp`) no live copy has claimed — not the one-hour cutoff, which blocks a retry after a kill | ≤ one partial copy | yes |
 | 3 | Remove orphaned `<staging>-wal`/`-shm`, `<journal>.tmp`, and `<db>.reclaim-rehearsal.json`/`.tmp` when no rehearsal thread owns them; the shipped glob covers `*.rebuild.tmp` only | MBs | yes |
-| 4 | Start when `freeBytes` ≥ measured staging estimate × 1.25 + 64 MiB: the 1 % heuristic is probe-avoidance, not physics — 2.32 GB asked for a 0.5–1.5 GB copy | 0 (re-asks) | yes |
+| 4 | Start when `freeBytes` ≥ the measured gate: the 1 % heuristic is probe-avoidance, not physics — 2.32 GB asked for a 0.5–1.5 GB copy | 0 (re-asks) | yes |
 | 5 | Delete the retained `<db>.pre-rebuild`, distinct inode, byte-guarded, after showing the bytes and the rollback it costs | ~old size | **click** |
 | 6 | Refuse with `free-space`: `freeBytes`, `requiredBytes`, `measuredRequiredBytes`, `shortfallBytes`, `relievedBytes`, artifacts removed | — | — |
 
@@ -265,6 +267,18 @@ re-measures; the order stops at the first that satisfies the gate.
 Never: delete generation rows (a freelist page is not a filesystem byte), use compaction
 or `VACUUM` as relief, touch the live database or its `-wal`/`-shm`, or delete a path this
 codebase does not name.
+
+**Implemented as `src/bridge/storage_reclaim_space.py`.** Ownership is a live
+registry, not a file age: a copy claims its staging and scratch paths while its
+thread exists, so a killed run's partial copy stays reclaimable. `space_for_copy`
+runs in the rebuild's `checking-space`, so the gate covers every copy; reclaim also
+relieves and journals `space`, and its verdict counts `relievableBytes`. The gate is
+`1.25 × the last measured copy + 64 MiB`, journaled as `measuredStagingBytes` until a
+run measures one: a payload sample under-read real copies by 2.4-4.5× and the bounded
+table breakdown is truncated on this schema. A rehearsal seeds it, and so does a
+completed real run; only a rehearsal reports `gateAdequate` against the gate it started
+on, exposed as `lastRehearsalGateAdequate`, and the verdict marks the anchor stale
+after 30 days. `.pre-rebuild` is never a candidate.
 
 ## 4. Triggers
 
@@ -488,8 +502,8 @@ Recorded so implementation does not relitigate them:
   checks at two moments (copy fidelity, then immutable-table integrity), because
   hashing mutable runtime tables would produce daily false mismatches.
 - **Full disk resolves in a fixed order, per §3**: orphans, then the measured gate,
-  then — by click only — the retained copy. Retention and compaction are non-levers;
-  both need the space they return.
+  then — by click only — the retained copy. Retention and compaction need the space
+  they return.
 - **`no-current-generation` is a blocker, per §1**, measured rather than imagined: a
   database with no published feed produced a 15 % ratio from nothing.
 - **The modal and the hold are container-only; the operation is not, per §4 and §6.**

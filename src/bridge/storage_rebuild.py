@@ -20,6 +20,11 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.storage_health import HEALTH_STORE_OPEN_TIMEOUT_S, get_storage_store
+from src.bridge.storage_reclaim_space import (
+    claim_live_artifacts,
+    release_live_artifacts,
+    space_for_copy,
+)
 from src.storage.baluffo_store import DEFAULT_DB_NAME, BaluffoStoreError
 from src.storage.current_feed_rebuild import (
     REBUILD_STAGING_SUFFIX,
@@ -27,13 +32,11 @@ from src.storage.current_feed_rebuild import (
     CurrentFeedRebuildCancelled,
     CurrentFeedRebuildError,
     database_feed_state,
-    free_disk_bytes,
     generation_row_counts,
     read_rebuild_journal,
     rebuild_backup_path,
     rebuild_current_feed_database,
     rebuild_journal_path,
-    rebuild_required_free_bytes,
     rebuild_staging_path,
     update_rebuild_journal,
     validate_current_feed_database,
@@ -616,22 +619,26 @@ class StorageRebuildJob:
                 raise CurrentFeedRebuildError(
                     "an active bridge task started holding storage maintenance"
                 )
-            sizes = store.file_sizes()
-            required_free = rebuild_required_free_bytes(int(sizes.get("databaseBytes") or 0))
-            free_bytes = free_disk_bytes(self.data_dir)
+            # The plan's §3 order: remove artifacts no live copy owns, then ask
+            # both gates — the 1 % heuristic and the measured staging estimate.
+            space = space_for_copy(self.data_dir, self.db_path, store)
             self._update(
                 phase="checking-space",
                 stage="checking-space",
-                requiredFreeBytes=required_free,
-                freeDiskBytes=free_bytes,
-                sourceDatabaseBytes=int(sizes.get("databaseBytes") or 0),
+                requiredFreeBytes=space["requiredBytes"],
+                measuredRequiredBytes=space["measuredRequiredBytes"],
+                freeDiskBytes=space["freeBytes"],
+                relievedBytes=space["relievedBytes"],
+                spaceArtifactsRemoved=space["artifactsRemoved"],
+                sourceDatabaseBytes=space["databaseBytes"],
             )
-            if free_bytes <= 0 or free_bytes < required_free:
+            if not space["enough"]:
                 # An unavailable free-space reading must fail closed: a rebuild
                 # that guesses can fill the data disk and strand the live store.
                 raise CurrentFeedRebuildError(
-                    f"not enough free disk space for the rebuilt copy: {free_bytes} bytes "
-                    f"free, {required_free} required"
+                    "not enough free disk space for the rebuilt copy: "
+                    f"{space['freeBytes']} bytes free, {space['requiredBytes']} required "
+                    f"({space['measuredRequiredBytes'] or 'unmeasured'} measured)"
                 )
             feed_state = database_feed_state(self.db_path)
             generation = str(feed_state.get("currentGeneration") or "").strip()
@@ -639,6 +646,11 @@ class StorageRebuildJob:
                 raise CurrentFeedRebuildError("no current feed generation is published")
             transactions_before = store.write_transaction_count()
             staging = rebuild_staging_path(self.db_path, run_id=self.run_id)
+            # Claim both names for as long as this thread lives; relief in another
+            # run must never remove the copy or the journal mid-write.
+            claim_live_artifacts(
+                [staging, self.journal_path.with_name(f"{self.journal_path.name}.tmp")]
+            )
             self._update(
                 phase="copying",
                 stage="copying",
@@ -791,6 +803,9 @@ class StorageRebuildJob:
                 staging.unlink(missing_ok=True)
             self._settle_failure(exc)
         finally:
+            release_live_artifacts([self.journal_path.with_name(f"{self.journal_path.name}.tmp")])
+            if staging is not None:
+                release_live_artifacts([staging])
             with self._lock:
                 if self._thread is threading.current_thread():
                     self._thread = None

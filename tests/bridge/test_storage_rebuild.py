@@ -111,7 +111,9 @@ def test_rebuild_fails_closed_when_free_space_cannot_be_read(monkeypatch) -> Non
         try:
             store = get_storage_store(data_dir)
             _seed(store)
-            monkeypatch.setattr("src.bridge.storage_rebuild.free_disk_bytes", lambda _path: 0)
+            monkeypatch.setattr(
+                "src.bridge.storage_reclaim_space.free_space_bytes", lambda _path: 0
+            )
 
             started = start_storage_rebuild(data_dir)
             assert started["started"] is True
@@ -172,7 +174,8 @@ def test_rebuild_reports_checkpoint_busy_without_claiming_superseded(monkeypatch
             },
         )
         monkeypatch.setattr(
-            "src.bridge.storage_rebuild.free_disk_bytes", lambda _path: 10 * 1024 * 1024 * 1024
+            "src.bridge.storage_reclaim_space.free_space_bytes",
+            lambda _path: 10 * 1024 * 1024 * 1024,
         )
         monkeypatch.setattr("src.bridge.storage_rebuild.time.sleep", lambda _seconds: None)
         job._state.update({"status": "running", "phase": "installing"})

@@ -42,6 +42,8 @@ export const ADMIN_TOKENS = Object.freeze({
   storageRebuildRollbackBtn: "admin-storage-rebuild-rollback-btn",
   storageRebuildBackupDeleteBtn: "admin-storage-rebuild-backup-delete-btn",
   storageWriteLock: "admin-storage-write-lock",
+  storageAdvanced: "admin-storage-advanced",
+  storageReclaimHealth: "admin-storage-reclaim-health",
   storageDiagnosticBtn: "admin-storage-diagnostic-btn",
   storageDiagnosticCancelBtn: "admin-storage-diagnostic-cancel-btn",
   storageDiagnosticExportBtn: "admin-storage-diagnostic-export-btn",

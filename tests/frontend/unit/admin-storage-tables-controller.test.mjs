@@ -197,6 +197,7 @@ function fixture({
   return { controller, refs, calls, postCalls, downloads, listeners };
 }
 
+
 test("storage breakdown defers without calling storage health", async () => {
   const f = fixture({ shouldDefer: () => true });
   await f.controller.load();
@@ -216,10 +217,8 @@ test("storage breakdown reads on first open, not at init", async () => {
   f.listeners.toggle();
   await new Promise(resolve => setImmediate(resolve));
 
-  assert.deepEqual(
-    f.calls.map(call => call.path),
-    ["/ops/storage-health"]
-  );
+  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls[1].path, "/ops/storage-reclaim");
 });
 
 test("storage breakdown reuses the first read and keeps refresh as the override", async () => {
@@ -236,12 +235,12 @@ test("storage breakdown reuses the first read and keeps refresh as the override"
   f.listeners.toggle();
   await new Promise(resolve => setImmediate(resolve));
 
-  assert.equal(f.calls.length, 1, "reopening must not re-read storage health");
+  assert.equal(f.calls.filter(call => call.path === "/ops/storage-health").length, 1);
 
   f.listeners.refresh();
   await new Promise(resolve => setImmediate(resolve));
 
-  assert.equal(f.calls.length, 2);
+  assert.equal(f.calls.filter(call => call.path === "/ops/storage-health").length, 2);
 });
 
 test("storage breakdown retries on the next open after a failed read", async () => {
@@ -252,7 +251,7 @@ test("storage breakdown retries on the next open after a failed read", async () 
   f.listeners.toggle();
   await new Promise(resolve => setImmediate(resolve));
 
-  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls.filter(call => call.path === "/ops/storage-health").length, 1);
 
   f.refs.adminStorageTablesEl.open = false;
   f.listeners.toggle();
@@ -260,17 +259,18 @@ test("storage breakdown retries on the next open after a failed read", async () 
   f.listeners.toggle();
   await new Promise(resolve => setImmediate(resolve));
 
-  assert.equal(f.calls.length, 2, "a failed read leaves the panel unloaded");
+  assert.equal(f.calls.filter(call => call.path === "/ops/storage-health").length, 2);
 });
 
 test("storage breakdown loads once with a bounded non-reachability read", async () => {
   const f = fixture();
   await f.controller.load();
 
-  assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0].path, "/ops/storage-health");
-  assert.equal(f.calls[0].options.affectsReachability, false);
-  assert.equal(f.calls[0].options.timeoutMs, 5000);
+  for (const { options } of f.calls) {
+    assert.equal(options.affectsReachability, false);
+    assert.equal(options.timeoutMs, 5000);
+  }
   assert.match(f.refs.adminStorageTablesBodyEl.innerHTML, /source_runs/);
   assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Estimated snapshot");
 });
@@ -286,7 +286,7 @@ test("storage breakdown forwards the startup-lane allowance to the defer predica
   await f.controller.load({ allowStartupBridgeLane: true });
 
   assert.deepEqual(seen, [{ allowStartupBridgeLane: true }]);
-  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls.filter(call => call.path === "/ops/storage-health").length, 1);
   assert.equal(f.refs.adminStorageTablesStatusEl.textContent, "Estimated snapshot");
 });
 
@@ -296,7 +296,7 @@ test("refresh click reloads the breakdown", async () => {
 
   await f.listeners.refresh();
 
-  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls.filter(call => call.path === "/ops/storage-health").length, 1);
 });
 
 test("exact diagnostic starts in the background and renders its result", async () => {

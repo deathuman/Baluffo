@@ -36,6 +36,7 @@ const ADMIN_REF_DEFINITIONS = Object.freeze({
   adminStorageRebuildRollbackBtnEl: { token: "storageRebuildRollbackBtn" },
   adminStorageRebuildBackupDeleteBtnEl: { token: "storageRebuildBackupDeleteBtn" },
   adminStorageWriteLockEl: { token: "storageWriteLock" },
+  adminStorageReclaimHealthEl: { token: "storageReclaimHealth" },
   adminStorageDiagnosticBtnEl: { token: "storageDiagnosticBtn" },
   adminStorageDiagnosticCancelBtnEl: { token: "storageDiagnosticCancelBtn" },
   adminStorageDiagnosticExportBtnEl: { token: "storageDiagnosticExportBtn" },

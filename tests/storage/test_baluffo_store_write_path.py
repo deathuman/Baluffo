@@ -54,65 +54,59 @@ def test_busy_retry_handles_transient_write_busy_error() -> None:
             assert store.health()["busyCount"] >= 1
 
 
-def test_required_checkpoint_failure_marks_store_unhealthy() -> None:
-    with workspace_tmpdir("baluffo-store-checkpoint") as data_dir:
+def test_store_health_recovers_after_a_successful_write() -> None:
+    # A bare false flag used to outlive its cause: the next successful write cleared
+    # `lastWriteError` and left health unattributably false for the process's life.
+    with workspace_tmpdir("baluffo-store-health-recovery") as data_dir:
         with BaluffoStore(
             data_dir,
+            busy_timeout_ms=5,
             busy_retry_attempts=2,
             busy_retry_base_ms=1,
-            busy_retry_max_ms=1,
         ) as store:
-            store._execute_checkpoint = lambda mode: cast(sqlite3.Row, (1, 2, 0))  # type: ignore[method-assign]
 
-            with pytest.raises(BaluffoStoreError, match="checkpoint failed"):
+            def fail(conn: sqlite3.Connection) -> None:
+                raise sqlite3.OperationalError("syntax exploded")
+
+            with pytest.raises(sqlite3.OperationalError, match="syntax exploded"):
+                store.write(fail)
+
+            unhealthy = store.health()
+            assert unhealthy["healthy"] is False
+            assert unhealthy["unhealthyReason"]["code"] == "write_error"
+            assert unhealthy["unhealthyReason"]["message"] == "syntax exploded"
+
+            store.write(
+                lambda conn: conn.execute("CREATE TABLE recovery_probe (id INTEGER PRIMARY KEY)")
+            )
+
+            recovered = store.health()
+            assert recovered["healthy"] is True
+            assert recovered["unhealthyReason"] == {}
+            assert recovered["lastWriteError"] == ""
+
+
+def test_required_checkpoint_failure_marks_store_unhealthy() -> None:
+    # S1.2 changed what a *busy* checkpoint means, not what a real checkpoint error
+    # means: a non-busy failure still latches health right away, and S1.1 gives that
+    # latch the cause so the Action Center stops guessing.
+    with workspace_tmpdir("baluffo-store-checkpoint-required") as data_dir:
+        with BaluffoStore(data_dir, busy_retry_attempts=2, busy_retry_base_ms=1) as store:
+
+            def explode(mode: str) -> sqlite3.Row:
+                raise sqlite3.OperationalError("required checkpoint failed")
+
+            store._execute_checkpoint = explode  # type: ignore[method-assign]
+
+            with pytest.raises(sqlite3.OperationalError, match="required checkpoint failed"):
                 store.checkpoint_required()
 
             health = store.health()
             assert health["healthy"] is False
-            assert health["lastWriteError"].startswith("SQLite WAL checkpoint busy")
-
-
-def test_terminal_passive_busy_checkpoint_does_not_count_a_retry() -> None:
-    with workspace_tmpdir("baluffo-store-passive-busy-terminal") as data_dir:
-        with BaluffoStore(data_dir, busy_retry_attempts=1) as store:
-            store._execute_checkpoint = lambda mode: cast(sqlite3.Row, (1, 8, 4))  # type: ignore[method-assign]
-
-            def fail_retry(attempt: int) -> None:
-                pytest.fail("a terminal busy checkpoint must not schedule a retry")
-
-            store._sleep_for_retry = fail_retry  # type: ignore[method-assign]
-
-            with pytest.raises(BaluffoStoreError, match="busy retry attempts"):
-                store.checkpoint_required(mode="PASSIVE")
-
-            status = store.wal_maintenance_status()
-            assert status["passiveCheckpointBusyRetries"] == 0
-            assert status["passiveCheckpoint"]["count"] == 0
-
-
-def test_busy_operational_error_retry_increments_passive_busy_retries() -> None:
-    with workspace_tmpdir("baluffo-store-passive-operational-error") as data_dir:
-        with BaluffoStore(data_dir, busy_retry_attempts=2, busy_retry_base_ms=1) as store:
-            attempts = 0
-
-            def flaky_checkpoint(mode: str) -> sqlite3.Row:
-                nonlocal attempts
-                attempts += 1
-                if attempts == 1:
-                    raise sqlite3.OperationalError("database is locked")
-                return cast(sqlite3.Row, (0, 8, 8))
-
-            sleeps: list[int] = []
-            store._execute_checkpoint = flaky_checkpoint  # type: ignore[method-assign]
-            store._sleep_for_retry = sleeps.append  # type: ignore[assignment]
-
-            result = store.checkpoint_required(mode="PASSIVE")
-
-            assert result == {"busy": 0, "logFrames": 8, "checkpointedFrames": 8}
-            assert attempts == 2
-            assert sleeps == [0]
-            status = store.wal_maintenance_status()
-            assert status["passiveCheckpointBusyRetries"] == 1
+            assert health["unhealthyReason"]["code"] == "wal_checkpoint_error"
+            assert health["unhealthyReason"]["message"] == "required checkpoint failed"
+            assert health["unhealthyReason"]["at"]
+            assert health["lastWriteError"] == "required checkpoint failed"
 
 
 def test_write_reraises_non_busy_operational_error_without_retry() -> None:

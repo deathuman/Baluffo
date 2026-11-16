@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sqlite3
 import threading
 import time
@@ -50,6 +49,18 @@ from src.bridge.storage_health import (
     storage_compaction_hold_active,
     storage_reclaim_hold_status,
 )
+from src.bridge.storage_reclaim_space import (
+    RECLAIM_JOURNAL_SUFFIX,
+    REHEARSAL_JOURNAL_SUFFIX,
+    artifact_bytes,
+    claim_live_artifacts,
+    free_space_bytes,
+    measured_anchor,
+    measured_required_bytes,
+    orphaned_artifacts,
+    release_live_artifacts,
+    relieve_free_space,
+)
 from src.shared.utils import env_flag, parse_iso
 from src.storage import BaluffoStoreError
 from src.storage.baluffo_store import DEFAULT_DB_NAME
@@ -63,15 +74,16 @@ from src.storage.current_feed_rebuild import (
     validate_feed_generation,
     validate_installed_content,
 )
-from src.storage.reclaim_policy import RECLAIM_VERDICT_TTL_S, ReclaimContext, reclaim_verdict
+from src.storage.reclaim_policy import (
+    RECLAIM_VERDICT_TTL_S,
+    ReclaimContext,
+    free_space_satisfied,
+    reclaim_verdict,
+)
 from src.storage.retention_cancel import RetentionCancelled
 from src.storage.runtime_retention import preview_runtime_retention
 from src.storage_metrics import file_size
 
-RECLAIM_JOURNAL_SUFFIX = ".reclaim.json"
-# A rehearsal owns this scratch journal and unlinks it; the real rebuild journal
-# is never written by a rehearsal, which is why it cannot clobber recovery.
-RECLAIM_REHEARSAL_SUFFIX = ".reclaim-rehearsal.json"
 RECLAIM_JOURNAL_SCHEMA_VERSION = 1
 RECLAIM_AUTO_ENABLED_ENV = "BALUFFO_RECLAIM_AUTO_ENABLED"
 RECLAIM_MIN_INTERVAL_HOURS_ENV = "BALUFFO_RECLAIM_MIN_INTERVAL_HOURS"
@@ -110,7 +122,7 @@ def reclaim_journal_path(data_dir: Path | str) -> Path:
 
 def rehearsal_journal_path(data_dir: Path | str) -> Path:
     """Scratch journal for a rehearsal; its own run unlinks it in a ``finally``."""
-    return Path(data_dir) / f"{DEFAULT_DB_NAME}{RECLAIM_REHEARSAL_SUFFIX}"
+    return Path(data_dir) / f"{DEFAULT_DB_NAME}{REHEARSAL_JOURNAL_SUFFIX}"
 
 
 def read_reclaim_journal(data_dir: Path | str) -> dict[str, Any] | None:
@@ -159,6 +171,7 @@ def get_storage_reclaim_payload(
             "verdictCached": verdict_cached,
             "verdictAgeMs": verdict_age_ms,
             **job.status_fields(),
+            "space": job.space_fields(),
             "hold": storage_reclaim_hold_status(),
             "journalPresent": journal is not None,
             "journal": journal,
@@ -222,17 +235,42 @@ def _compute_verdict(data_dir: Path, journal: dict[str, Any] | None) -> dict[str
         # refusal; the route still answers so the panel can say why.
         preview = None
         file_sizes = None
+    # The full-disk relief (§3): the measured staging gate (the last rehearsal's
+    # copy, until a host has measured itself: ``None``), and what removing an
+    # unowned artifact would release. Measuring is read-only here; only a run
+    # removes files, so the GET route stays as read-only as it claims.
+    db_path = data_dir / DEFAULT_DB_NAME
+    # All three live in the journal on disk, so the verdict describes the host
+    # even when the caller passed no journal.
+    anchor = measured_anchor(data_dir, db_path)
     context = ReclaimContext(
         # The bridge's compaction hold is held exactly while a task row is active,
         # so it answers "may a reclaim start" without reading the task ledger.
         active_task=storage_compaction_hold_active(),
         compaction_running=compaction_running,
         backup_exists=backup_exists,
-        free_space_bytes=_free_space_bytes(data_dir),
+        free_space_bytes=free_space_bytes(data_dir),
+        measured_required_bytes=measured_required_bytes(staging_bytes=anchor.staging_bytes),
+        measured_staging_bytes=anchor.staging_bytes,
+        measured_staging_age_s=_anchor_age_s(anchor.measured_at),
+        last_rehearsal_gate_adequate=anchor.gate_adequate,
+        relievable_bytes=artifact_bytes(orphaned_artifacts(data_dir, db_path)),
         cooldown_remaining_hours=_cooldown_remaining_hours(journal),
         auto_enabled=env_flag(RECLAIM_AUTO_ENABLED_ENV, False),
     )
     return reclaim_verdict(preview, file_sizes, context=context)
+
+
+def _anchor_age_s(measured_at: str) -> int | None:
+    """How old the measured gate's anchor is, and ``None`` when it has no date.
+
+    A missing or unreadable stamp is reported as unknown, not as fresh: the panel
+    must not call a gate current because the journal predates the stamp.
+    """
+    parsed = parse_iso(measured_at)
+    if parsed is None:
+        return None
+    return int((datetime.now(UTC) - parsed).total_seconds())
 
 
 @contextmanager
@@ -261,13 +299,6 @@ def _hold_pulse(run_id: str, enabled: bool) -> Iterator[None]:
     finally:
         stop.set()
         thread.join(timeout=RECLAIM_POLL_S)
-
-
-def _free_space_bytes(data_dir: Path) -> int | None:
-    try:
-        return int(shutil.disk_usage(data_dir).free)
-    except OSError:
-        return None
 
 
 def _cooldown_remaining_hours(
@@ -332,9 +363,19 @@ def _empty_state() -> dict[str, Any]:
         "auto": False,
         "triggerOverride": False,
         "expectedBackupBytes": 0,
+        # The last measured copy: the gate's anchor, when it was measured, and
+        # the last rehearsal's own verdict on whether the gate it started on
+        # covered its copy. All three are carried forward, because a later
+        # reclaim run's journal replaces this one.
+        "measuredStagingBytes": 0,
+        "measuredStagingAt": "",
+        "lastRehearsalGateAdequate": None,
         "copyDigests": {},
         # A rehearsal reports its measurements here; a reclaim leaves it empty.
         "result": {},
+        # Full-disk relief (§3) for the last run: free space after the artifact
+        # removal, what it released, and the gates it was asked against.
+        "space": {},
         "error": "",
     }
 
@@ -372,8 +413,16 @@ class StorageReclaimJob:
                     "auto": bool(journal.get("auto")),
                     "triggerOverride": bool(journal.get("triggerOverride")),
                     "expectedBackupBytes": int(journal.get("expectedBackupBytes") or 0),
+                    "measuredStagingBytes": int(journal.get("measuredStagingBytes") or 0),
+                    "measuredStagingAt": str(journal.get("measuredStagingAt") or ""),
+                    "lastRehearsalGateAdequate": (
+                        None
+                        if journal.get("lastRehearsalGateAdequate") is None
+                        else bool(journal.get("lastRehearsalGateAdequate"))
+                    ),
                     "copyDigests": dict(journal.get("copyDigests") or {}),
                     "result": dict(journal.get("result") or {}),
+                    "space": dict(journal.get("space") or {}),
                     "error": str(journal.get("error") or ""),
                 }
             )
@@ -386,6 +435,10 @@ class StorageReclaimJob:
                 error="the bridge restarted before the run finished",
                 phase=self._state["phase"],
             )
+
+    def space_fields(self) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._state.get("space") or {})
 
     def status_fields(self) -> dict[str, str]:
         with self._lock:
@@ -441,6 +494,9 @@ class StorageReclaimJob:
                     "startedAt": _now_iso(),
                     "auto": bool(auto),
                     "triggerOverride": override,
+                    "measuredStagingBytes": int(self._state.get("measuredStagingBytes") or 0),
+                    "measuredStagingAt": str(self._state.get("measuredStagingAt") or ""),
+                    "lastRehearsalGateAdequate": self._state.get("lastRehearsalGateAdequate"),
                 }
                 self._write_journal_locked()
                 if hold:
@@ -611,37 +667,75 @@ class StorageReclaimJob:
                 self._state["result"] = dict(result)
             self._write_journal_locked()
 
-    def _evaluate(self, *, rehearsal: bool = False) -> str | None:
-        """Why this run must stop before copying anything, or ``None`` to proceed.
+    def _evaluate(self, *, rehearsal: bool = False) -> tuple[str | None, dict[str, Any]]:
+        """Why this run must stop before copying anything, and the verdict it read.
 
-        An empty string means the run was cancelled; a non-empty one is the
+        An empty refusal means the run was cancelled; a non-empty one is the
         refusal to journal. A rehearsal skips only the bloat requirement: it
         exists to measure a host before auto mode is enabled.
         """
         if self._cancel_event.is_set():
-            return ""
+            return "", {}
         verdict = _compute_verdict(self.data_dir, read_reclaim_journal(self.data_dir))
         # The verdict read is the slow part of this phase; a cancel that arrives
         # during it must stop the run before any copy starts.
         if self._cancel_event.is_set():
-            return ""
+            return "", verdict
         blockers = [
             str(blocker)
             for blocker in verdict.get("blockers") or []
             if str(blocker) not in RECLAIM_TRIGGER_GUARDS
         ]
         if blockers:
-            return f"blocked by {blockers[0]}"
+            return f"blocked by {blockers[0]}", verdict
         if not rehearsal and str(verdict.get("verdict") or "") != "bloat":
-            return "the verdict no longer reports bloat"
-        return None
+            return "the verdict no longer reports bloat", verdict
+        return None, verdict
+
+    def _check_space(self, verdict: dict[str, Any]) -> str:
+        """Steps 2-4 before the copy: remove unowned artifacts, then ask again.
+
+        Nothing here is the retained copy: deleting ``<db>.pre-rebuild`` is the
+        panel's click (§3 step 5), and the trigger stops here and declines.
+        """
+        self._set_phase("checking-space")
+        space = relieve_free_space(self.data_dir, self.db_path)
+        with self._lock:
+            self._state["space"] = {
+                "freeBytes": int(space["freeBytes"]),
+                "relievedBytes": int(space["relievedBytes"]),
+                "artifactsRemoved": list(space["artifactsRemoved"]),
+                "requiredBytes": int(verdict.get("requiredBytes") or 0),
+                "measuredRequiredBytes": verdict.get("measuredRequiredBytes"),
+            }
+            self._write_journal_locked()
+        self._heartbeat()
+        if self._cancel_event.is_set():
+            return ""
+        measured = verdict.get("measuredRequiredBytes")
+        free = int(space["freeBytes"])
+        if free_space_satisfied(
+            free,
+            required_bytes=int(verdict.get("requiredBytes") or 0),
+            measured_required_bytes=None if measured is None else int(measured),
+        ):
+            return ""
+        gate = int(verdict.get("requiredBytes") or 0) if measured is None else int(measured)
+        return (
+            f"free-space: {free} bytes free, {gate} required after removing "
+            f"{len(space['artifactsRemoved'])} artifact(s)"
+        )
 
     def _run(self) -> None:
         with self._lock:
             run_id = str(self._state["runId"])
         try:
-            refusal = self._evaluate()
+            refusal, verdict = self._evaluate()
             if refusal is not None:
+                self._settle("cancelled", error=refusal)
+                return
+            refusal = self._check_space(verdict)
+            if refusal:
                 self._settle("cancelled", error=refusal)
                 return
             rebuild, refusal = self._start_rebuild_waiting()
@@ -666,6 +760,13 @@ class StorageReclaimJob:
                 self._state["copyDigests"] = dict(snapshot.get("copyDigests") or {})
                 self._write_journal_locked()
             failure = self._verify(snapshot) or self._delete_backup(snapshot)
+            # A completed real run copied the live database too, so its staging
+            # size is the same measurement a rehearsal would have reported.
+            staging_bytes = int(snapshot.get("stagingBytes") or 0)
+            if failure is None and staging_bytes > 0:
+                with self._lock:
+                    self._state["measuredStagingBytes"] = staging_bytes
+                    self._state["measuredStagingAt"] = _now_iso()
             self._settle("failed" if failure is not None else "complete", error=failure or "")
         except (
             BaluffoStoreError,
@@ -726,11 +827,15 @@ class StorageReclaimJob:
         digests on it, so the report carries the same checks a real run would
         rely on; only the install, the rollback link and the delete are missing.
         """
-        refusal = self._evaluate(rehearsal=True)
+        refusal, verdict = self._evaluate(rehearsal=True)
         # The verdict read is the first long step of the run; keep the stall
         # clock alive across it before the copy's own progress takes over.
         self._heartbeat()
         if refusal is not None:
+            self._settle("cancelled", error=refusal)
+            return
+        refusal = self._check_space(verdict)
+        if refusal:
             self._settle("cancelled", error=refusal)
             return
         # A real run stops retention before its copy; measuring a database the
@@ -753,10 +858,15 @@ class StorageReclaimJob:
                 self._settle("cancelled")
                 return
             self._set_phase("copying")
+            staging = rebuild_staging_path(self.db_path, run_id=run_id)
+            journal = rehearsal_journal_path(self.data_dir)
+            # Claim what this rehearsal owns until its cleanup; relief in another
+            # run must not remove the copy or its scratch mid-copy.
+            claim_live_artifacts([staging, journal, journal.with_name(f"{journal.name}.tmp")])
             copied = rebuild_current_feed_database(
                 self.db_path,
-                rebuild_staging_path(self.db_path, run_id=run_id),
-                journal_path=rehearsal_journal_path(self.data_dir),
+                staging,
+                journal_path=journal,
                 run_id=run_id,
                 cancel_requested=cancel_requested,
                 # Per-batch beats keep it fresher than the pulse while it reads.
@@ -764,11 +874,23 @@ class StorageReclaimJob:
             )
         source_bytes = int(copied.get("sourceBytes") or 0)
         staging_bytes = int(copied.get("stagingBytes") or 0)
+        # This copy is the measurement the next gate is built from, and it is also
+        # the only test the current gate gets: both go in the journal together.
+        measured_gate = self.space_fields().get("measuredRequiredBytes")
+        gate_bytes = None if measured_gate is None else int(measured_gate)
+        with self._lock:
+            self._state["measuredStagingBytes"] = staging_bytes
+            self._state["measuredStagingAt"] = _now_iso()
+            self._state["lastRehearsalGateAdequate"] = (
+                None if gate_bytes is None else staging_bytes <= gate_bytes
+            )
         self._settle(
             "complete",
             result={
                 "stagingBytes": staging_bytes,
                 "reclaimedBytes": max(0, source_bytes - staging_bytes),
+                "measuredGateBytes": gate_bytes,
+                "gateAdequate": None if gate_bytes is None else staging_bytes <= gate_bytes,
                 "durationMs": int(copied.get("durationMs") or 0),
                 "tableCounts": dict(copied.get("tableCounts") or {}),
                 "jobRowCount": int(copied.get("jobRowCount") or 0),
@@ -783,7 +905,7 @@ class StorageReclaimJob:
                     )
                 },
                 "copyDigests": dict(copied.get("copyDigests") or {}),
-                "freeBytes": int(_free_space_bytes(self.data_dir) or 0),
+                "freeBytes": int(free_space_bytes(self.data_dir) or 0),
                 "requiredFreeBytes": int(rebuild_required_free_bytes(source_bytes) or 0),
             },
         )
@@ -791,15 +913,19 @@ class StorageReclaimJob:
     def _cleanup_rehearsal(self, run_id: str) -> None:
         """The rehearsal owns a staging file and a scratch journal, nothing else."""
         journal = rehearsal_journal_path(self.data_dir)
-        for path in (
+        paths = [
             rebuild_staging_path(self.db_path, run_id=run_id),
             journal,
             journal.with_name(f"{journal.name}.tmp"),
-        ):
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
+        ]
+        try:
+            for path in paths:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        finally:
+            release_live_artifacts(paths)
 
     def _release_run_hold(self, run_id: str) -> None:
         """Clear this thread and release its hold in one transition."""

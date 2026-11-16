@@ -563,13 +563,18 @@ h2.admin-section-title {
 }
 
 .admin-storage-advanced-summary::before {
-  content: "▸";
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 0.26rem solid transparent;
+  border-right: 0.26rem solid transparent;
+  border-top: 0.3rem solid currentColor;
   color: var(--text-subtle);
-  font-size: 0.7rem;
+  transform: rotate(-90deg);
 }
 
 .admin-storage-advanced[open] > .admin-storage-advanced-summary::before {
-  content: "▾";
+  transform: rotate(0deg);
 }
 
 .admin-storage-advanced-summary:focus-visible {
@@ -635,6 +640,32 @@ h2.admin-section-title {
 
 .admin-storage-retained-copy-icon {
   color: var(--tint-warning);
+}
+
+/* Measured-gate health: only rendered when the verdict earns a warning, so the
+   block itself is the warning and carries no neutral state. */
+.admin-storage-reclaim-health {
+  margin: 0;
+}
+
+.admin-storage-reclaim-health[hidden] {
+  display: none;
+}
+
+.admin-storage-reclaim-health-body {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.45rem 0.6rem;
+  border-left: 3px solid var(--tint-warning);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--tint-warning) 8%, var(--surface-4));
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.admin-storage-reclaim-warning {
+  margin: 0;
 }
 
 .baluffo-tooltip-portal.baluffo-tooltip-portal-warning {
