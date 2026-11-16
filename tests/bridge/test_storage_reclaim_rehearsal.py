@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from src.bridge import storage_rebuild, storage_reclaim
+from src.bridge import storage_health, storage_rebuild, storage_reclaim
 from src.bridge.storage_rebuild import close_storage_rebuild_jobs
 from src.storage import BaluffoStore, JobRuntimeStore, current_feed_rebuild
 from src.storage.baluffo_store import DEFAULT_DB_NAME
@@ -274,6 +274,7 @@ def test_a_cancelled_rehearsal_removes_its_staging_and_scratch_journal(
                 for path in data_dir.iterdir()
                 if path.name.endswith(".tmp") or "rehearsal" in path.name
             )
+            hold = storage_health.storage_reclaim_hold_status()
         finally:
             storage_reclaim.close_storage_reclaim_jobs()
             close_storage_rebuild_jobs()
@@ -284,6 +285,82 @@ def test_a_cancelled_rehearsal_removes_its_staging_and_scratch_journal(
     assert live_jobs == 2
     # The staging copy and the scratch journal both belong to the run.
     assert leftovers == []
+    assert hold["active"] is False
+
+
+def test_a_failed_rehearsal_still_removes_its_staging_and_scratch_journal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("reclaim-rehearsal-failure") as data_dir:
+        _seed(data_dir, generations=2)
+        db_path = data_dir / DEFAULT_DB_NAME
+
+        def exploding_copy(
+            db_path: Path,
+            staging: Path,
+            *,
+            journal_path: Path,
+            **_kwargs: Any,
+        ) -> dict[str, Any]:
+            # Leave behind exactly what a real copy would before it fails.
+            staging.write_text("partial", encoding="utf-8")
+            journal_path.write_text("{", encoding="utf-8")
+            raise CurrentFeedRebuildError("the copy exploded")
+
+        monkeypatch.setattr(storage_reclaim, "rebuild_current_feed_database", exploding_copy)
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir, rehearsal=True)
+            assert started["started"] is True, started
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 60.0)
+            payload = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+            live_jobs = sqlite3.connect(db_path).execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+            leftovers = sorted(
+                path.name
+                for path in data_dir.iterdir()
+                if path.name.endswith(".tmp") or "rehearsal" in path.name
+            )
+            hold = storage_health.storage_reclaim_hold_status()
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert payload["status"] == "failed", payload
+    assert journal is not None
+    assert "the copy exploded" in journal["error"]
+    assert live_jobs == 2
+    assert leftovers == []
+    # A failure must release the container hold in the same finally.
+    assert hold["active"] is False
+
+
+def test_a_cancel_during_the_retention_stop_settles_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def stop_then_cancel(_store: Any) -> bool:
+        journal = storage_reclaim.read_reclaim_journal(data_dir) or {}
+        storage_reclaim.cancel_storage_reclaim(data_dir, str(journal.get("runId") or ""))
+        # The retention pass may still refuse to stop after the cancel.
+        raise CurrentFeedRebuildError("the background retention pass did not stop")
+
+    with workspace_tmpdir("reclaim-rehearsal-cancel-stop") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(storage_rebuild, "stop_runtime_retention_for_copy", stop_then_cancel)
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir, rehearsal=True)
+            assert started["started"] is True, started
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 60.0)
+            payload = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+            hold = storage_health.storage_reclaim_hold_status()
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert payload["status"] == "cancelled", payload
+    assert journal is not None
+    assert journal["status"] == "cancelled"
+    assert hold["active"] is False
 
 
 def test_a_rehearsal_still_refuses_a_safety_blocker(monkeypatch: pytest.MonkeyPatch) -> None:

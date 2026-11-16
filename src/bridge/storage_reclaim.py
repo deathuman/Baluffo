@@ -653,7 +653,7 @@ class StorageReclaimJob:
             run_id = str(self._state["runId"])
         deadline = time.monotonic() + RECLAIM_MAX_RUN_S
         try:
-            self._rehearse(deadline)
+            self._rehearse(run_id, deadline)
         except (CurrentFeedRebuildCancelled, RetentionCancelled):
             # The copy stops on either our Stop or the run limit; only the
             # operator asked for one of those.
@@ -670,12 +670,23 @@ class StorageReclaimJob:
             TypeError,
             ValueError,
         ) as exc:
-            self._settle("failed", error=f"{type(exc).__name__}: {exc}")
+            self._rehearse_failure(exc, deadline=deadline)
         finally:
-            self._cleanup_rehearsal(run_id)
-            self._release_run_hold(run_id)
+            try:
+                self._cleanup_rehearsal(run_id)
+            finally:
+                # Even a cleanup that cannot unlink must not keep task starts
+                # blocked or leave this job reporting a thread it does not have.
+                self._release_run_hold(run_id)
 
-    def _rehearse(self, deadline: float) -> None:
+    def _rehearse_failure(self, exc: BaseException, *, deadline: float) -> None:
+        """Settle a failed rehearsal, unless the operator cancelled it first."""
+        if self._cancel_event.is_set() and time.monotonic() <= deadline:
+            self._settle("cancelled")
+            return
+        self._settle("failed", error=f"{type(exc).__name__}: {exc}")
+
+    def _rehearse(self, run_id: str, deadline: float) -> None:
         """Run the real copy on the live database and report what it cost.
 
         The copy helper validates its staging file and computes the content
@@ -683,6 +694,9 @@ class StorageReclaimJob:
         rely on; only the install, the rollback link and the delete are missing.
         """
         refusal = self._evaluate(rehearsal=True)
+        # The verdict read is the first long step of the run; keep the stall
+        # clock alive across it before the copy's own progress takes over.
+        self._heartbeat()
         if refusal is not None:
             self._settle("cancelled", error=refusal)
             return
@@ -691,40 +705,34 @@ class StorageReclaimJob:
         self._set_phase("stopping-retention")
         store = get_storage_store(self.data_dir, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
         rebuild_mod.stop_runtime_retention_for_copy(store)
+        self._heartbeat()
         if self._cancel_event.is_set():
             self._settle("cancelled")
             return
         self._set_phase("copying")
-        with self._lock:
-            run_id = str(self._state["runId"])
-        started = time.monotonic()
 
         def cancel_requested() -> bool:
             # The copy has no deadline of its own, so the run limit is enforced
             # at the same batch boundaries as an operator's Stop.
             return self._cancel_event.is_set() or time.monotonic() > deadline
 
-        source_bytes = file_size(self.db_path)
-        free_bytes = _free_space_bytes(self.data_dir)
-        required_free = rebuild_required_free_bytes(source_bytes)
-        staging = rebuild_staging_path(self.db_path, run_id=run_id)
         copied = rebuild_current_feed_database(
             self.db_path,
-            staging,
+            rebuild_staging_path(self.db_path, run_id=run_id),
             journal_path=rehearsal_journal_path(self.data_dir),
             run_id=run_id,
             cancel_requested=cancel_requested,
             # A multi-GB copy must refresh the hold's stall clock while it reads.
             on_progress=lambda _progress: self._heartbeat(),
         )
-        staging_bytes = file_size(staging)
+        source_bytes = int(copied.get("sourceBytes") or 0)
+        staging_bytes = int(copied.get("stagingBytes") or 0)
         self._settle(
             "complete",
             result={
                 "stagingBytes": staging_bytes,
                 "reclaimedBytes": max(0, source_bytes - staging_bytes),
-                "durationMs": int(copied.get("durationMs") or 0)
-                or int(round((time.monotonic() - started) * 1000)),
+                "durationMs": int(copied.get("durationMs") or 0),
                 "tableCounts": dict(copied.get("tableCounts") or {}),
                 "jobRowCount": int(copied.get("jobRowCount") or 0),
                 "sourceRowCount": int(copied.get("sourceRowCount") or 0),
@@ -738,8 +746,8 @@ class StorageReclaimJob:
                     )
                 },
                 "copyDigests": dict(copied.get("copyDigests") or {}),
-                "freeBytes": int(free_bytes or 0),
-                "requiredFreeBytes": int(required_free or 0),
+                "freeBytes": int(_free_space_bytes(self.data_dir) or 0),
+                "requiredFreeBytes": int(rebuild_required_free_bytes(source_bytes) or 0),
             },
         )
 
