@@ -125,3 +125,60 @@ def test_the_run_limit_stops_the_copy_before_it_settles(
     # settled run whose hold is already gone.
     assert rebuild_status not in {"running", "cancelling"}
     assert hold_active is False
+
+
+def test_a_copy_that_finishes_during_the_stop_is_adopted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The run limit must not report a failure for a database that is installed.
+
+    The cancel is a request: a rebuild already installing can refuse it and
+    complete while the run limit is stopping it. Its completion is the truth —
+    the copy is in place — so the reclaim adopts the snapshot and goes on to
+    verify and delete instead of settling "did not finish within the run limit".
+    """
+    with workspace_tmpdir("reclaim-run-limit-race") as data_dir:
+        job = storage_reclaim._job_for(data_dir)
+        with job._lock:
+            job._state["status"] = "running"
+            job._state["phase"] = "copying"
+            job._state["runId"] = "storage_reclaim_race"
+            job._state["rebuildRunId"] = "current_feed_rebuild_race"
+        # The copy is still working when the limit hits, and installs before the
+        # stop lands — the race this pins.
+        statuses = iter(["running", "running"])
+        completed = {
+            "status": "complete",
+            "currentGeneration": "gen-race",
+            "stagingBytes": 4096,
+        }
+        stop_requests: list[str] = []
+
+        def fake_payload(_data_dir):
+            return {"storageRebuild": {**completed, "status": next(statuses, "complete")}}
+
+        monkeypatch.setattr(
+            storage_reclaim.rebuild_mod, "get_storage_rebuild_payload", fake_payload
+        )
+
+        def fake_stop(_data_dir, run_id):
+            stop_requests.append(run_id)
+            return {"ok": True}
+
+        monkeypatch.setattr(storage_reclaim.rebuild_mod, "cancel_storage_rebuild", fake_stop)
+        monkeypatch.setattr(storage_reclaim, "RECLAIM_MAX_RUN_S", 0.0)
+        try:
+            adopted = job._await_rebuild()
+            status_after = job.status_fields()["status"]
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    # It did ask the copy to stop, and then adopted what the copy reported.
+    assert stop_requests == ["current_feed_rebuild_race"]
+    assert adopted is not None
+    assert adopted["currentGeneration"] == "gen-race"
+    # No run-limit failure was settled over an installed database.
+    assert status_after == "running"
+    assert journal is None or "run limit" not in str(journal.get("error") or "")

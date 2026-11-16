@@ -1127,8 +1127,12 @@ class StorageReclaimJob:
             if time.monotonic() > deadline:
                 # The copy has no deadline of its own, so the limit is enforced
                 # here. Stop it before settling: settling releases the hold, and a
-                # fetch landing mid-copy supersedes the install.
-                self._cancel_followed_rebuild()
+                # fetch landing mid-copy supersedes the install. A copy that
+                # finished while being stopped has installed itself, so that
+                # completion is adopted rather than reported as a limit failure.
+                finished = self._stop_followed_rebuild()
+                if finished is not None:
+                    return finished
                 self._settle("failed", error="the rebuild did not finish within the run limit")
                 return None
             snapshot = dict(
@@ -1168,27 +1172,31 @@ class StorageReclaimJob:
     def _cancel_rebuild(self, rebuild_run_id: str) -> None:
         rebuild_mod.cancel_storage_rebuild(self.data_dir, rebuild_run_id)
 
-    def _cancel_followed_rebuild(self) -> None:
-        """Stop the copy this run followed, and give it a moment to leave.
+    def _stop_followed_rebuild(self) -> dict[str, Any] | None:
+        """Stop the copy this run followed, and return its snapshot if it finished.
 
-        The wait is bounded by ``RECLAIM_STOP_WAIT_S``: the settle that follows
-        releases the hold either way, so a rebuild that ignores the cancel delays
-        task starts by seconds, not by the rest of the run limit.
+        A cancel is a request: a rebuild already installing can refuse it and
+        complete, and adopting that completion keeps the run from reporting a
+        limit failure for a database that is installed. The wait is bounded by
+        ``RECLAIM_STOP_WAIT_S``, so a copy that ignores the cancel delays task
+        starts by that much, not by the rest of the run limit.
         """
         with self._lock:
             rebuild_run_id = str(self._state["rebuildRunId"])
         if not rebuild_run_id:
-            return
+            return None
         self._cancel_rebuild(rebuild_run_id)
         stop_by = time.monotonic() + RECLAIM_STOP_WAIT_S
         while time.monotonic() < stop_by:
             snapshot = dict(
                 rebuild_mod.get_storage_rebuild_payload(self.data_dir).get("storageRebuild") or {}
             )
-            if str(snapshot.get("status") or "") not in {"running", "cancelling"}:
-                return
+            status = str(snapshot.get("status") or "")
+            if status not in {"running", "cancelling"}:
+                return snapshot if status == "complete" else None
             self._heartbeat()
             time.sleep(RECLAIM_POLL_S)
+        return None
 
     def _verify(self, snapshot: dict[str, Any]) -> str | None:
         """Re-check the installed database against the completed rebuild's record.
