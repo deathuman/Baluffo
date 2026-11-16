@@ -33,6 +33,8 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -80,6 +82,9 @@ RECLAIM_SCOPES = ("modal", "inline")
 RECLAIM_POLL_S = 0.5
 # Caps a stuck run at the same two hours the hold's hard maximum allows.
 RECLAIM_MAX_RUN_S = RECLAIM_HOLD_MAX_S
+# How often a blocking step that reports nothing refreshes the hold's stall
+# clock; well inside the stall timeout so a beat is never late by design.
+RECLAIM_HOLD_PULSE_S = 15.0
 RECLAIM_TERMINAL_STATUSES = frozenset(
     {"complete", "failed", "superseded", "cancelled", "interrupted"}
 )
@@ -228,6 +233,34 @@ def _compute_verdict(data_dir: Path, journal: dict[str, Any] | None) -> dict[str
         auto_enabled=env_flag(RECLAIM_AUTO_ENABLED_ENV, False),
     )
     return reclaim_verdict(preview, file_sizes, context=context)
+
+
+@contextmanager
+def _hold_pulse(run_id: str, enabled: bool) -> Iterator[None]:
+    """Refresh the hold's stall clock while a blocking step reports nothing.
+
+    The copy reports progress per batch, but the wait for a stopping retention
+    pass and the copy's validation pass are few monolithic SQLite calls that can
+    outlast the stall timeout on a large database. A beat only refreshes the
+    hold this run already has: it emits no phase of its own and never extends
+    the hard maximum.
+    """
+    if not enabled:
+        yield
+        return
+    stop = threading.Event()
+
+    def beat() -> None:
+        while not stop.wait(RECLAIM_HOLD_PULSE_S):
+            heartbeat_storage_reclaim_hold(run_id)
+
+    thread = threading.Thread(target=beat, name="reclaim-hold-pulse", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=RECLAIM_POLL_S)
 
 
 def _free_space_bytes(data_dir: Path) -> int | None:
@@ -703,28 +736,32 @@ class StorageReclaimJob:
         # A real run stops retention before its copy; measuring a database the
         # reclaimer will be deleting from would not describe the copy it makes.
         self._set_phase("stopping-retention")
-        store = get_storage_store(self.data_dir, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
-        rebuild_mod.stop_runtime_retention_for_copy(store)
-        self._heartbeat()
-        if self._cancel_event.is_set():
-            self._settle("cancelled")
-            return
-        self._set_phase("copying")
 
         def cancel_requested() -> bool:
             # The copy has no deadline of its own, so the run limit is enforced
             # at the same batch boundaries as an operator's Stop.
             return self._cancel_event.is_set() or time.monotonic() > deadline
 
-        copied = rebuild_current_feed_database(
-            self.db_path,
-            rebuild_staging_path(self.db_path, run_id=run_id),
-            journal_path=rehearsal_journal_path(self.data_dir),
-            run_id=run_id,
-            cancel_requested=cancel_requested,
-            # A multi-GB copy must refresh the hold's stall clock while it reads.
-            on_progress=lambda _progress: self._heartbeat(),
-        )
+        # The retention wait and the copy's validation pass both block without
+        # reporting anything, so they refresh the hold from a pulse instead.
+        # Neither step changes the copy's phases: the pulse emits none.
+        with _hold_pulse(run_id, self._hold_taken):
+            store = get_storage_store(self.data_dir, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
+            rebuild_mod.stop_runtime_retention_for_copy(store)
+            self._heartbeat()
+            if self._cancel_event.is_set():
+                self._settle("cancelled")
+                return
+            self._set_phase("copying")
+            copied = rebuild_current_feed_database(
+                self.db_path,
+                rebuild_staging_path(self.db_path, run_id=run_id),
+                journal_path=rehearsal_journal_path(self.data_dir),
+                run_id=run_id,
+                cancel_requested=cancel_requested,
+                # Per-batch beats keep it fresher than the pulse while it reads.
+                on_progress=lambda _progress: self._heartbeat(),
+            )
         source_bytes = int(copied.get("sourceBytes") or 0)
         staging_bytes = int(copied.get("stagingBytes") or 0)
         self._settle(

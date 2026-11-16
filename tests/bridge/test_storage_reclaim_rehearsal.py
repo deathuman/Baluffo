@@ -363,6 +363,42 @@ def test_a_cancel_during_the_retention_stop_settles_cancelled(
     assert hold["active"] is False
 
 
+def test_a_slow_validation_keeps_the_container_hold(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_validate = current_feed_rebuild.validate_rebuilt_database
+    observed: list[bool] = []
+
+    def slow_validate(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        # The copy reports nothing between its last batch and the validation
+        # result, so a task start arriving here is what used to free the hold.
+        until = time.monotonic() + 3.5
+        while time.monotonic() < until:
+            observed.append(bool(storage_health.storage_reclaim_hold_status()["active"]))
+            time.sleep(0.2)
+        return real_validate(*args, **kwargs)
+
+    with workspace_tmpdir("reclaim-rehearsal-validation") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(current_feed_rebuild, "validate_rebuilt_database", slow_validate)
+        # Both clocks are shortened so the test can witness a stall without
+        # waiting the production minute; they keep their production ordering.
+        monkeypatch.setattr(storage_health, "RECLAIM_HOLD_HEARTBEAT_TIMEOUT_S", 2.5)
+        monkeypatch.setattr(storage_reclaim, "RECLAIM_HOLD_PULSE_S", 0.2)
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir, rehearsal=True)
+            assert started["started"] is True, started
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 60.0)
+            payload = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert payload["status"] == "complete", payload
+    # Several reads spread across more than one stall timeout, none of them
+    # past it: the pulse refreshed the hold the validation itself cannot.
+    assert len(observed) >= 8, observed
+    assert all(observed), observed
+
+
 def test_a_rehearsal_still_refuses_a_safety_blocker(monkeypatch: pytest.MonkeyPatch) -> None:
     with workspace_tmpdir("reclaim-rehearsal-blocked") as data_dir:
         _seed(data_dir)

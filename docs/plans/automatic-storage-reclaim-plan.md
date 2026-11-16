@@ -30,8 +30,10 @@
   through the same helper the rebuild uses before it reads, is capped at
   `RECLAIM_MAX_RUN_S` like a real run, reports staging/reclaimed bytes, duration,
   per-table counts, validation and the content digests under the journal's
-  `result`, and unlinks its staging file and scratch   `<db>.reclaim-rehearsal.json`
-  in a `finally`. Triggers (§4) are implemented in
+  `result`, unlinks its staging file and scratch
+  `<db>.reclaim-rehearsal.json` in a `finally`, and refreshes the hold from a
+  pulse while it waits for retention and validates, because the copy's own
+  progress events stop before validation. Triggers (§4) are implemented in
   `src/bridge/storage_reclaim_triggers.py`: the closeout transition that releases
   the compaction hold asks once, startup schedules one check `60` s after
   maintenance resumes, both go through `auto: true` so the verdict, every safety
@@ -417,6 +419,13 @@ this run's `mode: "rehearsal"` status and result, never a rebuild status. A sync
 request would also exceed the Admin request budget on a multi-GB copy, which is why
 this is a job, not a route-thread operation. Gates match a real run (the §3 pre-flight,
 no active task, retention stopped); other conditions measure the wrong thing.
+
+The hold is refreshed by a pulse every `RECLAIM_HOLD_PULSE_S` for the whole
+blocking stretch (the retention-stop wait and the copy). The copy reports progress
+per batch, but validation is a few monolithic SQLite calls with no progress of
+its own, and a pass longer than the stall timeout would otherwise release the hold
+mid-run. The pulse only beats the hold the run already took: no phase, no renewal
+of the hard maximum.
 
 That is what makes auto mode honest: `BALUFFO_RECLAIM_AUTO_ENABLED` stays `0`, and the
 turn-on step is a rehearsal whose report shows staging size, reclaimed bytes and
