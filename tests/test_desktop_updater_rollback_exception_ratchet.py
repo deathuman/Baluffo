@@ -43,6 +43,7 @@ def _run_install_with_backup_restore_failure(
     tmp: Path,
     install_failure: BaseException | None = None,
     restore_failure: BaseException | None = None,
+    snapshot_failure: BaseException | None = None,
     launch_failure: BaseException | None = None,
 ) -> None:
     install_root = tmp / "portable"
@@ -90,7 +91,16 @@ def _run_install_with_backup_restore_failure(
             "_restore_data_backup",
             side_effect=restore_failure,
         ),
-        mock.patch.object(updater, "_restore_install_snapshot"),
+        mock.patch.object(
+            updater,
+            "_restore_install_snapshot",
+            side_effect=snapshot_failure,
+        ),
+        mock.patch.object(
+            updater,
+            "_verify_restored_install",
+            return_value={"files": 1, "currentVersion": "0.1.0"},
+        ),
         mock.patch.object(updater, "_launch_executable", side_effect=launch_failure),
     ):
         updater.run_install(paths.install_plan_path)
@@ -119,7 +129,8 @@ def test_run_install_interrupt_rolls_back_before_propagating() -> None:
         paths = du_shared.DesktopUpdatePaths.from_data_dir(tmp_path / "portable" / "ship" / "data")
         status = updater.load_status(paths, current_version="0.1.0")
         assert status["installState"] == "failed"
-        assert status["installStage"] == "failed"
+        assert status["installStage"] == "rolled_back"
+        assert status["rollbackVerified"] is True
         assert status["lastError"] == "install interrupted"
 
 
@@ -158,30 +169,32 @@ def test_run_install_does_not_suppress_unexpected_rollback_launch_failures() -> 
 
 def test_run_install_suppresses_expected_rollback_snapshot_failures() -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
-        install_root = Path(tmp) / "portable"
-        data_dir = install_root / "ship" / "data"
-        paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
-        rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
-        _write_install_plan(paths.install_plan_path, install_root, rollback_root)
+        tmp_path = Path(tmp)
+        with pytest.raises(RuntimeError, match="install replacement failed"):
+            _run_install_with_backup_restore_failure(
+                tmp=tmp_path,
+                snapshot_failure=OSError("rollback snapshot unavailable"),
+            )
 
-        with (
-            mock.patch.object(
-                updater,
-                "_recover_manifest_for_install",
-                side_effect=RuntimeError("No cached desktop manifest is available."),
-                create=True,
-            ),
-            mock.patch.object(
-                updater,
-                "_restore_install_snapshot",
-                side_effect=OSError("rollback snapshot unavailable"),
-            ),
-            pytest.raises(RuntimeError, match="No cached desktop manifest is available"),
-        ):
-            updater.run_install(paths.install_plan_path)
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(tmp_path / "portable" / "ship" / "data")
+        status = updater.load_status(paths, current_version="0.1.0")
+        assert status["installStage"] == "rollback_failed"
+        assert status["rollbackVerified"] is False
+        assert "install_restore_failed: rollback snapshot unavailable" in status["lastError"]
 
 
 def test_run_install_does_not_suppress_unexpected_rollback_snapshot_failures() -> None:
+    with (
+        workspace_tmpdir("desktop-updater") as tmp,
+        pytest.raises(AssertionError, match="unexpected rollback bug"),
+    ):
+        _run_install_with_backup_restore_failure(
+            tmp=Path(tmp),
+            snapshot_failure=AssertionError("unexpected rollback bug"),
+        )
+
+
+def test_run_install_does_not_roll_back_a_failure_that_precedes_mutation() -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
         install_root = Path(tmp) / "portable"
         data_dir = install_root / "ship" / "data"
@@ -196,11 +209,15 @@ def test_run_install_does_not_suppress_unexpected_rollback_snapshot_failures() -
                 side_effect=RuntimeError("No cached desktop manifest is available."),
                 create=True,
             ),
-            mock.patch.object(
-                updater,
-                "_restore_install_snapshot",
-                side_effect=AssertionError("unexpected rollback bug"),
-            ),
-            pytest.raises(AssertionError, match="unexpected rollback bug"),
+            mock.patch.object(updater, "_restore_install_snapshot") as restore_snapshot,
+            pytest.raises(RuntimeError, match="No cached desktop manifest is available"),
         ):
             updater.run_install(paths.install_plan_path)
+
+        restore_snapshot.assert_not_called()
+        status = updater.load_status(paths, current_version="0.1.0")
+        assert status["installStage"] == "failed"
+        assert (
+            status["lastError"]
+            == "desktop_update_manifest_recovery_failed: No cached desktop manifest is available."
+        )
