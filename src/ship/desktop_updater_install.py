@@ -355,11 +355,13 @@ def _restore_previous_install(
     """
     stopped = _stop_relaunched_app(plan)
     if backup_ref is not None:
-        with contextlib.suppress(OSError, _zipfile.BadZipFile, _zipfile.LargeZipFile):
+        try:
             _restore_data_backup(
                 _ShipPaths.from_root(paths.ship_root, data_dir=paths.data_dir),
                 backup_ref,
             )
+        except (OSError, _zipfile.BadZipFile, _zipfile.LargeZipFile) as exc:
+            raise RuntimeError(f"Data backup restore failed: {exc}") from exc
     restored = _restore_install_snapshot(paths.install_root, rollback_root)
     return {
         **restored,
@@ -447,6 +449,7 @@ def _recover_interrupted_install(
             install_stage="rollback_failed",
             lastError=f"install_restore_failed: {exc}",
             rollbackPath=str(rollback_root),
+            rollbackVerified=False,
         )
         return False
     remove_rollback_path(rollback_root)

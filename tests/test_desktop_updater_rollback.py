@@ -128,6 +128,38 @@ def test_run_install_reports_rollback_failure_and_keeps_the_snapshot(monkeypatch
         assert launch_executable.call_count == 1
 
 
+def test_restore_previous_install_surfaces_a_data_backup_restore_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_root = tmp_path / "portable"
+    data_dir = install_root / "ship" / "data"
+    data_dir.mkdir(parents=True)
+    paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
+    rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
+    backup_ref = tmp_path / "data-backup.zip"
+    backup_ref.write_text("backup", encoding="utf-8")
+    restore_backup = mock.Mock(side_effect=updater_install.zipfile.BadZipFile("corrupt backup"))
+    restore_snapshot = mock.Mock(return_value={"files": 1, "currentVersion": "0.1.0"})
+    monkeypatch.setattr(
+        updater_install,
+        "_stop_relaunched_app",
+        lambda plan, **kwargs: {"pid": 4242, "terminated": True, "aliveAfter": False},
+    )
+    monkeypatch.setattr(updater_install, "_restore_data_backup", restore_backup)
+    monkeypatch.setattr(updater_install, "_restore_install_snapshot", restore_snapshot)
+
+    with pytest.raises(RuntimeError, match="Data backup restore failed: corrupt backup"):
+        updater_install._restore_previous_install(
+            plan={},
+            paths=paths,
+            rollback_root=rollback_root,
+            backup_ref=backup_ref,
+        )
+
+    restore_backup.assert_called_once()
+    restore_snapshot.assert_not_called()
+
+
 def test_stop_relaunched_app_kills_the_session_launcher_and_confirms_exit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

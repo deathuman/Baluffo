@@ -102,15 +102,19 @@ def _run_install_with_backup_restore_failure(
         updater.run_install(paths.install_plan_path)
 
 
-def test_run_install_suppresses_expected_data_backup_restore_failures() -> None:
-    with (
-        workspace_tmpdir("desktop-updater") as tmp,
-        pytest.raises(RuntimeError, match="install replacement failed"),
-    ):
-        _run_install_with_backup_restore_failure(
-            tmp=Path(tmp),
-            restore_failure=updater.zipfile.BadZipFile("corrupt backup"),
-        )
+def test_run_install_reports_expected_data_backup_restore_failures() -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        with pytest.raises(RuntimeError, match="install replacement failed"):
+            _run_install_with_backup_restore_failure(
+                tmp=Path(tmp),
+                restore_failure=updater.zipfile.BadZipFile("corrupt backup"),
+            )
+
+        paths = du_shared.DesktopUpdatePaths.from_data_dir(Path(tmp) / "portable" / "ship" / "data")
+        status = updater.load_status(paths, current_version="0.1.0")
+        assert status["installStage"] == "rollback_failed"
+        assert status["rollbackVerified"] is False
+        assert "Data backup restore failed: corrupt backup" in status["lastError"]
 
 
 def test_run_install_interrupt_rolls_back_before_propagating() -> None:
