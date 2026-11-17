@@ -179,7 +179,51 @@ def test_appimage_install_restores_the_previous_build_when_startup_fails() -> No
         assert launch_mock.call_count == 2
         status = du.load_status(paths, current_version="0.3.024")
         assert status["installState"] == "failed"
+        assert status["installStage"] == "failed"
         assert "relaunch_verification_failed" in str(status["lastError"])
+
+
+def test_appimage_install_marks_failed_restore_terminal_and_keeps_the_snapshot() -> None:
+    with workspace_tmpdir("appimage-install-failed-restore") as tmp:
+        target, _downloaded, paths, rollback, plan = _prepare(tmp)
+        plan_path = paths.install_plan_path
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        restore_mock = mock.Mock(return_value=False)
+        with (
+            mock.patch.object(install_mod, "_wait_for_launcher_exit"),
+            mock.patch.object(
+                install_mod,
+                "_verify_target_startup",
+                side_effect=RuntimeError(
+                    "Updated desktop app did not report startup readiness in time."
+                ),
+            ),
+            mock.patch.object(install_mod, "_launch_executable") as launch_mock,
+            mock.patch.object(appimage_mod, "restore_appimage", restore_mock),
+        ):
+            with pytest.raises(RuntimeError, match="startup readiness"):
+                install_mod.run_install(plan_path)
+
+        restore_mock.assert_called_once_with(target, rollback)
+        # The replaced build stays in place and the only good build is retained
+        # for an operator repair; the failed restore must not relaunch either.
+        assert target.read_text(encoding="utf-8") == "new build"
+        assert rollback.is_file()
+        assert launch_mock.call_count == 1
+        status = du.load_status(paths, current_version=NEW_VERSION)
+        assert status["installState"] == "failed"
+        assert status["installStage"] == "rollback_failed"
+        assert status["rollbackVerified"] is False
+        assert status["rollbackPath"] == str(rollback)
+        assert "relaunch_verification_failed" in str(status["lastError"])
+        assert "install_restore_failed" in str(status["lastError"])
+
+        with pytest.raises(RuntimeError, match="Previous install rollback failed"):
+            install_mod.run_install(plan_path)
+
+        assert rollback.is_file()
+        status = du.load_status(paths, current_version=NEW_VERSION)
+        assert status["installStage"] == "rollback_failed"
 
 
 def test_stage_snapshot_and_restore_keep_the_target_runnable() -> None:
@@ -199,6 +243,23 @@ def test_stage_snapshot_and_restore_keep_the_target_runnable() -> None:
         assert not staged.exists()
         assert appimage_mod.restore_appimage(target, rollback) is True
         assert target.read_text(encoding="utf-8") == "old"
+
+
+def test_restore_appimage_keeps_the_snapshot_when_both_restore_paths_fail() -> None:
+    with workspace_tmpdir("appimage-restore-failure") as tmp:
+        target = Path(tmp) / "Baluffo.AppImage"
+        target.write_text("new", encoding="utf-8")
+        rollback = Path(tmp) / ".Baluffo.AppImage.rollback"
+        rollback.write_text("old", encoding="utf-8")
+
+        with (
+            mock.patch.object(appimage_mod.os, "replace", side_effect=OSError("target is busy")),
+            mock.patch.object(appimage_mod.shutil, "copyfile", side_effect=OSError("copy failed")),
+        ):
+            assert appimage_mod.restore_appimage(target, rollback) is False
+
+        assert target.read_text(encoding="utf-8") == "new"
+        assert rollback.read_text(encoding="utf-8") == "old"
 
 
 def test_restore_missing_target_uses_a_leftover_snapshot() -> None:

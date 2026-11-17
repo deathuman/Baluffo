@@ -144,6 +144,7 @@ def run_appimage_install(plan: dict[str, Any], *, progress: Any | None = None) -
         or install_mod.install_stage_label("handoff_requested", "preparing")
     )
     staged = target.with_name(f".{target.name}.{uuid.uuid4().hex}{STAGED_SUFFIX}")
+    target_replaced = False
     try:
         manifest = install_mod._recover_manifest_for_install(
             plan,
@@ -202,6 +203,7 @@ def run_appimage_install(plan: dict[str, Any], *, progress: Any | None = None) -
             rollbackPath=str(rollback_path),
         )
         replace_appimage(staged, target)
+        target_replaced = True
 
         progress.update(install_mod.install_stage_label("verifying", "relaunching"))
         _save_stage(
@@ -228,7 +230,7 @@ def run_appimage_install(plan: dict[str, Any], *, progress: Any | None = None) -
     except BaseException as exc:
         install_mod.clear_handoff_request(paths)
         progress.update(install_mod.install_stage_label("installing", "rolling_back"))
-        restore_appimage(target, rollback_path)
+        restored = restore_appimage(target, rollback_path)
         failed_status = _save_stage(
             install_mod,
             paths,
@@ -237,6 +239,24 @@ def run_appimage_install(plan: dict[str, Any], *, progress: Any | None = None) -
             lastError=install_mod._classify_install_failure(exc),
             rollbackPath=str(rollback_path),
         )
+        if target_replaced and not restored:
+            # The target is now the unverified build and the previous AppImage
+            # could not be put back. Keep the snapshot and make retry terminal,
+            # matching the Windows install's rollback_failed state.
+            _save_stage(
+                install_mod,
+                paths,
+                install_state="failed",
+                install_stage="rollback_failed",
+                lastError=(
+                    f"{failed_status.get('lastError') or 'desktop_install_failed'}; "
+                    "install_restore_failed: previous AppImage could not be restored "
+                    f"from {rollback_path}"
+                ),
+                rollbackPath=str(rollback_path),
+                rollbackVerified=False,
+            )
+            raise
         with contextlib.suppress(OSError, RuntimeError):
             _relaunch_target(install_mod, target, data_dir=data_dir, relaunch_args=relaunch_args)
         _save_stage(
