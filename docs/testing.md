@@ -567,6 +567,12 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - seeded local profile data, saved jobs, notes, and attachments remain intact across the update.
 - Use this lane for updater-helper, desktop session/handoff, release-manifest, Windows packaged data-root migration, and portable runtime mutation changes.
 
+## Desktop Updater Repair Rehearsal Contract
+
+- `npm run test:frontend:packaged:update-repair-rehearsal` seeds a terminal `rollback_failed` install with a retained snapshot, posts the panel's `/app/repair-update` route, and requires the launcher to close, the real helper to restore every previous file (excluding `ship/data`) and remove the snapshot, and the repaired app to reopen with `startupReady: true` and the seeded profile, saved job, notes, and attachment intact.
+- `npm run test:frontend:packaged:update-reextract-rehearsal` seeds a terminal `rollback_failed` install with no usable snapshot, caches a signed manifest for the build's own version, and requires the helper to download and verify that release ZIP, rebuild the install tree from it, keep `ship/data`, remove the failed-update file and the rollback path, and reopen the app with `startupReady: true`.
+- Both lanes fail unless the status clears to `installState: idle`, `installStage: idle`, with `repairState: repaired` and the expected `lastRepair.action`; the snapshot lane also requires `rollbackVerified: true` and the reextract lane requires the recorded `zipPath` and `zipSha256`.
+
 ## Packaged AppImage Update Rehearsal Contract
 
 - `npm run test:frontend:packaged:update-rehearsal:appimage` is the packaged `N -> N+1` updater gate for the Linux AppImage. `build-linux` runs it against the AppImage it is about to publish.
@@ -667,6 +673,8 @@ Use the narrowest check that matches the risky path:
 - Packaged storage-reclaim startup scheduling, automatic arm, or first unattended reclaim changes: `npm run test:frontend:packaged:admin-reclaim-startup`
 - Packaged desktop Admin active-run hydration, schedule controls during active work, KPI placeholders, or abort request-budget changes: `npm run test:frontend:packaged:admin-active-run`
 - Packaged updater, desktop handoff, Windows packaged data-root migration, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
+- Packaged updater terminal-repair handoff, retained-snapshot restore, or panel repair-route changes: `npm run test:frontend:packaged:update-repair-rehearsal`
+- Packaged updater `reextract-zip` repair, verified release-ZIP install rebuild, or repair download changes: `npm run test:frontend:packaged:update-reextract-rehearsal`
 - Packaged Jobs update-panel visibility, toggle click path, or desktop startup-metric gating changes: `npm run test:frontend:packaged` followed by `npm run test:frontend:packaged:update-panel-gate`
 - Packaged Jobs startup threshold changes: `npm run probe:desktop:startup:jobs:cold`
 - Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution_*.py` for worker-path coverage

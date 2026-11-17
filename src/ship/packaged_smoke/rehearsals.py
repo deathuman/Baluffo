@@ -304,6 +304,12 @@ run_desktop_update_path_rehearsal = _make_rehearsal_runner(
 run_desktop_update_rollback_rehearsal = _make_rehearsal_runner(
     rehearsal_update_mod, "run_desktop_update_rollback_rehearsal"
 )
+run_desktop_update_repair_rehearsal = _make_rehearsal_runner(
+    rehearsal_update_mod, "run_desktop_update_repair_rehearsal"
+)
+run_desktop_update_reextract_rehearsal = _make_rehearsal_runner(
+    rehearsal_update_mod, "run_desktop_update_reextract_rehearsal"
+)
 run_packaged_browser_job_rehearsal = _make_rehearsal_runner(
     rehearsal_browser_mod, "run_packaged_browser_job_rehearsal"
 )

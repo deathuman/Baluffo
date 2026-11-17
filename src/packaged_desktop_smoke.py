@@ -315,6 +315,12 @@ run_desktop_update_path_rehearsal = packaged_smoke_rehearsals_mod.run_desktop_up
 run_desktop_update_rollback_rehearsal = (
     packaged_smoke_rehearsals_mod.run_desktop_update_rollback_rehearsal
 )
+run_desktop_update_repair_rehearsal = (
+    packaged_smoke_rehearsals_mod.run_desktop_update_repair_rehearsal
+)
+run_desktop_update_reextract_rehearsal = (
+    packaged_smoke_rehearsals_mod.run_desktop_update_reextract_rehearsal
+)
 run_packaged_browser_job_rehearsal = (
     packaged_smoke_rehearsals_mod.run_packaged_browser_job_rehearsal
 )
@@ -356,6 +362,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--desktop-update-rehearsal", action="store_true")
     parser.add_argument("--desktop-update-path-rehearsal", action="store_true")
     parser.add_argument("--desktop-update-rollback-rehearsal", action="store_true")
+    parser.add_argument("--desktop-update-repair-rehearsal", action="store_true")
+    parser.add_argument("--desktop-update-reextract-rehearsal", action="store_true")
     _appimage_update_rehearsal_mod.add_cli_arguments(parser)
     parser.add_argument("--orphan-reclaim-rehearsal", action="store_true")
     parser.add_argument("--admin-reclaim-startup-rehearsal", action="store_true")

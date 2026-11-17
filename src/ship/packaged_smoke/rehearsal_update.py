@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from src.ship.desktop_update_shared import pid_is_running as _pid_is_running
+from src.ship.desktop_update_state import load_status as _load_desktop_update_status
+from src.ship.desktop_update_state import save_status as _save_desktop_update_status
 
 root: Any | None = None
 
@@ -595,10 +597,8 @@ def _rehearsal_manifest_version(mode: str, build_version: str) -> str:
     return f"{build_version}.1"
 
 
-def _install_tree_sizes(install_root: Path, *, mode: str) -> dict[str, int]:
-    """File sizes of the install as the update finds it, for the rollback proof."""
-    if mode != _REHEARSAL_MODE_ROLLBACK:
-        return {}
+def _install_tree_sizes_all(install_root: Path) -> dict[str, int]:
+    """Every install file outside ``ship/data``, used to prove a repair restored it."""
     sizes: dict[str, int] = {}
     for path in install_root.rglob("*"):
         if not path.is_file():
@@ -608,6 +608,13 @@ def _install_tree_sizes(install_root: Path, *, mode: str) -> dict[str, int]:
             continue
         sizes[rel] = path.stat().st_size
     return sizes
+
+
+def _install_tree_sizes(install_root: Path, *, mode: str) -> dict[str, int]:
+    """File sizes of the install as the update finds it, for the rollback proof."""
+    if mode != _REHEARSAL_MODE_ROLLBACK:
+        return {}
+    return _install_tree_sizes_all(install_root)
 
 
 def _install_pointer_version(install_root: Path) -> str:
@@ -1219,3 +1226,746 @@ def run_desktop_update_rollback_rehearsal(
             "error": "Restored app did not report startupReady after the rollback.",
         }
     return result
+
+
+_REPAIR_ACTION_SNAPSHOT = "restore-snapshot"
+_REPAIR_ACTION_REEXTRACT = "reextract-zip"
+
+
+def _create_terminal_repair_snapshot(install_root: Path, rollback_root: Path) -> int:
+    """Build the complete snapshot the helper's restore mode expects.
+
+    The real install writes this while it snapshots the last-good tree, so the
+    rehearsal has to carry the same shape: every install file under ``runtime``
+    except the external data root, which a repair must never touch.
+    """
+    snapshot_root = rollback_root / "runtime"
+    if snapshot_root.exists():
+        shutil.rmtree(snapshot_root)
+    copied = 0
+    for path in install_root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(install_root)
+        if rel.as_posix().startswith("ship/data/"):
+            continue
+        target = snapshot_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        copied += 1
+    pointer = snapshot_root / "ship" / "app" / "current.txt"
+    if not (snapshot_root / "Baluffo.exe").is_file() or not pointer.is_file():
+        raise RuntimeError("Repair rehearsal could not build a complete install snapshot.")
+    return copied
+
+
+def _write_failed_update_marker(install_root: Path) -> Path:
+    """Leave a file behind that only the failed update tree carries."""
+    marker = install_root / "ship" / "app" / "desktop-update-failed-rehearsal.txt"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("failed update left this file in the install\n", encoding="utf-8")
+    return marker
+
+
+def _seed_terminal_rollback_status(
+    paths: Any,
+    *,
+    rollback_path: Path,
+    target_version: str,
+    previous_version: str,
+) -> dict[str, Any]:
+    """Create the terminal state the failed updater leaves for the repair panel."""
+    deps = _root()
+    status = _load_desktop_update_status(
+        paths,
+        current_version=previous_version,
+    )
+    status.update(
+        {
+            "availability": "available",
+            "updateAvailable": bool(target_version),
+            "latestVersion": str(target_version),
+            "targetVersion": str(target_version),
+            "downloadState": "idle",
+            "downloadedBytes": 0,
+            "totalBytes": 0,
+            "downloadPercent": 0,
+            "downloadedZipPath": "",
+            "installState": "failed",
+            "installStage": "rollback_failed",
+            "installStageLabel": "",
+            "lastError": (
+                "install_restore_failed: repair rehearsal seeded a terminal rollback failure"
+            ),
+            "rollbackPath": str(rollback_path),
+            "rollbackVerified": False,
+            "migrationBackupPath": "",
+            "repairState": "idle",
+            "repairAvailable": True,
+            "repairAction": "",
+            "repairError": "",
+            "helperUpdatedAt": deps.utc_now_iso(),
+        }
+    )
+    return dict(_save_desktop_update_status(paths, status))
+
+
+def _post_repair_handoff(
+    *,
+    bridge_port: int,
+    paths: Any,
+    timeout_s: float,
+) -> tuple[int, dict[str, Any]]:
+    deps = _root()
+    try:
+        return cast(
+            tuple[int, dict[str, Any]],
+            deps.post_json(
+                f"http://127.0.0.1:{bridge_port}/app/repair-update",
+                {},
+                timeout_s=timeout_s,
+            ),
+        )
+    except OSError:
+        status = _load_update_install_state(paths)
+        if str(status.get("repairState") or "").strip().lower() != "repairing":
+            raise
+        return 200, {"started": True, "status": status, "exitRequested": True}
+
+
+def _wait_for_terminal_repair_result(
+    *,
+    paths: Any,
+    action: str,
+    timeout_s: float,
+) -> dict[str, Any]:
+    deps = _root()
+    deadline = deps.time.monotonic() + max(20.0, float(timeout_s))
+    last_status: dict[str, Any] = {}
+    while deps.time.monotonic() < deadline:
+        last_status = _load_update_install_state(paths)
+        repair_state = str(last_status.get("repairState") or "").strip().lower()
+        if repair_state == "repair_failed":
+            raise RuntimeError(f"Update helper could not repair the install: {last_status}")
+        if repair_state == "repaired":
+            last_repair = last_status.get("lastRepair")
+            repaired_action = (
+                str(last_repair.get("action") or "") if isinstance(last_repair, dict) else ""
+            )
+            if repaired_action != action:
+                raise RuntimeError(
+                    f"Update helper repaired with {repaired_action!r}, expected {action!r}: "
+                    f"{last_status}"
+                )
+            return last_status
+        deps.time.sleep(0.2)
+    raise TimeoutError(f"Update helper did not finish the {action} repair: {last_status}")
+
+
+def _wait_for_repair_helper_success(paths: Any, *, timeout_s: float) -> dict[str, Any]:
+    """Read the helper's terminal JSON, failing on a diagnostic failure first."""
+    deps = _root()
+    deadline = deps.time.monotonic() + max(5.0, float(timeout_s))
+    last_event = ""
+    while deps.time.monotonic() < deadline:
+        payload = _read_helper_stdout_payload(paths)
+        if payload:
+            if not bool(payload.get("ok")):
+                raise RuntimeError(
+                    f"Update helper reported a repair failure: {payload.get('error') or payload}"
+                )
+            return payload
+        for row in _helper_diagnostic_rows(paths):
+            event = str(row.get("event") or "").strip()
+            if event:
+                last_event = event
+            if event == "helper_main_failed":
+                raise RuntimeError(
+                    "Update helper diagnostics reported a repair failure: "
+                    f"{_helper_failure_message(row)}"
+                )
+        deps.time.sleep(0.1)
+    raise TimeoutError(
+        f"Update helper did not report repair completion (last event: {last_event or 'none'})."
+    )
+
+
+def _prepare_terminal_repair_install(
+    *,
+    mode: str,
+    install_root: Path,
+    data_dir: Path,
+) -> tuple[Path, dict[str, int], str]:
+    """Seed the retained snapshot the repair lane needs, before the app starts."""
+    rollback_root = (data_dir / "updates" / "rollback" / f"packaged-repair-{mode}").resolve()
+    previous_tree: dict[str, int] = {}
+    previous_pointer = ""
+    if mode == _REPAIR_ACTION_SNAPSHOT:
+        if rollback_root.exists():
+            shutil.rmtree(rollback_root)
+        rollback_root.mkdir(parents=True, exist_ok=True)
+        _create_terminal_repair_snapshot(install_root, rollback_root)
+        previous_tree = _install_tree_sizes_all(install_root)
+        previous_pointer = _install_pointer_version(install_root)
+    return rollback_root, previous_tree, previous_pointer
+
+
+def _cache_repair_release_manifest(
+    *,
+    paths: Any,
+    bridge_port: int,
+    build_version: str,
+) -> str:
+    """Ask the real update check to cache the signed manifest for the build."""
+    deps = _root()
+    status_code, check_payload = deps.post_json(
+        f"http://127.0.0.1:{bridge_port}/app/check-for-update",
+        {"force": True},
+        timeout_s=10.0,
+    )
+    if status_code != 200:
+        raise RuntimeError(f"Update check failed before the repair: {check_payload}")
+    check_status = (
+        dict(check_payload.get("status") or {})
+        if isinstance(check_payload.get("status"), dict)
+        else dict(check_payload)
+        if isinstance(check_payload, dict)
+        else {}
+    )
+    if not bool(check_status.get("updateAvailable")):
+        raise RuntimeError(
+            f"Update check did not cache the release ZIP the repair needs: {check_status}"
+        )
+    target_version = str(check_status.get("targetVersion") or "").strip()
+    if target_version != build_version:
+        raise RuntimeError(
+            "Repair rehearsal release does not match the installed build "
+            f"(expected {build_version!r}, found {target_version!r})."
+        )
+    if not paths.manifest_cache_path.is_file():
+        raise RuntimeError("Update check did not cache the signed repair manifest.")
+    return target_version
+
+
+def _start_terminal_repair(
+    *,
+    mode: str,
+    paths: Any,
+    bridge_port: int,
+    rollback_root: Path,
+    target_version: str,
+    runtime_timeout_s: float,
+) -> None:
+    """Seed the terminal failure and hand it to the panel repair route."""
+    seeded_status = _seed_terminal_rollback_status(
+        paths,
+        rollback_path=rollback_root,
+        target_version=target_version,
+        previous_version="0.0.9",
+    )
+    if str(seeded_status.get("installStage") or "").strip().lower() != "rollback_failed":
+        raise RuntimeError(f"Rehearsal could not seed a terminal install failure: {seeded_status}")
+    status_code, repair_payload = _post_repair_handoff(
+        bridge_port=bridge_port,
+        paths=paths,
+        timeout_s=max(30.0, runtime_timeout_s),
+    )
+    if status_code != 200:
+        raise RuntimeError(f"Panel repair handoff could not start: {repair_payload}")
+    if not bool(repair_payload.get("started")) or not bool(repair_payload.get("exitRequested")):
+        raise RuntimeError(
+            f"Panel repair handoff did not request the app to close: {repair_payload}"
+        )
+    handoff_status = (
+        dict(repair_payload.get("status") or {})
+        if isinstance(repair_payload.get("status"), dict)
+        else {}
+    )
+    if str(handoff_status.get("repairState") or "").strip().lower() != "repairing":
+        raise RuntimeError(f"Panel repair handoff is not in progress: {handoff_status}")
+    if str(handoff_status.get("repairAction") or "").strip().lower() != mode:
+        raise RuntimeError(
+            f"Panel chose the {handoff_status.get('repairAction')!r} repair, expected {mode!r}."
+        )
+
+
+def _cleanup_desktop_repair_rehearsal(
+    *,
+    process: subprocess.Popen[Any] | None,
+    stdout_handle: Any,
+    stderr_handle: Any,
+    relaunch_launcher_pid: int,
+    server: http.server.ThreadingHTTPServer | None,
+    server_thread: threading.Thread | None,
+    ports: tuple[int, int, int, int],
+) -> None:
+    deps = _root()
+    deps.terminate_process_tree(process)
+    for handle in (stdout_handle, stderr_handle):
+        if handle is not None:
+            handle.close()
+    if relaunch_launcher_pid > 0:
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            if deps.os.name == "nt":
+                deps.subprocess.run(
+                    ["taskkill", "/PID", str(relaunch_launcher_pid), "/T", "/F"],
+                    stdout=deps.subprocess.DEVNULL,
+                    stderr=deps.subprocess.DEVNULL,
+                    check=False,
+                    timeout=15,
+                )
+    if server is not None:
+        server.shutdown()
+        server.server_close()
+    if server_thread is not None:
+        server_thread.join(timeout=2.0)
+    deps.cleanup_orphaned_desktop_ports_nt(*ports)
+
+
+def _assert_repair_cleared_terminal_state(status: dict[str, Any]) -> tuple[str, str]:
+    install_state = str(status.get("installState") or "").strip().lower()
+    install_stage = str(status.get("installStage") or "").strip().lower()
+    if install_state != "idle" or install_stage != "idle":
+        raise RuntimeError(f"Repair did not clear the terminal install failure: {status}")
+    if str(status.get("lastError") or "").strip():
+        raise RuntimeError(f"Repair left the terminal install error behind: {status}")
+    return install_state, install_stage
+
+
+def _assert_reextracted_install(
+    repair_fields: dict[str, Any],
+    install_root: Path,
+    target_zip: Path,
+    status: dict[str, Any],
+) -> None:
+    _assert_installed_tree_matches_target(install_root, target_zip)
+    zip_path = str(repair_fields.get("zipPath") or "").strip()
+    if not zip_path or not Path(zip_path).is_file():
+        raise RuntimeError(f"Repair did not record a usable verified release ZIP: {status}")
+    if not str(repair_fields.get("zipSha256") or "").strip():
+        raise RuntimeError(f"Repair did not record the release ZIP digest: {status}")
+
+
+def _assert_repair_result_fields(
+    *,
+    action: str,
+    status: dict[str, Any],
+    install_root: Path,
+    target_zip: Path,
+    target_version: str,
+    previous_tree: dict[str, int],
+    previous_pointer: str,
+) -> dict[str, Any]:
+    last_repair = status.get("lastRepair")
+    repair_fields = dict(last_repair) if isinstance(last_repair, dict) else {}
+    if action == _REPAIR_ACTION_SNAPSHOT:
+        if not bool(status.get("rollbackVerified")):
+            raise RuntimeError(f"Repair did not verify the restored snapshot: {status}")
+        _assert_restored_previous_tree(install_root, previous_tree, previous_pointer)
+    else:
+        _assert_reextracted_install(repair_fields, install_root, target_zip, status)
+    version = str(repair_fields.get("version") or "").strip()
+    if version != target_version:
+        raise RuntimeError(
+            "Repair reported another install version "
+            f"(expected {target_version!r}, found {version!r})."
+        )
+    return repair_fields
+
+
+def _finish_repair_rehearsal(
+    *,
+    action: str,
+    paths: Any,
+    data_dir: Path,
+    install_root: Path,
+    session_state_path: Path,
+    runtime_env: dict[str, str],
+    runtime_timeout_s: float,
+    helper_verify_timeout_s: float,
+    seeded: dict[str, Any],
+    target_zip: Path,
+    target_version: str,
+    marker: Path,
+    rollback_root: Path,
+    snapshot_root: Path,
+    previous_tree: dict[str, int],
+    previous_pointer: str,
+    stopped_launcher_pid: int,
+) -> dict[str, Any]:
+    deps = _root()
+    with contextlib.suppress(OSError):
+        session_state_path.unlink()
+    status = _wait_for_terminal_repair_result(
+        paths=paths,
+        action=action,
+        timeout_s=max(helper_verify_timeout_s + 60.0, runtime_timeout_s),
+    )
+    install_state, install_stage = _assert_repair_cleared_terminal_state(status)
+    relaunched = deps._wait_for_relaunched_runtime(
+        expected_data_dir=data_dir,
+        expected_version=deps.get_app_version(),
+        timeout_s=max(45.0, runtime_timeout_s),
+        env=runtime_env,
+    )
+    helper_payload = _wait_for_repair_helper_success(
+        paths,
+        timeout_s=max(helper_verify_timeout_s, runtime_timeout_s),
+    )
+    deps._verify_rehearsal_local_data(data_dir, seeded)
+    if marker.exists():
+        raise RuntimeError(f"Repair left the failed update file in the install: {marker}")
+    if snapshot_root.exists():
+        raise RuntimeError(f"Repair left the rollback snapshot on disk: {snapshot_root}")
+    if rollback_root.exists():
+        raise RuntimeError(f"Repair left its rollback path on disk: {rollback_root}")
+    if not bool(helper_payload.get("snapshotRemoved")):
+        raise RuntimeError(f"Update helper did not remove the rollback snapshot: {helper_payload}")
+    repair_fields = _assert_repair_result_fields(
+        action=action,
+        status=status,
+        install_root=install_root,
+        target_zip=target_zip,
+        target_version=target_version,
+        previous_tree=previous_tree,
+        previous_pointer=previous_pointer,
+    )
+    version = str(repair_fields.get("version") or "").strip()
+    helper_action = str(helper_payload.get("action") or "").strip()
+    if helper_action and helper_action != action:
+        raise RuntimeError(f"Update helper ran {helper_action!r}, expected the {action!r} repair.")
+    session = dict(relaunched.get("session") or {})
+    return {
+        "session": session,
+        "health": relaunched.get("health") or {},
+        "repair": {
+            "action": action,
+            "version": version,
+            "installState": install_state,
+            "installStage": install_stage,
+            "repairState": str(status.get("repairState") or ""),
+            "rollbackVerified": bool(status.get("rollbackVerified")),
+            "snapshotPath": str(repair_fields.get("snapshotPath") or ""),
+            "snapshotRemoved": bool(helper_payload.get("snapshotRemoved")),
+            "zipPath": str(repair_fields.get("zipPath") or ""),
+            "zipSha256": str(repair_fields.get("zipSha256") or ""),
+            "files": int(helper_payload.get("files") or 0),
+            "stoppedLauncherPid": stopped_launcher_pid,
+        },
+    }
+
+
+def _run_desktop_repair_rehearsal(
+    *,
+    mode: str,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    """Drive the panel repair route and the real helper through a terminal install."""
+    deps = _root()
+    started = time.perf_counter()
+    portable_root = exe_path.parent.resolve()
+    if deps.Ed25519SigningClass is None:
+        raise RuntimeError("Desktop repair rehearsal requires Ed25519 signing support.")
+    private_key = deps.Ed25519SigningClass.generate()
+    public_key_b64 = base64.b64encode(private_key.public_key().public_bytes_raw()).decode("ascii")
+    key_id = "desktop-ed25519-rehearsal"
+    install_root, target_root, source_psutil_removed = _prepare_desktop_update_rehearsal_roots(
+        portable_root=portable_root,
+        artifacts_dir=artifacts_dir,
+        public_keys={key_id: public_key_b64},
+    )
+    install_exe = install_root / "Baluffo.exe"
+    data_dir = install_root / "ship" / "data"
+    seeded = deps._seed_rehearsal_local_data(data_dir)
+    target_zip = deps._archive_portable_dir(
+        target_root,
+        artifacts_dir / "baluffo-portable-update.zip",
+    )
+    build_version = str(deps.get_app_version() or "").strip()
+    manifest = {
+        "schema_version": deps.DESKTOP_UPDATE_SCHEMA_VERSION,
+        "key_id": key_id,
+        "channel": deps.update_manifest_helpers_mod.DESKTOP_UPDATE_CHANNEL,
+        "version": build_version,
+        "published_at": deps.utc_now_iso(),
+        "release_notes_url": "",
+        "min_desktop_updater_version": deps.DESKTOP_UPDATER_VERSION,
+        "min_supported_current_version": "0.0.0",
+        "data_schema_version": "1",
+        "rollback_allowed": True,
+        "portable_artifact": {
+            "url": "",
+            "sha256": deps.compute_sha256(target_zip),
+            "size_bytes": int(target_zip.stat().st_size),
+        },
+        "migration_plan": [],
+    }
+
+    server = None
+    server_thread = None
+    process = None
+    stdout_handle = None
+    stderr_handle = None
+    relaunch_launcher_pid = 0
+    relaunch_site_port = 0
+    relaunch_bridge_port = 0
+    initial_site_port = 0
+    initial_bridge_port = 0
+    helper_verify_timeout_s = max(30.0, float(runtime_timeout_s))
+    rollback_root, previous_tree, previous_pointer = _prepare_terminal_repair_install(
+        mode=mode,
+        install_root=install_root,
+        data_dir=data_dir,
+    )
+    snapshot_root = rollback_root / "runtime"
+    marker = install_root / "ship" / "app" / "desktop-update-failed-rehearsal.txt"
+    try:
+        base_url, server, server_thread = deps._start_desktop_update_release_server(
+            manifest=manifest,
+            portable_zip=target_zip,
+        )
+        manifest["release_notes_url"] = f"{base_url}/release-notes"
+        manifest["portable_artifact"]["url"] = f"{base_url}/assets/baluffo-portable-update.zip"
+        manifest["signature"] = deps.sign_manifest(
+            manifest,
+            private_key.private_bytes_raw(),
+        )
+
+        runtime_env = deps.os.environ.copy()
+        runtime_env.update(
+            {
+                "BALUFFO_APP_VERSION_OVERRIDE": "0.0.9",
+                "BALUFFO_DESKTOP_NO_BROWSER": "1",
+                "BALUFFO_DESKTOP_UPDATE_REPO": "local/baluffo-smoke",
+                "BALUFFO_DESKTOP_UPDATE_GITHUB_API_BASE": base_url,
+                "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON": json.dumps({key_id: public_key_b64}),
+                "BALUFFO_DESKTOP_UPDATER_NO_DIALOG": "1",
+                "BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S": f"{helper_verify_timeout_s:g}",
+            }
+        )
+        runtime_env.update(
+            deps.packaged_runtime_env_overrides(
+                artifacts_dir=artifacts_dir,
+                session_scope=f"desktop-update-repair-{mode}-rehearsal",
+            )
+        )
+        runtime_env.update(deps._preferred_desktop_browser_env())
+        deps.clear_packaged_desktop_session_state(runtime_env)
+        initial_site_port = deps.choose_free_port()
+        initial_bridge_port = deps.choose_free_port()
+        log_prefix = (
+            "desktop-update-repair-rehearsal"
+            if mode == _REPAIR_ACTION_SNAPSHOT
+            else ("desktop-update-reextract-rehearsal")
+        )
+        process, stdout_handle, stderr_handle = deps.launch_packaged_exe(
+            install_exe,
+            site_port=initial_site_port,
+            bridge_port=initial_bridge_port,
+            data_dir=data_dir,
+            stdout_path=artifacts_dir / f"{log_prefix}.stdout.log",
+            stderr_path=artifacts_dir / f"{log_prefix}.stderr.log",
+            open_path="jobs.html",
+            startup_probe=False,
+            env=runtime_env,
+        )
+        deps.wait_for_packaged_runtime(
+            process,
+            site_base_url=f"http://127.0.0.1:{initial_site_port}",
+            bridge_base_url=f"http://127.0.0.1:{initial_bridge_port}",
+            timeout_s=runtime_timeout_s,
+            open_path="jobs.html",
+        )
+        paths = deps.desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
+        session_root = deps.desktop_update_mod.resolve_desktop_session_root(runtime_env)
+        session_state_path = session_root / deps.DESKTOP_SESSION_STATE_FILE
+        session_state = deps.desktop_update_mod.read_desktop_session_state(session_root)
+        stopped_launcher_pid = int(session_state.get("launcherPid") or 0)
+
+        target_version = build_version
+        if mode == _REPAIR_ACTION_REEXTRACT:
+            target_version = _cache_repair_release_manifest(
+                paths=paths,
+                bridge_port=initial_bridge_port,
+                build_version=build_version,
+            )
+        marker = _write_failed_update_marker(install_root)
+        _start_terminal_repair(
+            mode=mode,
+            paths=paths,
+            bridge_port=initial_bridge_port,
+            rollback_root=rollback_root,
+            target_version=target_version,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        deps._wait_for_process_exit(process, timeout_s=max(20.0, runtime_timeout_s))
+        if stopped_launcher_pid > 0 and _pid_is_running(stopped_launcher_pid):
+            raise RuntimeError(
+                f"Repair handoff did not close the desktop app (pid {stopped_launcher_pid})."
+            )
+        outcome = _finish_repair_rehearsal(
+            action=mode,
+            paths=paths,
+            data_dir=data_dir,
+            install_root=install_root,
+            session_state_path=session_state_path,
+            runtime_env=runtime_env,
+            runtime_timeout_s=runtime_timeout_s,
+            helper_verify_timeout_s=helper_verify_timeout_s,
+            seeded=seeded,
+            target_zip=target_zip,
+            target_version=target_version,
+            marker=marker,
+            rollback_root=rollback_root,
+            snapshot_root=snapshot_root,
+            previous_tree=previous_tree,
+            previous_pointer=previous_pointer,
+            stopped_launcher_pid=stopped_launcher_pid,
+        )
+        relaunch_session = (
+            cast(dict[str, Any], outcome.get("session"))
+            if isinstance(outcome.get("session"), dict)
+            else {}
+        )
+        relaunch_launcher_pid = int(relaunch_session.get("launcherPid") or 0)
+        relaunch_bridge_port = int(relaunch_session.get("bridgePort") or 0)
+        relaunch_site_port = int(relaunch_session.get("sitePort") or 0)
+        repair_details = (
+            dict(outcome.get("repair") or {}) if isinstance(outcome.get("repair"), dict) else {}
+        )
+        return {
+            "name": "Packaged desktop update repair rehearsal",
+            "slug": "desktop-update-repair-rehearsal",
+            "status": "passed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": "",
+            "details": {
+                "installRoot": str(install_root),
+                "targetZip": str(target_zip),
+                "releaseBaseUrl": str(base_url),
+                "repair": repair_details,
+                "relaunchBridgePort": relaunch_bridge_port,
+                "relaunchHealth": outcome.get("health") or {},
+                "stoppedLauncherPid": stopped_launcher_pid,
+                "helperStdoutLog": str(paths.helper_stdout_log_path),
+                "helperStderrLog": str(paths.helper_stderr_log_path),
+                "helperDiagnosticsLog": str(paths.helper_diagnostics_log_path),
+                "sourcePsutilRemoved": source_psutil_removed,
+            },
+        }
+    except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
+        return {
+            "name": "Packaged desktop update repair rehearsal",
+            "slug": "desktop-update-repair-rehearsal",
+            "status": "failed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": str(exc),
+        }
+    finally:
+        _cleanup_desktop_repair_rehearsal(
+            process=process,
+            stdout_handle=stdout_handle,
+            stderr_handle=stderr_handle,
+            relaunch_launcher_pid=relaunch_launcher_pid,
+            server=server,
+            server_thread=server_thread,
+            ports=(
+                initial_site_port,
+                initial_bridge_port,
+                relaunch_site_port,
+                relaunch_bridge_port,
+            ),
+        )
+
+
+def _repair_rehearsal_result(
+    result: dict[str, Any],
+    *,
+    action: str,
+    name: str,
+    slug: str,
+) -> dict[str, Any]:
+    """Require the lane's own proof, not just a helper that returned success."""
+    result["name"] = name
+    result["slug"] = slug
+    if result.get("status") != "passed":
+        return result
+    details = (
+        cast(dict[str, Any], result.get("details"))
+        if isinstance(result.get("details"), dict)
+        else {}
+    )
+    repair = details.get("repair")
+    if not isinstance(repair, dict) or repair.get("action") != action:
+        return {
+            **result,
+            "status": "failed",
+            "error": f"The repair did not run through the {action} lane.",
+        }
+    if not bool(repair.get("snapshotRemoved")):
+        return {
+            **result,
+            "status": "failed",
+            "error": "The repair left the terminal rollback snapshot on disk.",
+        }
+    health = details.get("relaunchHealth")
+    if not bool(isinstance(health, dict) and health.get("startupReady")):
+        return {
+            **result,
+            "status": "failed",
+            "error": "Repaired app did not report startupReady after reopening.",
+        }
+    return result
+
+
+def run_desktop_update_repair_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    """Repair a terminal ``rollback_failed`` install from its retained snapshot.
+
+    The lane seeds the terminal failure and a complete snapshot, asks the panel
+    route to repair, and requires the launcher to close, the helper to restore
+    every previous file and remove the snapshot, and the repaired app to reopen
+    with the seeded local data intact.
+    """
+    return _repair_rehearsal_result(
+        _run_desktop_repair_rehearsal(
+            mode=_REPAIR_ACTION_SNAPSHOT,
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        ),
+        action=_REPAIR_ACTION_SNAPSHOT,
+        name="Packaged desktop update repair rehearsal",
+        slug="desktop-update-repair-rehearsal",
+    )
+
+
+def run_desktop_update_reextract_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    """Repair a terminal install with no snapshot from the verified release ZIP.
+
+    The cached signed manifest must match the install's recorded target version,
+    so the helper has to download the release ZIP, verify its digest and structure,
+    rebuild the install from it, keep ``ship/data``, and clear the terminal state.
+    """
+    return _repair_rehearsal_result(
+        _run_desktop_repair_rehearsal(
+            mode=_REPAIR_ACTION_REEXTRACT,
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        ),
+        action=_REPAIR_ACTION_REEXTRACT,
+        name="Packaged desktop update re-extract rehearsal",
+        slug="desktop-update-reextract-rehearsal",
+    )

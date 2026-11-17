@@ -125,6 +125,11 @@ export function createJobsDesktopUpdateController({
     persistDismissedRepairKey(dismissalStorage, repairKey);
   }
 
+  function isDismissedRepairResult(status) {
+    const repairKey = repairResultKey(status);
+    return Boolean(repairKey && repairKey === state.dismissedRepairKey);
+  }
+
   const clickDiagnostics = createDesktopUpdateClickDiagnostics({
     documentObject,
     refs,
@@ -688,7 +693,12 @@ export function createJobsDesktopUpdateController({
     if (!isDesktopRuntimeMode?.() || state.autoCheckStarted) return;
     // The repair result is the launch message. An automatic check would clear
     // it in the backend and replace the panel before the user can read it.
-    if (state.status.repairState === "repaired") return;
+    // Once the user dismisses that result, though, the check must resume: the
+    // check is what acknowledges `repairState: repaired`, and suppressing it
+    // forever leaves the status stuck, so every later launch looks repaired.
+    if (state.status.repairState === "repaired" && !isDismissedRepairResult(state.status)) {
+      return;
+    }
     state.autoCheckStarted = true;
     state.autoCheckInProgress = true;
     try {

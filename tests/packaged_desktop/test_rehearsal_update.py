@@ -297,3 +297,233 @@ def test_desktop_update_rehearsal_json_fallbacks_propagate_unexpected_read_error
         smoke.packaged_smoke_rehearsal_update_mod._read_helper_stdout_payload(paths)
     with pytest.raises(RuntimeError, match="install read bug"):
         smoke.packaged_smoke_rehearsal_update_mod._load_update_install_state(paths)
+
+
+def test_run_packaged_smoke_can_run_desktop_update_repair_rehearsal_mode() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--desktop-update-repair-rehearsal",
+            ]
+        )
+        with (
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(
+                smoke,
+                "collect_packaged_smoke_env_diagnostics",
+                return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False},
+            ),
+            mock.patch.object(
+                smoke,
+                "run_desktop_update_repair_rehearsal",
+                return_value={
+                    "name": "Packaged desktop update repair rehearsal",
+                    "slug": "desktop-update-repair-rehearsal",
+                    "status": "passed",
+                    "durationMs": 1500,
+                    "error": "",
+                    "details": {},
+                },
+            ) as rehearsal_mock,
+        ):
+            payload = smoke.run_packaged_smoke(args)
+        assert payload["ok"] is True
+        assert payload["scenarios"][0]["slug"] == "desktop-update-repair-rehearsal"
+        rehearsal_mock.assert_called_once()
+
+
+def test_run_packaged_smoke_can_run_desktop_update_reextract_rehearsal_mode() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--desktop-update-reextract-rehearsal",
+            ]
+        )
+        with (
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(
+                smoke,
+                "collect_packaged_smoke_env_diagnostics",
+                return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False},
+            ),
+            mock.patch.object(
+                smoke,
+                "run_desktop_update_reextract_rehearsal",
+                return_value={
+                    "name": "Packaged desktop update re-extract rehearsal",
+                    "slug": "desktop-update-reextract-rehearsal",
+                    "status": "passed",
+                    "durationMs": 1500,
+                    "error": "",
+                    "details": {},
+                },
+            ) as rehearsal_mock,
+        ):
+            payload = smoke.run_packaged_smoke(args)
+        assert payload["ok"] is True
+        assert payload["scenarios"][0]["slug"] == "desktop-update-reextract-rehearsal"
+        rehearsal_mock.assert_called_once()
+
+
+def test_repair_rehearsal_runs_the_snapshot_lane_and_requires_the_snapshot_removed() -> None:
+    with mock.patch.object(
+        rehearsal_update_mod,
+        "_run_desktop_repair_rehearsal",
+        return_value={
+            "status": "passed",
+            "details": {
+                "repair": {"action": "restore-snapshot", "snapshotRemoved": True},
+                "relaunchHealth": {"startupReady": True},
+            },
+        },
+    ) as run_mock:
+        result = rehearsal_update_mod.run_desktop_update_repair_rehearsal(
+            exe_path=Path("Baluffo.exe"),
+            artifacts_dir=Path("artifacts"),
+            runtime_timeout_s=60.0,
+        )
+
+    assert run_mock.call_args.kwargs["mode"] == "restore-snapshot"
+    assert result["slug"] == "desktop-update-repair-rehearsal"
+    assert result["status"] == "passed"
+
+
+def test_repair_rehearsal_fails_when_the_snapshot_was_kept() -> None:
+    with mock.patch.object(
+        rehearsal_update_mod,
+        "_run_desktop_repair_rehearsal",
+        return_value={
+            "status": "passed",
+            "details": {
+                "repair": {"action": "restore-snapshot", "snapshotRemoved": False},
+                "relaunchHealth": {"startupReady": True},
+            },
+        },
+    ):
+        result = rehearsal_update_mod.run_desktop_update_repair_rehearsal(
+            exe_path=Path("Baluffo.exe"),
+            artifacts_dir=Path("artifacts"),
+            runtime_timeout_s=60.0,
+        )
+
+    assert result["status"] == "failed"
+    assert "rollback snapshot" in str(result["error"])
+
+
+def test_reextract_rehearsal_runs_the_zip_lane() -> None:
+    with mock.patch.object(
+        rehearsal_update_mod,
+        "_run_desktop_repair_rehearsal",
+        return_value={
+            "status": "passed",
+            "details": {
+                "repair": {"action": "reextract-zip", "snapshotRemoved": True},
+                "relaunchHealth": {"startupReady": True},
+            },
+        },
+    ) as run_mock:
+        result = rehearsal_update_mod.run_desktop_update_reextract_rehearsal(
+            exe_path=Path("Baluffo.exe"),
+            artifacts_dir=Path("artifacts"),
+            runtime_timeout_s=60.0,
+        )
+
+    assert run_mock.call_args.kwargs["mode"] == "reextract-zip"
+    assert result["slug"] == "desktop-update-reextract-rehearsal"
+    assert result["status"] == "passed"
+
+
+def test_reextract_rehearsal_fails_when_the_repair_used_the_snapshot_lane() -> None:
+    with mock.patch.object(
+        rehearsal_update_mod,
+        "_run_desktop_repair_rehearsal",
+        return_value={
+            "status": "passed",
+            "details": {
+                "repair": {"action": "restore-snapshot", "snapshotRemoved": True},
+                "relaunchHealth": {"startupReady": True},
+            },
+        },
+    ):
+        result = rehearsal_update_mod.run_desktop_update_reextract_rehearsal(
+            exe_path=Path("Baluffo.exe"),
+            artifacts_dir=Path("artifacts"),
+            runtime_timeout_s=60.0,
+        )
+
+    assert result["status"] == "failed"
+    assert "reextract-zip" in str(result["error"])
+
+
+def test_terminal_repair_snapshot_excludes_the_external_data_root() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        install_root = root / "install"
+        (install_root / "ship" / "app").mkdir(parents=True)
+        (install_root / "ship" / "data").mkdir(parents=True)
+        (install_root / "Baluffo.exe").write_bytes(b"exe")
+        (install_root / "ship" / "app" / "current.txt").write_text(
+            "1.2.3\n",
+            encoding="utf-8",
+        )
+        (install_root / "ship" / "data" / "local-data.json").write_text(
+            "{}",
+            encoding="utf-8",
+        )
+
+        copied = rehearsal_update_mod._create_terminal_repair_snapshot(
+            install_root,
+            root / "rollback",
+        )
+
+        snapshot_root = root / "rollback" / "runtime"
+        assert copied == 2
+        assert (snapshot_root / "Baluffo.exe").is_file()
+        assert (snapshot_root / "ship" / "app" / "current.txt").is_file()
+        assert not (snapshot_root / "ship" / "data").exists()
+
+
+def test_terminal_rollback_status_seeds_the_repair_contract() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        data_dir = root / "install" / "ship" / "data"
+        rollback_root = root / "rollback"
+        paths = smoke.desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
+
+        status = rehearsal_update_mod._seed_terminal_rollback_status(
+            paths,
+            rollback_path=rollback_root,
+            target_version="1.2.3",
+            previous_version="0.0.9",
+        )
+
+        assert status["installState"] == "failed"
+        assert status["installStage"] == "rollback_failed"
+        assert status["rollbackPath"] == str(rollback_root)
+        assert status["repairAvailable"] is True
+        assert status["targetVersion"] == "1.2.3"
+        assert str(status["lastError"]).startswith("install_restore_failed:")
+        saved = json.loads(paths.install_state_path.read_text(encoding="utf-8"))
+        assert saved["installStage"] == "rollback_failed"

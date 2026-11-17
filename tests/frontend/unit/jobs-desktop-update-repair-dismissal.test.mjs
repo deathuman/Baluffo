@@ -50,13 +50,13 @@ const REPAIRED_STATUS = {
   lastCheckedAt: "2026-11-17T12:00:00Z"
 };
 
-function createController({ storage, status = REPAIRED_STATUS }) {
+function createController({ storage, status = REPAIRED_STATUS, postJson }) {
   const refs = buildDesktopUpdateRefs(createElement);
   const controller = createJobsDesktopUpdateController({
     refs,
     baseUrl: "http://127.0.0.1:8877",
     fetchJson: async () => status,
-    postJson: async () => ({ status }),
+    postJson: postJson || (async () => ({ status })),
     bindAsyncClick: () => {},
     showToast: () => {},
     isDesktopRuntimeMode: () => true,
@@ -123,4 +123,71 @@ test("a newer completed repair still opens the panel after an older dismissal", 
 
   assert.equal(relaunched.controller._getState().panelOpen, true);
   assert.equal(relaunched.refs.desktopUpdatePanel.classList.contains("hidden"), false);
+});
+
+test("an undismissed completed repair still skips the startup check", async () => {
+  const postCalls = [];
+  const first = createController({
+    storage: createStorage(),
+    postJson: async (_baseUrl, path) => {
+      postCalls.push(path);
+      return {
+        status: {
+          ...REPAIRED_STATUS,
+          repairState: "idle",
+          repairCompletedAt: "",
+          lastCheckedAt: "2026-11-17T12:06:00Z"
+        }
+      };
+    }
+  });
+
+  await first.controller.mount();
+  assert.equal(first.controller._getState().panelOpen, true);
+  await first.controller.startAutoCheck();
+
+  assert.deepEqual(postCalls, []);
+  assert.equal(first.controller._getState().status.repairState, "repaired");
+});
+
+test("a dismissed repair resumes the startup check and acknowledges the result", async () => {
+  const storage = createStorage();
+  const first = createController({ storage });
+  await first.controller.mount();
+  await first.controller.handleSecondaryAction();
+  assert.equal(first.controller._getState().panelOpen, false);
+
+  const postCalls = [];
+  const relaunched = createController({
+    storage,
+    postJson: async (_baseUrl, path, payload) => {
+      postCalls.push({ path, payload });
+      return {
+        status: {
+          ...REPAIRED_STATUS,
+          repairState: "idle",
+          repairCompletedAt: "",
+          lastCheckedAt: "2026-11-17T12:06:00Z"
+        }
+      };
+    }
+  });
+  await relaunched.controller.mount();
+  assert.equal(relaunched.controller._getState().panelOpen, false);
+  assert.equal(relaunched.controller._getState().status.repairState, "repaired");
+
+  await relaunched.controller.startAutoCheck();
+
+  assert.deepEqual(
+    postCalls.map(call => call.path),
+    ["/app/check-for-update"]
+  );
+  assert.equal(postCalls[0].payload.force, true);
+  assert.equal(relaunched.controller._getState().status.repairState, "idle");
+  assert.equal(relaunched.controller._getState().panelOpen, false);
+  assert.equal(relaunched.refs.desktopUpdatePanel.classList.contains("hidden"), true);
+  assert.equal(
+    storage.values.get(DISMISSED_REPAIR_KEY),
+    "repaired:2026-11-17T12:05:00Z"
+  );
 });
