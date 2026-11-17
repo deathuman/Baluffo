@@ -58,6 +58,7 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 - The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility are unchanged. Existing feeds, saved jobs, notes, and compatibility exports are preserved; a failed update keeps the previous install intact and relaunches it.
 - Release preflight now runs `npm run test:frontend:packaged:update-path-rehearsal`, which updates an installed copy from a version that reports 0.0.9 and requires the relaunched bridge to answer `/ops/health` with `startupReady: true` over a complete installed tree, not just a reachable process.
+- Release preflight now also runs `npm run test:frontend:packaged:update-rollback-rehearsal`, which publishes a target version the build cannot report so the real readiness check fails, then requires the rollback to stop the relaunched app, restore every previous install file, and bring the previous app back with `startupReady: true`.
 
 ## [0.3.064] - 2026-11-17
 

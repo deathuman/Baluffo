@@ -503,7 +503,7 @@ def _rollback_failed_install(
             )
     # The readiness timeout fires while the new app is still running. Stop it
     # first: restoring over a live install skips the files it holds open.
-    _stop_relaunched_app(plan)
+    stopped = _stop_relaunched_app(plan)
     _save_install_stage_status(
         paths,
         install_state="failed",
@@ -535,6 +535,8 @@ def _rollback_failed_install(
         rollbackVerified=not restore_error,
         rollbackFiles=int(restored.get("files") or 0),
         rollbackVersion=str(restored.get("currentVersion") or ""),
+        rollbackStoppedPid=int(stopped.get("pid") or 0),
+        rollbackStopVerified=bool(stopped.get("terminated")),
     )
 
 

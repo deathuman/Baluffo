@@ -1,5 +1,7 @@
 """Packaged desktop rehearsal tests for desktop update."""
 
+from src.ship.packaged_smoke import rehearsal_update as rehearsal_update_mod
+
 from ._rehearsal_shared import (
     Path,
     SimpleNamespace,
@@ -111,6 +113,95 @@ def test_run_packaged_smoke_can_run_desktop_update_path_rehearsal_mode() -> None
         assert payload["ok"] is True
         assert payload["scenarios"][0]["slug"] == "desktop-update-path-rehearsal"
         rehearsal_mock.assert_called_once()
+
+
+def test_run_packaged_smoke_can_run_desktop_update_rollback_rehearsal_mode() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--desktop-update-rollback-rehearsal",
+            ]
+        )
+        with (
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(
+                smoke,
+                "collect_packaged_smoke_env_diagnostics",
+                return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False},
+            ),
+            mock.patch.object(
+                smoke,
+                "run_desktop_update_rollback_rehearsal",
+                return_value={
+                    "name": "Packaged desktop update rollback rehearsal",
+                    "slug": "desktop-update-rollback-rehearsal",
+                    "status": "passed",
+                    "durationMs": 1500,
+                    "error": "",
+                    "details": {},
+                },
+            ) as rehearsal_mock,
+        ):
+            payload = smoke.run_packaged_smoke(args)
+        assert payload["ok"] is True
+        assert payload["scenarios"][0]["slug"] == "desktop-update-rollback-rehearsal"
+        rehearsal_mock.assert_called_once()
+
+
+def test_rollback_rehearsal_runs_the_shared_lane_in_rollback_mode() -> None:
+    with mock.patch.object(
+        rehearsal_update_mod,
+        "run_desktop_update_rehearsal",
+        return_value={
+            "status": "passed",
+            "details": {
+                "rollback": {"rollbackVerified": True},
+                "relaunchHealth": {"startupReady": True},
+            },
+        },
+    ) as run_mock:
+        result = rehearsal_update_mod.run_desktop_update_rollback_rehearsal(
+            exe_path=Path("Baluffo.exe"),
+            artifacts_dir=Path("artifacts"),
+            runtime_timeout_s=60.0,
+        )
+
+    assert run_mock.call_args.kwargs["mode"] == "rollback"
+    assert result["slug"] == "desktop-update-rollback-rehearsal"
+    assert result["status"] == "passed"
+
+
+def test_rollback_rehearsal_fails_when_the_helper_did_not_verify_the_rollback() -> None:
+    with mock.patch.object(
+        rehearsal_update_mod,
+        "run_desktop_update_rehearsal",
+        return_value={
+            "status": "passed",
+            "details": {
+                "rollback": {"rollbackVerified": False},
+                "relaunchHealth": {"startupReady": True},
+            },
+        },
+    ):
+        result = rehearsal_update_mod.run_desktop_update_rollback_rehearsal(
+            exe_path=Path("Baluffo.exe"),
+            artifacts_dir=Path("artifacts"),
+            runtime_timeout_s=60.0,
+        )
+
+    assert result["status"] == "failed"
+    assert "Rollback was not verified" in str(result["error"])
 
 
 def test_desktop_update_rehearsal_removes_optional_psutil_from_source_runtime() -> None:

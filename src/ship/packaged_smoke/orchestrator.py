@@ -320,6 +320,23 @@ def _run_rehearsal_mode_if_requested(
             failure_step="desktop-update-path-rehearsal",
             failure_message="Packaged desktop update path rehearsal failed.",
         )
+    if bool(args.desktop_update_rollback_rehearsal):
+        rehearsal = deps.run_desktop_update_rollback_rehearsal(
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        return _apply_rehearsal_result(
+            report,
+            rehearsal,
+            artifact_mappings=(
+                ("helperStdoutLog", "helperStdout"),
+                ("helperStderrLog", "helperStderr"),
+                ("helperDiagnosticsLog", "helperDiagnostics"),
+            ),
+            failure_step="desktop-update-rollback-rehearsal",
+            failure_message="Packaged desktop update rollback rehearsal failed.",
+        )
     if bool(args.orphan_reclaim_rehearsal):
         rehearsal = deps.run_packaged_orphan_reclaim_rehearsal(
             exe_path=exe_path,

@@ -108,7 +108,8 @@ def test_run_install_stops_the_relaunched_app_before_restoring_the_snapshot(monk
 def test_run_install_reports_rollback_failure_and_keeps_the_snapshot(monkeypatch) -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
         paths, _install_root, rollback_root = _rollback_fixture(tmp, monkeypatch)
-        monkeypatch.setattr(updater_install, "_stop_relaunched_app", lambda plan, **kwargs: {})
+        stopped = {"pid": 4242, "terminated": True, "aliveAfter": False}
+        monkeypatch.setattr(updater_install, "_stop_relaunched_app", lambda plan, **kwargs: stopped)
         monkeypatch.setattr(
             updater_install,
             "_restore_install_snapshot",
@@ -125,6 +126,8 @@ def test_run_install_reports_rollback_failure_and_keeps_the_snapshot(monkeypatch
         assert status["installStage"] == "rollback_failed"
         assert "install_restore_failed" in status["lastError"]
         assert status["rollbackVerified"] is False
+        assert status["rollbackStoppedPid"] == 4242
+        assert status["rollbackStopVerified"] is True
         assert status["rollbackPath"] == str(rollback_root)
         # Only the relaunch of the new build happened; a failed restore must not
         # start an app on a half-restored tree.

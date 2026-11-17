@@ -20,6 +20,8 @@ import zipfile
 from pathlib import Path
 from typing import Any, cast
 
+from src.ship.desktop_update_shared import pid_is_running as _pid_is_running
+
 root: Any | None = None
 
 
@@ -562,12 +564,314 @@ def _assert_installed_tree_matches_target(install_root: Path, target_zip: Path) 
         )
 
 
+_REHEARSAL_MODE_SUCCESS = "success"
+_REHEARSAL_MODE_ROLLBACK = "rollback"
+
+
+def _helper_verify_timeout_s_for_mode(mode: str, runtime_timeout_s: float) -> float:
+    if mode == _REHEARSAL_MODE_ROLLBACK:
+        # Readiness can never succeed in this mode, so the helper only has to wait
+        # for the new app to boot before it gives up and rolls back.
+        return 20.0
+    return max(30.0, float(runtime_timeout_s))
+
+
+def _rehearsal_manifest_version(mode: str, build_version: str) -> str:
+    """Version the rehearsal release publishes; the real build cannot report it.
+
+    The helper accepts an install only when the relaunched app's `/ops/health`
+    reports the manifest's target version. In rollback mode the manifest names
+    the next patch version while the archive is the real build, so the new app
+    boots and answers health yet can never satisfy the readiness contract. The
+    update is real -- signed manifest, real archive, real helper -- and it is the
+    readiness check itself that fails, which is what runs the rollback.
+    """
+    if mode != _REHEARSAL_MODE_ROLLBACK:
+        return build_version
+    parts = build_version.split(".")
+    if parts and parts[-1].isdigit():
+        parts[-1] = str(int(parts[-1]) + 1)
+        return ".".join(parts)
+    return f"{build_version}.1"
+
+
+def _install_tree_sizes(install_root: Path, *, mode: str) -> dict[str, int]:
+    """File sizes of the install as the update finds it, for the rollback proof."""
+    if mode != _REHEARSAL_MODE_ROLLBACK:
+        return {}
+    sizes: dict[str, int] = {}
+    for path in install_root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(install_root).as_posix()
+        if rel.startswith("ship/data/"):
+            continue
+        sizes[rel] = path.stat().st_size
+    return sizes
+
+
+def _install_pointer_version(install_root: Path) -> str:
+    pointer = install_root / "ship" / "app" / "current.txt"
+    return pointer.read_text(encoding="utf-8").strip() if pointer.is_file() else ""
+
+
+def _previous_reported_version(runtime_env: dict[str, str]) -> str:
+    deps = _root()
+    return (
+        str(runtime_env.get("BALUFFO_APP_VERSION_OVERRIDE") or "").strip()
+        or str(deps.get_app_version() or "").strip()
+    )
+
+
+def _assert_restored_previous_tree(
+    install_root: Path,
+    expected_sizes: dict[str, int],
+    expected_pointer: str,
+) -> None:
+    missing = sorted(rel for rel in expected_sizes if not (install_root / rel).is_file())
+    if missing:
+        raise RuntimeError(
+            f"Rollback left {len(missing)} of {len(expected_sizes)} previous install files "
+            "missing: " + ", ".join(missing[:5])
+        )
+    resized = sorted(
+        rel
+        for rel, size in expected_sizes.items()
+        if (install_root / rel).is_file() and (install_root / rel).stat().st_size != size
+    )
+    if resized:
+        raise RuntimeError(
+            f"Rollback restored {len(resized)} previous install files with another size: "
+            + ", ".join(resized[:5])
+        )
+    restored_pointer = _install_pointer_version(install_root)
+    if restored_pointer != expected_pointer:
+        raise RuntimeError(
+            "Rollback did not restore ship/app/current.txt "
+            f"(expected {expected_pointer!r}, found {restored_pointer!r})"
+        )
+
+
+def _wait_for_rehearsal_launcher_pid(
+    *,
+    session_root: Path,
+    expected_data_dir: Path,
+    timeout_s: float,
+) -> int:
+    """Return the pid of the app the helper relaunches before readiness."""
+    deps = _root()
+    deadline = deps.time.monotonic() + max(10.0, float(timeout_s))
+    while deps.time.monotonic() < deadline:
+        session = deps.desktop_update_mod.read_desktop_session_state(session_root)
+        data_dir = Path(str(session.get("dataDir") or "")).expanduser().resolve()
+        pid = int(session.get("launcherPid") or 0)
+        if pid > 0 and data_dir == expected_data_dir.resolve():
+            return pid
+        deps.time.sleep(0.1)
+    raise TimeoutError(
+        "The relaunched app did not write a desktop session before the rollback finished."
+    )
+
+
+def _wait_for_rollback_completion(*, paths: Any, timeout_s: float) -> dict[str, Any]:
+    deps = _root()
+    deadline = deps.time.monotonic() + max(20.0, float(timeout_s))
+    last_status: dict[str, Any] = {}
+    while deps.time.monotonic() < deadline:
+        last_status = _load_update_install_state(paths)
+        stage = str(last_status.get("installStage") or "").strip().lower()
+        if stage in {"rolled_back", "rollback_failed"}:
+            return last_status
+        if stage == "failed":
+            raise RuntimeError(f"Update helper failed before attempting a rollback: {last_status}")
+        deps.time.sleep(0.1)
+    raise TimeoutError(f"Update helper never recorded a rollback: {last_status}")
+
+
+def _assert_rollback_helper_reported_failure(paths: Any, *, timeout_s: float) -> dict[str, Any]:
+    deps = _root()
+    deadline = deps.time.monotonic() + max(5.0, float(timeout_s))
+    last_event = ""
+    while deps.time.monotonic() < deadline:
+        for payload in _helper_diagnostic_rows(paths):
+            last_event = str(payload.get("event") or "").strip() or last_event
+            if last_event == "helper_main_failed":
+                stdout_payload = _read_helper_stdout_payload(paths)
+                if bool(stdout_payload.get("ok")):
+                    raise RuntimeError(
+                        "Update helper reported success for an install that rolled back."
+                    )
+                return stdout_payload
+        deps.time.sleep(0.1)
+    raise RuntimeError(
+        f"Update helper did not finish after the rollback (last event: {last_event or 'none'})."
+    )
+
+
+def _finish_successful_update(
+    *,
+    paths: Any,
+    data_dir: Path,
+    session_state_path: Path,
+    runtime_env: dict[str, str],
+    runtime_timeout_s: float,
+    helper_verify_timeout_s: float,
+    seeded: dict[str, Any],
+) -> dict[str, Any]:
+    deps = _root()
+    with contextlib.suppress(OSError):
+        session_state_path.unlink()
+    relaunched = deps._wait_for_relaunched_runtime(
+        expected_data_dir=data_dir,
+        expected_version=deps.get_app_version(),
+        timeout_s=max(45.0, runtime_timeout_s),
+        env=runtime_env,
+    )
+    session = dict(relaunched.get("session") or {})
+    deps._wait_for_desktop_update_helper_completion(
+        paths=paths,
+        timeout_s=max(helper_verify_timeout_s + 10.0, runtime_timeout_s),
+    )
+    deps._verify_rehearsal_local_data(data_dir, seeded)
+    deps._assert_desktop_update_helper_succeeded(
+        paths=paths,
+        relaunch_bridge_port=int(session.get("bridgePort") or 0),
+    )
+    return {
+        "session": session,
+        "health": relaunched.get("health") or {},
+        "rollback": {},
+        "stoppedLauncherPid": 0,
+    }
+
+
+def _finish_rolled_back_update(
+    *,
+    paths: Any,
+    data_dir: Path,
+    install_root: Path,
+    session_root: Path,
+    session_state_path: Path,
+    runtime_env: dict[str, str],
+    runtime_timeout_s: float,
+    helper_verify_timeout_s: float,
+    seeded: dict[str, Any],
+    previous_tree: dict[str, int],
+    previous_pointer: str,
+) -> dict[str, Any]:
+    deps = _root()
+    with contextlib.suppress(OSError):
+        session_state_path.unlink()
+    new_app_pid = _wait_for_rehearsal_launcher_pid(
+        session_root=session_root,
+        expected_data_dir=data_dir,
+        timeout_s=max(30.0, runtime_timeout_s),
+    )
+    status = _wait_for_rollback_completion(
+        paths=paths,
+        timeout_s=max(helper_verify_timeout_s + 90.0, runtime_timeout_s),
+    )
+    if str(status.get("installStage") or "").strip().lower() != "rolled_back":
+        raise RuntimeError(f"Update rollback was not verified: {status}")
+    if not bool(status.get("rollbackVerified")):
+        raise RuntimeError(f"Update helper reported an unverified rollback: {status}")
+    stopped_pid = int(status.get("rollbackStoppedPid") or 0)
+    if stopped_pid != new_app_pid or not bool(status.get("rollbackStopVerified")):
+        raise RuntimeError(
+            "Rollback did not record stopping the relaunched app "
+            f"(stopped pid {stopped_pid}, expected {new_app_pid}): {status}"
+        )
+    if _pid_is_running(new_app_pid):
+        raise RuntimeError(f"Rollback left the failed app running (pid {new_app_pid}).")
+    _assert_rollback_helper_reported_failure(
+        paths,
+        timeout_s=max(30.0, runtime_timeout_s),
+    )
+    _assert_restored_previous_tree(install_root, previous_tree, previous_pointer)
+    relaunched = deps._wait_for_relaunched_runtime(
+        expected_data_dir=data_dir,
+        expected_version=_previous_reported_version(runtime_env),
+        timeout_s=max(45.0, runtime_timeout_s),
+        env=runtime_env,
+    )
+    session = dict(relaunched.get("session") or {})
+    restored_pid = int(session.get("launcherPid") or 0)
+    if restored_pid <= 0 or restored_pid == new_app_pid:
+        raise RuntimeError(
+            "Rollback did not relaunch the previous install as a new process: " + str(session)
+        )
+    deps._verify_rehearsal_local_data(data_dir, seeded)
+    return {
+        "session": session,
+        "health": relaunched.get("health") or {},
+        "rollback": {
+            "installState": status.get("installState"),
+            "installStage": status.get("installStage"),
+            "rollbackVerified": bool(status.get("rollbackVerified")),
+            "rollbackFiles": int(status.get("rollbackFiles") or 0),
+            "rollbackVersion": str(status.get("rollbackVersion") or ""),
+            "lastError": str(status.get("lastError") or ""),
+            "stoppedLauncherPid": stopped_pid,
+            "previousPointerVersion": previous_pointer,
+            "restoredFileCount": len(previous_tree),
+        },
+        "stoppedLauncherPid": new_app_pid,
+    }
+
+
+def _finish_update_rehearsal(
+    *,
+    mode: str,
+    paths: Any,
+    data_dir: Path,
+    install_root: Path,
+    session_root: Path,
+    session_state_path: Path,
+    runtime_env: dict[str, str],
+    runtime_timeout_s: float,
+    helper_verify_timeout_s: float,
+    seeded: dict[str, Any],
+    previous_tree: dict[str, int],
+    previous_pointer: str,
+) -> dict[str, Any]:
+    if mode == _REHEARSAL_MODE_ROLLBACK:
+        return _finish_rolled_back_update(
+            paths=paths,
+            data_dir=data_dir,
+            install_root=install_root,
+            session_root=session_root,
+            session_state_path=session_state_path,
+            runtime_env=runtime_env,
+            runtime_timeout_s=runtime_timeout_s,
+            helper_verify_timeout_s=helper_verify_timeout_s,
+            seeded=seeded,
+            previous_tree=previous_tree,
+            previous_pointer=previous_pointer,
+        )
+    return _finish_successful_update(
+        paths=paths,
+        data_dir=data_dir,
+        session_state_path=session_state_path,
+        runtime_env=runtime_env,
+        runtime_timeout_s=runtime_timeout_s,
+        helper_verify_timeout_s=helper_verify_timeout_s,
+        seeded=seeded,
+    )
+
+
 def run_desktop_update_rehearsal(
     *,
     exe_path: Path,
     artifacts_dir: Path,
     runtime_timeout_s: float,
+    mode: str = _REHEARSAL_MODE_SUCCESS,
 ) -> dict[str, Any]:
+    """Drive the real updater helper through install handoff and relaunch.
+
+    ``mode='rollback'`` publishes an unreachable target version so the helper's
+    readiness check fails, and asserts the rollback instead of the upgraded app;
+    both modes share the manifest server, signed release, download, and helper.
+    """
     deps = _root()
     started = time.perf_counter()
     portable_root = exe_path.parent.resolve()
@@ -592,7 +896,7 @@ def run_desktop_update_rehearsal(
         "schema_version": deps.DESKTOP_UPDATE_SCHEMA_VERSION,
         "key_id": key_id,
         "channel": deps.update_manifest_helpers_mod.DESKTOP_UPDATE_CHANNEL,
-        "version": deps.get_app_version(),
+        "version": _rehearsal_manifest_version(mode, deps.get_app_version()),
         "published_at": deps.utc_now_iso(),
         "release_notes_url": "",
         "min_desktop_updater_version": deps.DESKTOP_UPDATER_VERSION,
@@ -617,7 +921,7 @@ def run_desktop_update_rehearsal(
     relaunch_bridge_port = 0
     initial_site_port = 0
     initial_bridge_port = 0
-    helper_verify_timeout_s = max(30.0, float(runtime_timeout_s))
+    helper_verify_timeout_s = _helper_verify_timeout_s_for_mode(mode, runtime_timeout_s)
     try:
         base_url, server, server_thread = deps._start_desktop_update_release_server(
             manifest=manifest,
@@ -693,6 +997,8 @@ def run_desktop_update_rehearsal(
         ):
             raise RuntimeError(f"Update check did not surface an available release: {check_status}")
         paths = deps.desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
+        previous_tree = _install_tree_sizes(install_root, mode=mode)
+        previous_pointer = _install_pointer_version(install_root)
         status_code, download_payload = deps.post_json(
             f"http://127.0.0.1:{initial_bridge_port}/app/download-update",
             {},
@@ -745,29 +1051,28 @@ def run_desktop_update_rehearsal(
             timeout_s=max(20.0, runtime_timeout_s),
         )
         deps._wait_for_process_exit(process, timeout_s=max(20.0, runtime_timeout_s))
-        with contextlib.suppress(OSError):
-            session_state_path.unlink()
-        relaunched = deps._wait_for_relaunched_runtime(
-            expected_data_dir=data_dir,
-            expected_version=deps.get_app_version(),
-            timeout_s=max(45.0, runtime_timeout_s),
-            env=runtime_env,
+        outcome = _finish_update_rehearsal(
+            mode=mode,
+            paths=paths,
+            data_dir=data_dir,
+            install_root=install_root,
+            session_root=session_root,
+            session_state_path=session_state_path,
+            runtime_env=runtime_env,
+            runtime_timeout_s=runtime_timeout_s,
+            helper_verify_timeout_s=helper_verify_timeout_s,
+            seeded=seeded,
+            previous_tree=previous_tree,
+            previous_pointer=previous_pointer,
         )
-        relaunch_session = (
-            relaunched.get("session") if isinstance(relaunched.get("session"), dict) else {}
+        relaunch_session: dict[str, Any] = (
+            cast(dict[str, Any], outcome.get("session"))
+            if isinstance(outcome.get("session"), dict)
+            else {}
         )
         relaunch_launcher_pid = int(relaunch_session.get("launcherPid") or 0)
         relaunch_bridge_port = int(relaunch_session.get("bridgePort") or 0)
         relaunch_site_port = int(relaunch_session.get("sitePort") or 0)
-        deps._wait_for_desktop_update_helper_completion(
-            paths=paths,
-            timeout_s=max(helper_verify_timeout_s + 10.0, runtime_timeout_s),
-        )
-        deps._verify_rehearsal_local_data(data_dir, seeded)
-        deps._assert_desktop_update_helper_succeeded(
-            paths=paths,
-            relaunch_bridge_port=relaunch_bridge_port,
-        )
         return {
             "name": "Packaged desktop updater rehearsal",
             "slug": "desktop-update-rehearsal",
@@ -779,7 +1084,9 @@ def run_desktop_update_rehearsal(
                 "targetZip": str(target_zip),
                 "releaseBaseUrl": str(base_url),
                 "relaunchBridgePort": relaunch_bridge_port,
-                "relaunchHealth": relaunched.get("health") if isinstance(relaunched, dict) else {},
+                "relaunchHealth": outcome.get("health") or {},
+                "rollback": outcome.get("rollback") or {},
+                "stoppedLauncherPid": int(outcome.get("stoppedLauncherPid") or 0),
                 "helperStdoutLog": str(paths.helper_stdout_log_path),
                 "helperStderrLog": str(paths.helper_stderr_log_path),
                 "helperDiagnosticsLog": str(paths.helper_diagnostics_log_path),
@@ -864,4 +1171,51 @@ def run_desktop_update_path_rehearsal(
         )
     except RuntimeError as exc:
         return {**result, "status": "failed", "error": str(exc)}
+    return result
+
+
+def run_desktop_update_rollback_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    """Force the real update's readiness check to fail and prove the rollback saves it.
+
+    The install reports 0.0.9 and a real signed update replaces it with the current
+    build, but the manifest publishes the next patch version, which the build can
+    never report. The helper's readiness check therefore fails after launching the
+    new app, and the lane requires a verified ``rolled_back`` install with that app
+    stopped, every previous file and ``current.txt`` back on disk, and the previous
+    app answering ``/ops/health`` with ``startupReady: true``.
+    """
+    result = run_desktop_update_rehearsal(
+        exe_path=exe_path,
+        artifacts_dir=artifacts_dir,
+        runtime_timeout_s=runtime_timeout_s,
+        mode=_REHEARSAL_MODE_ROLLBACK,
+    )
+    result["name"] = "Packaged desktop update rollback rehearsal"
+    result["slug"] = "desktop-update-rollback-rehearsal"
+    if result.get("status") != "passed":
+        return result
+    details = (
+        cast(dict[str, Any], result.get("details"))
+        if isinstance(result.get("details"), dict)
+        else {}
+    )
+    rollback = details.get("rollback")
+    if not bool(isinstance(rollback, dict) and rollback.get("rollbackVerified")):
+        return {
+            **result,
+            "status": "failed",
+            "error": "Rollback was not verified by the update helper.",
+        }
+    health = details.get("relaunchHealth")
+    if not bool(isinstance(health, dict) and health.get("startupReady")):
+        return {
+            **result,
+            "status": "failed",
+            "error": "Restored app did not report startupReady after the rollback.",
+        }
     return result
