@@ -61,9 +61,10 @@ Container mode serves UI and API from the same origin and does not emit browser 
 | POST | `/app/check-for-update` | Check GitHub release/update manifest state; `{force: true}` bypasses the manifest cache |
 | POST | `/app/download-update` | Start desktop update download |
 | POST | `/app/install-update` | Start install-and-restart handoff |
+| POST | `/app/repair-update` | Close the app and start the retained-snapshot repair handoff for a terminal rollback failure |
 | POST | `/app/desktop-session-lifecycle` | Desktop session heartbeat / closing lifecycle |
 
-These `/app/*` routes are desktop-runtime routes. In container mode, `/app/update-status`, `/app/check-for-update`, `/app/download-update`, `/app/install-update`, and `/app/desktop-session-lifecycle` return HTTP 409 with `{ "ok": false, "error": "not available in container mode" }`.
+These `/app/*` routes are desktop-runtime routes. In container mode, `/app/update-status`, `/app/check-for-update`, `/app/download-update`, `/app/install-update`, `/app/repair-update`, and `/app/desktop-session-lifecycle` return HTTP 409 with `{ "ok": false, "error": "not available in container mode" }`.
 
 ## Source Registry
 

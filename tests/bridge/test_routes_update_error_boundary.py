@@ -24,6 +24,9 @@ class MinimalUpdatePostRouteApi:
     def install_update(self) -> dict[str, Any]:
         return {"started": True, "action": "install"}
 
+    def repair_update(self) -> dict[str, Any]:
+        return {"started": True, "action": "repair"}
+
 
 def test_update_post_routes_accept_minimal_capability_object() -> None:
     api = MinimalUpdatePostRouteApi()

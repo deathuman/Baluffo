@@ -10,6 +10,7 @@ import {
   installHandoffFailureStatus,
   installResultMessage,
   normalizeDesktopUpdateStatus,
+  repairResultMessage,
   optimisticInstallHandoffStatus,
   shouldExposeJobsDesktopUpdateStatus,
   shouldPollDesktopUpdateStatus
@@ -68,8 +69,18 @@ export function createJobsDesktopUpdateController({
     pollTimer: null,
     status: normalizeDesktopUpdateStatus(),
     dismissedTargetVersion: "",
+    dismissedRepairKey: "",
     installStartPending: false,
   };
+
+  function repairResultKey(status) {
+    const repairState = String(status?.repairState || "").toLowerCase();
+    if (!new Set(["repaired", "repair_failed"]).has(repairState)) return "";
+    return [
+      repairState,
+      status.repairCompletedAt || status.repairFailedAt || status.repairRequestedAt || ""
+    ].join(":");
+  }
 
   const clickDiagnostics = createDesktopUpdateClickDiagnostics({
     documentObject,
@@ -267,8 +278,12 @@ export function createJobsDesktopUpdateController({
       }
     }
     const targetVersion = String(nextStatus.targetVersion || nextStatus.latestVersion || "").trim();
+    const repairKey = repairResultKey(nextStatus);
     if (isFresh) {
       state.hasFreshStatus = true;
+    }
+    if ((openPanel || autoOpenImportant) && repairKey && repairKey !== state.dismissedRepairKey) {
+      state.panelOpen = true;
     }
     if (!nextStatus.updateAvailable || nextStatus.availability === "up_to_date") {
       state.dismissedTargetVersion = "";
@@ -406,6 +421,52 @@ export function createJobsDesktopUpdateController({
     }
   }
 
+  async function repairInstall() {
+    const confirmationOptions = {
+      title: "Repair this install?",
+      description: "Baluffo will close, restore the previous build from the retained rollback snapshot, and reopen automatically. Your ship\\data is preserved.",
+      confirmLabel: "Repair and restart",
+      cancelLabel: "Cancel",
+    };
+    let confirmed;
+    if (typeof requestConfirmationDialog === "function") {
+      confirmed = Boolean(await requestConfirmationDialog(confirmationOptions));
+    } else if (typeof confirmFallback === "function") {
+      confirmed = Boolean(confirmFallback(
+        `${confirmationOptions.title}\n\n${confirmationOptions.description}`
+      ));
+    } else {
+      showToast?.("Could not open the repair confirmation dialog. Restart Baluffo and try again.", "error");
+      return null;
+    }
+    if (!confirmed) return null;
+    try {
+      const payload = await postJson(baseUrl, "/app/repair-update", {});
+      const nextStatus = payload?.status || state.status;
+      applyStatus(nextStatus, { openPanel: true });
+      if (payload?.started === false || payload?.error) {
+        const feedback = repairResultMessage(payload?.errorCode, payload?.error);
+        showToast?.(feedback.message, feedback.level);
+        return payload;
+      }
+      showToast?.("Closing Baluffo to repair the update...", "info");
+      return payload;
+    } catch (error) {
+      const refreshed = await refreshStatus({ silent: true, openPanel: true });
+      const recovered = normalizeDesktopUpdateStatus(refreshed || {});
+      if (refreshed && recovered.repairState === "repairing") {
+        showToast?.("Closing Baluffo to repair the update...", "info");
+        return { started: true, status: refreshed, recovered: true };
+      }
+      applyStatus(
+        { ...state.status, availability: "error", lastError: errorMessage(error) },
+        { openPanel: true }
+      );
+      showToast?.(`Could not start the desktop install repair: ${errorMessage(error)}`, "error");
+      return null;
+    }
+  }
+
   async function installUpdate() {
     const confirmationOptions = {
       title: "Install update now?",
@@ -496,6 +557,10 @@ export function createJobsDesktopUpdateController({
         await installUpdate();
         return;
       }
+      if (action === "repair") {
+        await repairInstall();
+        return;
+      }
       await checkForUpdates({ force: true, silent: false, openPanel: true });
     } finally {
       state.pendingAction = "";
@@ -505,6 +570,10 @@ export function createJobsDesktopUpdateController({
 
   async function handleSecondaryAction() {
     const action = String(refs.desktopUpdateSecondaryBtn?.dataset?.action || "close");
+    const repairKey = repairResultKey(state.status);
+    if (repairKey) {
+      state.dismissedRepairKey = repairKey;
+    }
     if (action === "later") {
       const targetVersion = String(state.status.targetVersion || state.status.latestVersion || "").trim();
       if (targetVersion) {
@@ -576,6 +645,9 @@ export function createJobsDesktopUpdateController({
 
   async function startAutoCheck({ retryDelaysMs = AUTO_CHECK_RETRY_DELAYS_MS } = {}) {
     if (!isDesktopRuntimeMode?.() || state.autoCheckStarted) return;
+    // The repair result is the launch message. An automatic check would clear
+    // it in the backend and replace the panel before the user can read it.
+    if (state.status.repairState === "repaired") return;
     state.autoCheckStarted = true;
     state.autoCheckInProgress = true;
     try {

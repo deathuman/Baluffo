@@ -385,6 +385,28 @@ def test_install_update_conflict(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["errorCode"] == "install_not_ready"
 
 
+def test_repair_update(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.repair_update = lambda: {
+        "started": True,
+        "status": {
+            "installState": "failed",
+            "installStage": "rollback_failed",
+            "repairState": "repairing",
+        },
+        "exitRequested": True,
+    }
+
+    handler = FakeHandler()
+    result = handle_post(handler, api=api, path="/app/repair-update", payload={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["started"] is True
+    assert handler.sent[-1]["payload"]["status"]["repairState"] == "repairing"
+
+
 def test_desktop_session_lifecycle_accepts_valid_payload(tmp_path: Path) -> None:
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)

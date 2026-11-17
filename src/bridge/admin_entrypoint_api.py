@@ -61,6 +61,7 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         check_for_update=desktop_update_service.check_for_update,
         download_update=desktop_update_service.download_update,
         install_update=desktop_update_service.request_install,
+        repair_update=desktop_update_service.request_repair,
         persist_state_and_auto_sync=root_mod.persist_state_and_auto_sync,
         add_manual_source=root_mod.add_manual_source,
         trigger_source_check=root_mod.trigger_source_check,

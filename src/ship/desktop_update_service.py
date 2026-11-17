@@ -254,6 +254,7 @@ class DesktopUpdateService:
                     "lastError": terminal_error,
                 }
             )
+        next_status["repairAvailable"] = self._repair_available(next_status)
         if next_status != existing:
             return _as_dict(save_status(self.paths, next_status))
         return dict(next_status)
@@ -437,12 +438,14 @@ class DesktopUpdateService:
                                 save_status(
                                     self.paths,
                                     self._reconcile_status_locked(
-                                        status=_manifest_to_status(
-                                            current_version=current_version,
-                                            manifest=manifest,
-                                            existing=status,
-                                            release_notes=release_notes,
-                                            release_notes_history=release_notes_history,
+                                        status=self._acknowledge_repair_result(
+                                            _manifest_to_status(
+                                                current_version=current_version,
+                                                manifest=manifest,
+                                                existing=status,
+                                                release_notes=release_notes,
+                                                release_notes_history=release_notes_history,
+                                            )
                                         ),
                                         cached_manifest=cached,
                                         manifest=manifest,
@@ -500,6 +503,7 @@ class DesktopUpdateService:
                 release_notes=release_notes,
                 release_notes_history=release_notes_history,
             )
+            next_status = self._acknowledge_repair_result(next_status)
             with self._lock:
                 return dict(
                     self._reconcile_status_locked(
@@ -734,6 +738,202 @@ class DesktopUpdateService:
         version = str(manifest.get("version") or "").strip()
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         return target.with_name(f".{target.name}.{version}-{stamp}.rollback")
+
+    @staticmethod
+    def _repair_snapshot_root(status: dict[str, Any]) -> Path | None:
+        text = str(status.get("rollbackPath") or "").strip()
+        return Path(text).expanduser().resolve() if text else None
+
+    def _repair_available(self, status: dict[str, Any]) -> bool:
+        if not terminal_install_stage(status.get("installState"), status.get("installStage")):
+            return False
+        artifact = desktop_artifact()
+        if artifact.is_appimage:
+            return False
+        rollback_root = self._repair_snapshot_root(status)
+        if rollback_root is None:
+            return False
+        snapshot_root = rollback_root / "runtime"
+        return bool(
+            (self.paths.install_root / artifact.helper_name).is_file()
+            and (snapshot_root / "Baluffo.exe").is_file()
+            and (snapshot_root / "ship" / "app" / "current.txt").is_file()
+        )
+
+    @staticmethod
+    def _repair_snapshot_version(status: dict[str, Any]) -> str:
+        rollback_root = DesktopUpdateService._repair_snapshot_root(status)
+        if rollback_root is None:
+            return ""
+        pointer = rollback_root / "runtime" / "ship" / "app" / "current.txt"
+        try:
+            return pointer.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    @staticmethod
+    def _acknowledge_repair_result(status: dict[str, Any]) -> dict[str, Any]:
+        """Clear a shown repair result when the user asks for a fresh check."""
+        next_status = dict(status)
+        if str(next_status.get("repairState") or "").strip().lower() != "repaired":
+            return next_status
+        next_status.update(
+            {
+                "repairState": "idle",
+                "repairAction": "",
+                "repairError": "",
+                "repairAvailable": False,
+            }
+        )
+        return next_status
+
+    def request_repair(self) -> dict[str, Any]:
+        """Start the existing helper repair mode after closing the desktop app.
+
+        The launcher owns the stop: this writes a repair handoff, the browser
+        watchdog sees it, the launcher closes the app and starts the helper. The
+        helper waits for that launcher to exit before restoring the snapshot, so
+        the restore never runs over a live install.
+        """
+        with self._lock:
+            status = self._reconcile_status_locked()
+            stage = terminal_install_stage(
+                status.get("installState"),
+                status.get("installStage"),
+            )
+            if not stage:
+                return _as_dict(
+                    _failure_result(
+                        status=status,
+                        error=(
+                            "No terminal desktop install failure is recorded; "
+                            "there is nothing to repair."
+                        ),
+                        error_code="install_repair_not_needed",
+                    )
+                )
+            if not self._repair_available(status):
+                return _as_dict(
+                    _failure_result(
+                        status=status,
+                        error=(
+                            "Automatic repair is unavailable for this install. "
+                            "The retained portable rollback snapshot is missing."
+                        ),
+                        error_code="install_repair_unavailable",
+                    )
+                )
+            artifact = desktop_artifact()
+            if artifact.is_appimage:
+                return _as_dict(
+                    _failure_result(
+                        status=status,
+                        error=(
+                            "Automatic repair is only available for the portable "
+                            "desktop build. Follow the recovery steps for the AppImage."
+                        ),
+                        error_code="install_repair_unavailable",
+                    )
+                )
+            session_root = resolve_desktop_session_root()
+            session_state = read_desktop_session_state(session_root)
+            launcher_pid = int(session_state.get("launcherPid") or 0)
+            launcher_token = str(session_state.get("launcherToken") or "").strip()
+            if launcher_pid <= 0 or not launcher_token:
+                return _as_dict(
+                    _failure_result(
+                        status=status,
+                        error="The desktop launcher session is unavailable for updater repair.",
+                        error_code="install_session_unavailable",
+                    )
+                )
+            helper_source = self.paths.install_root / artifact.helper_name
+            if not helper_source.is_file():
+                return _as_dict(
+                    _failure_result(
+                        status=status,
+                        error=f"Installed desktop updater helper not found: {helper_source}",
+                        error_code="install_repair_unavailable",
+                    )
+                )
+            helper_suffix = Path(artifact.helper_name).suffix
+            temp_helper = (
+                Path(tempfile.gettempdir()).resolve()
+                / f"BaluffoUpdater-repair-{uuid.uuid4().hex}{helper_suffix}"
+            )
+            try:
+                shutil.copy2(helper_source, temp_helper)
+            except (OSError, shutil.Error) as exc:
+                return _as_dict(
+                    _failure_result(
+                        status=status,
+                        error=f"Could not stage the updater repair helper: {exc}",
+                        error_code="install_repair_start_failed",
+                    )
+                )
+            requested_at = iso_now()
+            repair_plan = {
+                "planVersion": 1,
+                "mode": "restore-snapshot",
+                "dataDir": str(self.paths.data_dir),
+                "installRoot": str(self.paths.install_root),
+                "helperPath": str(temp_helper),
+                "launcherPid": launcher_pid,
+                "launcherToken": launcher_token,
+                "desktopSessionRoot": str(session_root),
+                "expectedVersion": self._repair_snapshot_version(status),
+                "discardSnapshot": False,
+                "relaunch": True,
+                "panel": True,
+                "requestedAt": requested_at,
+            }
+            saved = status
+            try:
+                clear_handoff_request(self.paths)
+                clear_install_plan(self.paths)
+                clear_handoff_diagnostics(self.paths)
+                write_json_atomic(self.paths.repair_plan_path, repair_plan)
+                saved = _as_dict(
+                    save_status(
+                        self.paths,
+                        {
+                            **status,
+                            "repairState": "repairing",
+                            "repairAction": "restore-snapshot",
+                            "repairRequestedAt": requested_at,
+                            "repairError": "",
+                            "repairAvailable": True,
+                        },
+                    )
+                )
+                write_json_atomic(
+                    self.paths.repair_request_path,
+                    {
+                        "requestedAt": requested_at,
+                        "mode": "restore-snapshot",
+                        "launcherPid": launcher_pid,
+                        "launcherToken": launcher_token,
+                    },
+                )
+            except (OSError, ValueError) as exc:
+                with contextlib.suppress(OSError, ValueError):
+                    self.paths.repair_plan_path.unlink()
+                    self.paths.repair_request_path.unlink()
+                    save_status(self.paths, status)
+                with contextlib.suppress(OSError):
+                    temp_helper.unlink()
+                return _as_dict(
+                    _failure_result(
+                        status=status,
+                        error=f"Could not start the desktop install repair: {exc}",
+                        error_code="install_repair_start_failed",
+                    )
+                )
+            return {
+                "started": True,
+                "status": saved,
+                "exitRequested": True,
+            }
 
     def request_install(self) -> dict[str, Any]:
         with self._lock:

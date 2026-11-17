@@ -24,6 +24,8 @@ class _UpdatePostRouteApi(Protocol):
 
     def install_update(self) -> dict[str, Any]: ...
 
+    def repair_update(self) -> dict[str, Any]: ...
+
 
 def _update_route_error(exc: Exception) -> dict[str, Any]:
     return {"started": False, "error": str(exc)}
@@ -63,6 +65,18 @@ def handle_post(
         send_json_boundary(
             handler,
             api.install_update,
+            error_status=500,
+            error_payload=_update_route_error,
+        )
+        return True
+
+    if path == "/app/repair-update":
+        if is_container_runtime(api):
+            send_container_unavailable(handler)
+            return True
+        send_json_boundary(
+            handler,
+            api.repair_update,
             error_status=500,
             error_payload=_update_route_error,
         )

@@ -600,6 +600,11 @@ def _save_terminal_repair_status(
             rollbackPath="",
             rollbackVerified=bool(verified),
             rollbackVersion=str(version or ""),
+            repairState="repaired",
+            repairAvailable=False,
+            repairAction=str(mode or ""),
+            repairError="",
+            repairCompletedAt=iso_now(),
             lastRepair={
                 "at": iso_now(),
                 "action": mode,
@@ -610,6 +615,195 @@ def _save_terminal_repair_status(
                 "snapshotRemoved": bool(snapshot_removed),
             },
         )
+    )
+
+
+def save_repair_failure_status(paths: DesktopUpdatePaths, error: str) -> dict[str, Any]:
+    """Keep the terminal rollback barrier while reporting why the repair failed."""
+    status = load_status(paths)
+    status.update(
+        {
+            "repairState": "repair_failed",
+            "repairError": str(error or "").strip() or "desktop_install_repair_failed",
+            "repairFailedAt": iso_now(),
+            "helperUpdatedAt": iso_now(),
+        }
+    )
+    return _as_dict(save_status(paths, status))
+
+
+_REPAIR_OPERATIONAL_ERRORS = (
+    RuntimeError,
+    OSError,
+    TypeError,
+    ValueError,
+    json.JSONDecodeError,
+    shutil.Error,
+    urllib.error.URLError,
+    _zipfile.BadZipFile,
+    _zipfile.LargeZipFile,
+)
+
+
+def _repair_plan_settings(args: Any) -> tuple[Path | None, DesktopUpdatePaths, dict[str, Any]]:
+    plan_text = str(getattr(args, "repair_plan", "") or "").strip()
+    plan_path = Path(plan_text).expanduser().resolve() if plan_text else None
+    plan = (
+        _as_dict(json.loads(plan_path.read_text(encoding="utf-8"))) if plan_path is not None else {}
+    )
+    data_dir_text = str(plan.get("dataDir") or getattr(args, "data_dir", "") or "").strip()
+    install_root_text = str(
+        plan.get("installRoot") or getattr(args, "install_root", "") or ""
+    ).strip()
+    if not data_dir_text or not install_root_text:
+        raise RuntimeError("Repair needs --data-dir and --install-root.")
+    paths = DesktopUpdatePaths.from_data_dir(
+        Path(data_dir_text),
+        install_root=Path(install_root_text),
+    )
+    return plan_path, paths, plan
+
+
+def _clear_repair_handoff(paths: DesktopUpdatePaths, plan_path: Path | None) -> None:
+    if plan_path is None:
+        return
+    with contextlib.suppress(OSError):
+        plan_path.unlink()
+    with contextlib.suppress(OSError):
+        paths.repair_request_path.unlink()
+    _clear_handoff_request(paths)
+
+
+def _relaunch_repaired_app(paths: DesktopUpdatePaths, launch_func: Any) -> str:
+    try:
+        launch_func(
+            paths.install_root / "Baluffo.exe",
+            clear_app_version_override=True,
+            data_dir=paths.data_dir,
+        )
+    except (OSError, RuntimeError) as exc:
+        return str(exc)
+    return ""
+
+
+def _repair_failure_result(
+    exc: Exception,
+    *,
+    paths: DesktopUpdatePaths | None,
+    from_panel: bool,
+    relaunch: bool,
+    launcher_stopped: bool,
+    launch_func: Any,
+    show_func: Any,
+    failure_status_func: Any,
+) -> int:
+    request_path = getattr(paths, "repair_request_path", None)
+    plan_path = getattr(paths, "repair_plan_path", None)
+    if request_path is not None:
+        with contextlib.suppress(OSError):
+            request_path.unlink()
+    if plan_path is not None:
+        with contextlib.suppress(OSError):
+            plan_path.unlink()
+    if paths is not None and from_panel:
+        with contextlib.suppress(OSError, RuntimeError, ValueError):
+            failure_status_func(paths, str(exc))
+    relaunch_error = ""
+    if paths is not None and relaunch and launcher_stopped:
+        relaunch_error = _relaunch_repaired_app(paths, launch_func)
+    message = str(exc)
+    if relaunch_error:
+        message += f"\n\nBaluffo could not reopen automatically: {relaunch_error}"
+    if not from_panel or relaunch_error:
+        show_func("Baluffo Update Repair Failed", message)
+    print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
+    return 1
+
+
+def _repair_success_result(
+    result: dict[str, Any],
+    *,
+    paths: DesktopUpdatePaths,
+    relaunch: bool,
+    from_panel: bool,
+    launch_func: Any,
+    show_func: Any,
+) -> int:
+    version = str(result.get("version") or "")
+    if str(result.get("action") or "") == "restore-snapshot":
+        message = f"Restored Baluffo {version} from the retained rollback snapshot."
+    else:
+        message = f"Accepted the Baluffo {version} install and cleared the failed rollback."
+    if not bool(result.get("snapshotRemoved")):
+        message += f"\n\nThe rollback snapshot remains at {result.get('snapshotPath')}."
+    relaunch_error = _relaunch_repaired_app(paths, launch_func) if relaunch else ""
+    if relaunch_error:
+        message += f"\n\nBaluffo could not reopen automatically: {relaunch_error}"
+    if not from_panel or relaunch_error:
+        show_func("Baluffo Update Repaired", message)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def run_desktop_install_repair(
+    args: Any,
+    *,
+    repair_func: Any,
+    wait_func: Any,
+    launch_func: Any,
+    show_func: Any,
+    failure_status_func: Any,
+) -> int:
+    """Run the helper repair mode, waiting for the launcher before restoring."""
+    paths: DesktopUpdatePaths | None = None
+    from_panel = False
+    relaunch = False
+    launcher_stopped = False
+    try:
+        plan_path, paths, plan = _repair_plan_settings(args)
+        mode = str(plan.get("mode") or getattr(args, "mode", "") or "").strip()
+        expected_version = str(
+            plan.get("expectedVersion") or getattr(args, "expect_version", "") or ""
+        ).strip()
+        discard_snapshot = bool(
+            plan.get("discardSnapshot", getattr(args, "discard_snapshot", False))
+        )
+        launcher_pid = int(plan.get("launcherPid") or getattr(args, "launcher_pid", 0) or 0)
+        session_root = str(
+            plan.get("desktopSessionRoot") or getattr(args, "desktop_session_root", "") or ""
+        ).strip()
+        relaunch = bool(plan.get("relaunch", getattr(args, "relaunch", False)))
+        from_panel = bool(plan.get("panel", getattr(args, "from_panel", False)))
+        _clear_repair_handoff(paths, plan_path)
+        if launcher_pid > 0:
+            wait_func({"launcherPid": launcher_pid, "desktopSessionRoot": session_root})
+        launcher_stopped = True
+        result = repair_func(
+            paths,
+            mode=mode,
+            expected_version=expected_version,
+            discard_snapshot=discard_snapshot,
+        )
+    except _REPAIR_OPERATIONAL_ERRORS as exc:
+        return _repair_failure_result(
+            exc,
+            paths=paths,
+            from_panel=from_panel,
+            relaunch=relaunch,
+            launcher_stopped=launcher_stopped,
+            launch_func=launch_func,
+            show_func=show_func,
+            failure_status_func=failure_status_func,
+        )
+    if paths is None:  # pragma: no cover - the try block sets it before any success
+        return 1
+    return _repair_success_result(
+        _as_dict(result),
+        paths=paths,
+        relaunch=relaunch,
+        from_panel=from_panel,
+        launch_func=launch_func,
+        show_func=show_func,
     )
 
 

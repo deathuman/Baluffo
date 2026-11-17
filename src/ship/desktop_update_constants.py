@@ -18,6 +18,8 @@ MANIFEST_CACHE_FILE = "manifest-cache.json"
 SUCCESS_MARKER_FILE = "post-install-success.json"
 HANDOFF_REQUEST_FILE = "handoff-requested.json"
 HANDOFF_DIAGNOSTICS_FILE = "handoff-diagnostics.json"
+REPAIR_PLAN_FILE = "repair-plan.json"
+REPAIR_REQUEST_FILE = "repair-requested.json"
 HELPER_STDOUT_LOG_FILE = "desktop-updater-helper.stdout.log"
 HELPER_STDERR_LOG_FILE = "desktop-updater-helper.stderr.log"
 HELPER_DIAGNOSTICS_LOG_FILE = "desktop-updater-helper.diagnostics.jsonl"
@@ -83,6 +85,8 @@ __all__ = [
     "HANDOFF_DIAGNOSTICS_FILE",
     "HANDOFF_PENDING_INSTALL_STATES",
     "HANDOFF_REQUEST_FILE",
+    "REPAIR_PLAN_FILE",
+    "REPAIR_REQUEST_FILE",
     "HELPER_DIAGNOSTICS_LOG_FILE",
     "HELPER_RUNTIME_TMP_ROOT_NAME",
     "HELPER_STDERR_LOG_FILE",

@@ -749,6 +749,94 @@ test("desktop update controller shows an explicit error when no install confirma
   );
 });
 
+test("desktop update controller starts a terminal repair and shows the closing state", async () => {
+  const refs = buildRefs();
+  const postCalls = [];
+  const toasts = [];
+  const fetchStatus = {
+    currentVersion: "0.3.065",
+    availability: "up_to_date",
+    installState: "failed",
+    installStage: "rollback_failed",
+    installStageLabel: "Update repair required",
+    lastError: "install_restore_failed: install is locked",
+    repairAvailable: true,
+    lastCheckedAt: "2026-11-17T12:00:00Z"
+  };
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async () => fetchStatus,
+    postJson: async (_baseUrl, path) => {
+      postCalls.push(path);
+      return {
+        started: true,
+        status: {
+          ...fetchStatus,
+          repairState: "repairing",
+          repairAction: "restore-snapshot"
+        },
+        exitRequested: true
+      };
+    },
+    bindAsyncClick: () => {},
+    showToast: (message, level) => {
+      toasts.push({ message, level });
+    },
+    requestConfirmationDialog: async options => {
+      assert.equal(options.confirmLabel, "Repair and restart");
+      return true;
+    },
+    isDesktopRuntimeMode: () => true,
+    setTimeoutFn: handler => ({ unref() {}, handler }),
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  await controller.handlePrimaryAction();
+
+  assert.deepEqual(postCalls, ["/app/repair-update"]);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Repairing update");
+  assert.equal(controller._getState().status.repairState, "repairing");
+  assert.ok(
+    toasts.some(item => item.message === "Closing Baluffo to repair the update..." && item.level === "info")
+  );
+});
+
+test("desktop update controller does not auto-check over a completed repair", async () => {
+  const refs = buildRefs();
+  const postCalls = [];
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async () => ({
+      currentVersion: "0.3.064",
+      availability: "up_to_date",
+      installState: "idle",
+      repairState: "repaired",
+      repairCompletedAt: "2026-11-17T12:05:00Z",
+      lastRepair: { version: "0.3.064" },
+      lastCheckedAt: "2026-11-17T12:00:00Z"
+    }),
+    postJson: async (_baseUrl, path) => {
+      postCalls.push(path);
+      return {};
+    },
+    bindAsyncClick: () => {},
+    showToast: () => {},
+    isDesktopRuntimeMode: () => true,
+    setTimeoutFn: handler => ({ unref() {}, handler }),
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  await controller.startAutoCheck();
+
+  assert.deepEqual(postCalls, []);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Repair complete");
+});
+
 test("desktop update controller forces install handoff polling after a stale started response", async () => {
   const refs = buildRefs();
   const scheduled = [];

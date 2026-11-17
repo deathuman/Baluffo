@@ -523,7 +523,7 @@ New Windows packaged installs use `%APPDATA%\Baluffo\updater\post-install-succes
 
 ### Desktop update reports `rollback_failed` and refuses to retry
 
-A failed rollback is terminal on purpose: the failed install and the retained last-good snapshot are left untouched so a retry cannot overwrite them. The update panel reports `Update needs repair`, and the helper refuses another install until an operator clears the barrier. Close Baluffo, then choose one repair mode:
+A failed rollback is terminal on purpose: the failed install and the retained last-good snapshot are left untouched so a retry cannot overwrite them. The update panel reports `Update needs repair` and offers **Repair install** for the Windows portable build. That action closes Baluffo, waits for the launcher and its children to exit, runs the helper's `restore-snapshot` repair, and reopens the restored build. The panel then reports whether the repair completed or failed. If the action is unavailable, close Baluffo and choose one repair mode manually:
 
 ```powershell
 # Put the retained last-good tree back and clear the terminal status.

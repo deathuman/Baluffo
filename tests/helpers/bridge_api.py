@@ -359,6 +359,7 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         ),
         download_update=lambda: admin_bridge._get_desktop_update_service().download_update(),
         install_update=lambda: admin_bridge._get_desktop_update_service().request_install(),
+        repair_update=lambda: admin_bridge._get_desktop_update_service().request_repair(),
         persist_state_and_auto_sync=admin_bridge.persist_state_and_auto_sync,
         add_manual_source=admin_bridge.add_manual_source,
         trigger_source_check=admin_bridge.trigger_source_check,

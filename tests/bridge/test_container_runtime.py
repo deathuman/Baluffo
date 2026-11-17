@@ -559,6 +559,7 @@ def test_container_mode_disables_desktop_only_routes(tmp_path: Path) -> None:
         "/app/check-for-update",
         "/app/download-update",
         "/app/install-update",
+        "/app/repair-update",
     ):
         post_handler = FakeHandler()
         assert handle_post(post_handler, api=api, path=path, payload={"url": "https://example.com"})

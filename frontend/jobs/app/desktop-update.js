@@ -1,6 +1,7 @@
 export {
   deriveDesktopUpdateView,
   formatDesktopUpdateBytes,
+  repairResultMessage,
   shouldExposeJobsDesktopUpdateStatus,
   shouldPollDesktopUpdateStatus
 } from "./desktop-update-model.js";

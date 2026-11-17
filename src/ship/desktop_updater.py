@@ -70,6 +70,7 @@ write_json_atomic = desktop_updater_release_mod.write_json_atomic
 
 _copy_install_snapshot = desktop_updater_install_mod._copy_install_snapshot
 repair_terminal_install = desktop_updater_install_mod.repair_terminal_install
+save_repair_failure_status = desktop_updater_install_mod.save_repair_failure_status
 _finalize_success = desktop_updater_install_mod._finalize_success
 _recover_interrupted_install = desktop_updater_install_mod._recover_interrupted_install
 _restore_install_snapshot = desktop_updater_install_mod._restore_install_snapshot
@@ -106,47 +107,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Baluffo desktop updater helper.")
     parser.add_argument("--install-plan", default="")
     parser.add_argument("--repair-desktop-install", action="store_true")
+    parser.add_argument("--repair-plan", default="")
     parser.add_argument("--data-dir", default="")
     parser.add_argument("--install-root", default="")
     parser.add_argument("--mode", default="")
     parser.add_argument("--expect-version", default="")
     parser.add_argument("--discard-snapshot", action="store_true")
+    parser.add_argument("--launcher-pid", type=int, default=0)
+    parser.add_argument("--desktop-session-root", default="")
+    parser.add_argument("--relaunch", action="store_true")
+    parser.add_argument("--from-panel", action="store_true")
     return parser.parse_args(argv)
 
 
 def _run_desktop_install_repair(args: argparse.Namespace) -> int:
-    data_dir_text = str(getattr(args, "data_dir", "") or "").strip()
-    install_root_text = str(getattr(args, "install_root", "") or "").strip()
-    if not data_dir_text or not install_root_text:
-        error = "Repair needs --data-dir and --install-root."
-        _show_message("Baluffo Update Repair Failed", error)
-        print(json.dumps({"ok": False, "error": error}, indent=2))
-        return 1
-    try:
-        paths = DesktopUpdatePaths.from_data_dir(
-            Path(data_dir_text),
-            install_root=Path(install_root_text),
-        )
-        result = repair_terminal_install(
-            paths,
-            mode=str(getattr(args, "mode", "") or ""),
-            expected_version=str(getattr(args, "expect_version", "") or ""),
-            discard_snapshot=bool(getattr(args, "discard_snapshot", False)),
-        )
-    except _HELPER_OPERATIONAL_ERRORS as exc:
-        _show_message("Baluffo Update Repair Failed", str(exc))
-        print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
-        return 1
-    version = str(result.get("version") or "")
-    if str(result.get("action") or "") == "restore-snapshot":
-        message = f"Restored Baluffo {version} from the retained rollback snapshot."
-    else:
-        message = f"Accepted the Baluffo {version} install and cleared the failed rollback."
-    if not bool(result.get("snapshotRemoved")):
-        message += f"\n\nThe rollback snapshot remains at {result.get('snapshotPath')}."
-    _show_message("Baluffo Update Repaired", message)
-    print(json.dumps(result, indent=2))
-    return 0
+    return desktop_updater_install_mod.run_desktop_install_repair(
+        args,
+        repair_func=repair_terminal_install,
+        wait_func=_wait_for_launcher_exit,
+        launch_func=_launch_executable,
+        show_func=_show_message,
+        failure_status_func=save_repair_failure_status,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

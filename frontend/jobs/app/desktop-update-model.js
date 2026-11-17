@@ -49,6 +49,16 @@ export function normalizeDesktopUpdateStatus(status = {}) {
     installState: String(payload.installState || "idle").toLowerCase(),
     installStage: String(payload.installStage || "").toLowerCase(),
     installStageLabel: String(payload.installStageLabel || ""),
+    repairState: String(payload.repairState || "idle").toLowerCase(),
+    repairAvailable: Boolean(payload.repairAvailable),
+    repairAction: String(payload.repairAction || ""),
+    repairError: String(payload.repairError || ""),
+    repairVersion: String(
+      payload.lastRepair?.version || payload.repairVersion || payload.rollbackVersion || ""
+    ),
+    repairRequestedAt: String(payload.repairRequestedAt || ""),
+    repairCompletedAt: String(payload.repairCompletedAt || ""),
+    repairFailedAt: String(payload.repairFailedAt || ""),
     releaseNotesUrl: String(payload.releaseNotesUrl || ""),
     releaseNotesTitle: String(payload.releaseNotesTitle || ""),
     releaseNotesBody: String(payload.releaseNotesBody || ""),
@@ -64,6 +74,7 @@ export function shouldPollDesktopUpdateStatus(status = {}) {
   const normalized = normalizeDesktopUpdateStatus(status);
   if (normalized.availability === "checking") return true;
   if (normalized.downloadState === "downloading") return true;
+  if (normalized.repairState === "repairing") return true;
   return new Set(["handoff_requested", "waiting_for_exit", "installing", "verifying"]).has(
     normalized.installState
   );
@@ -101,6 +112,26 @@ export function downloadResultMessage(errorCode, fallbackMessage) {
   }
   return {
     message: fallbackMessage || "Could not start the desktop update download.",
+    level: "error"
+  };
+}
+
+export function repairResultMessage(errorCode, fallbackMessage) {
+  const code = String(errorCode || "").trim().toLowerCase();
+  if (code === "install_repair_not_needed") {
+    return { message: "There is no failed desktop install to repair.", level: "error" };
+  }
+  if (code === "install_repair_unavailable") {
+    return {
+      message: "Automatic repair is unavailable for this install. Follow the recovery steps in the troubleshooting guide.",
+      level: "error"
+    };
+  }
+  if (code === "install_session_unavailable") {
+    return { message: "The desktop launcher session is unavailable. Restart Baluffo and try again.", level: "error" };
+  }
+  return {
+    message: fallbackMessage || "Could not start the desktop install repair.",
     level: "error"
   };
 }
@@ -185,6 +216,7 @@ export function shouldExposeJobsDesktopUpdateStatus(status = {}, { hasFreshStatu
   if (hasFreshStatus) return true;
   const normalized = normalizeDesktopUpdateStatus(status);
   if (normalized.installStage === "rollback_failed") return true;
+  if (new Set(["repairing", "repaired", "repair_failed"]).has(normalized.repairState)) return true;
   if (normalized.downloadState === "downloading") return true;
   if (normalized.downloadState === "downloaded") return true;
   if (normalized.installState === "ready") return true;
@@ -200,21 +232,30 @@ export function failureToastForStatus(previousStatus, nextStatus) {
   if (previous.installState !== "failed" && next.installState === "failed") {
     return next.lastError || "Baluffo could not install the downloaded update.";
   }
+  if (previous.repairState !== "repair_failed" && next.repairState === "repair_failed") {
+    return next.repairError || "Baluffo could not repair the desktop install.";
+  }
   return "";
 }
 
 export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
   const normalized = normalizeDesktopUpdateStatus(status);
   const installProgress = normalized.installStageLabel || "Waiting for the updater helper to finish install and startup verification.";
-  const stateToken = normalized.installState === "failed"
-    ? "install_failed"
-    : normalized.downloadState === "failed"
-      ? "download_failed"
-      : inFlightInstallState(normalized.installState)
-        ? normalized.installState
-        : normalized.downloadState === "downloading"
-          ? "downloading"
-          : normalized.availability;
+  const repairToken = new Set(["repairing", "repaired", "repair_failed"]).has(
+    normalized.repairState
+  )
+    ? normalized.repairState
+    : "";
+  const stateToken = repairToken
+    || (normalized.installState === "failed"
+      ? "install_failed"
+      : normalized.downloadState === "failed"
+        ? "download_failed"
+        : inFlightInstallState(normalized.installState)
+          ? normalized.installState
+          : normalized.downloadState === "downloading"
+            ? "downloading"
+            : normalized.availability);
   // A check in flight is shown on the toggle ("Checking...") without opening the
   // panel: the launch auto-check must not pop the panel open on every start.
   const autoVisible = normalized.availability === "checking"
@@ -247,12 +288,58 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
     secondaryVisible: false,
   };
 
+  if (normalized.repairState === "repairing") {
+    view.buttonLabel = "Repairing update";
+    view.title = "Repairing desktop install";
+    view.body = "Baluffo is closing so the updater helper can restore the previous build from the retained snapshot.";
+    view.progress = "The app will reopen automatically when the repair finishes.";
+    view.primaryVisible = false;
+    view.secondaryVisible = false;
+    return view;
+  }
+
+  if (normalized.repairState === "repaired") {
+    view.buttonLabel = "Repair complete";
+    view.title = "Desktop install repaired";
+    view.body = normalized.repairVersion
+      ? `Restored Baluffo ${normalized.repairVersion} from the retained rollback snapshot.`
+      : "Restored the previous Baluffo build from the retained rollback snapshot.";
+    view.progress = "The failed update is cleared. Check for updates when you are ready to try again.";
+    view.primaryAction = "check";
+    view.primaryLabel = "Check for updates";
+    view.primaryVisible = true;
+    view.secondaryAction = "close";
+    view.secondaryLabel = "Close";
+    view.secondaryVisible = true;
+    return view;
+  }
+
+  if (normalized.repairState === "repair_failed") {
+    view.buttonLabel = "Repair failed";
+    view.title = "Desktop install repair failed";
+    view.body = normalized.repairError
+      || normalized.lastError
+      || "Baluffo could not restore the previous build.";
+    view.progress = "The failed install and its rollback snapshot are still retained.";
+    view.primaryAction = "repair";
+    view.primaryLabel = "Try repair again";
+    view.primaryVisible = normalized.repairAvailable;
+    view.secondaryAction = "close";
+    view.secondaryLabel = "Close";
+    view.secondaryVisible = true;
+    return view;
+  }
+
   if (normalized.installStage === "rollback_failed") {
     view.buttonLabel = "Update needs repair";
     view.title = "Desktop update needs repair";
     view.body = normalized.lastError || "The previous update could not be rolled back.";
-    view.progress = "The failed install and its rollback snapshot were kept. Repair the install before trying again.";
-    view.primaryVisible = false;
+    view.progress = normalized.repairAvailable
+      ? "Repair restores the previous build from the retained rollback snapshot and reopens Baluffo."
+      : "Automatic repair is unavailable for this install. Follow the recovery steps in the troubleshooting guide.";
+    view.primaryAction = "repair";
+    view.primaryLabel = "Repair install";
+    view.primaryVisible = normalized.repairAvailable;
     view.secondaryAction = "close";
     view.secondaryLabel = "Close";
     view.secondaryVisible = true;

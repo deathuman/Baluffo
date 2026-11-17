@@ -1010,6 +1010,14 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
         "public",
         caller_files=UPDATE_CALLERS,
     ),
+    _route(
+        "POST",
+        "/app/repair-update",
+        EXACT,
+        POST_UPDATE_HANDLER,
+        "public",
+        caller_files=UPDATE_CALLERS,
+    ),
 )
 
 

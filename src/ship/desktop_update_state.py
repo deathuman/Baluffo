@@ -75,6 +75,10 @@ def default_status_payload(*, current_version: str | None = None) -> dict[str, A
         "helperUpdatedAt": "",
         "rollbackPath": "",
         "migrationBackupPath": "",
+        "repairState": "idle",
+        "repairAvailable": False,
+        "repairAction": "",
+        "repairError": "",
     }
 
 
@@ -86,6 +90,43 @@ def _load_credible_handoff_install_plan(paths: Any) -> dict[str, Any]:
     except ValueError:
         return {}
     launcher_pid = int(plan.get("launcherPid") or 0)
+    launcher_token = str(plan.get("launcherToken") or "").strip()
+    session_root_raw = str(plan.get("desktopSessionRoot") or "").strip()
+    if launcher_pid <= 0 or not launcher_token or not session_root_raw:
+        return {}
+    if not pid_is_running(launcher_pid):
+        return {}
+    try:
+        session_root = _resolve_runtime_path(session_root_raw)
+    except (OSError, RuntimeError, ValueError):
+        return {}
+    session_state = _as_dict(read_desktop_session_state(session_root))
+    if _as_int(session_state.get("launcherPid")) != launcher_pid:
+        return {}
+    if str(session_state.get("launcherToken") or "").strip() != launcher_token:
+        return {}
+    return dict(plan)
+
+
+def _load_credible_repair_plan(paths: Any) -> dict[str, Any]:
+    """A repair is only credible while the launcher that requested it is alive."""
+    if not paths.repair_request_path.exists():
+        return {}
+    plan = _as_dict(read_json(paths.repair_plan_path, {}))
+    required = (
+        "planVersion",
+        "mode",
+        "dataDir",
+        "installRoot",
+        "helperPath",
+        "launcherPid",
+        "launcherToken",
+        "desktopSessionRoot",
+        "requestedAt",
+    )
+    if any(key not in plan for key in required):
+        return {}
+    launcher_pid = _as_int(plan.get("launcherPid"))
     launcher_token = str(plan.get("launcherToken") or "").strip()
     session_root_raw = str(plan.get("desktopSessionRoot") or "").strip()
     if launcher_pid <= 0 or not launcher_token or not session_root_raw:
@@ -156,6 +197,29 @@ def _reconcile_handoff_status(
     return next_status, {}, True
 
 
+def _reconcile_repair_status(
+    paths: Any,
+    status: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Do not let a lost repair handoff leave every status poll stuck on repairing."""
+    next_status = dict(status or {})
+    if str(next_status.get("repairState") or "").strip().lower() != "repairing":
+        return next_status, False
+    if _load_credible_repair_plan(paths):
+        return next_status, False
+    clear_repair_request(paths)
+    clear_repair_plan(paths)
+    next_status.update(
+        {
+            "repairState": "idle",
+            "repairAction": "",
+            "repairAvailable": False,
+            "repairError": "The previous desktop repair handoff did not start; try Repair install again.",
+        }
+    )
+    return next_status, True
+
+
 def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, Any]:
     status = default_status_payload(current_version=current_version)
     status.update(_as_dict(read_json(paths.install_state_path, {})))
@@ -163,6 +227,7 @@ def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, 
         current_version or status.get("currentVersion") or get_app_version()
     )
     status, _credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(paths, status)
+    status, _stale_repair = _reconcile_repair_status(paths, status)
     status["installStage"] = normalize_install_stage(
         status.get("installState"),
         status.get("installStage"),
@@ -190,6 +255,12 @@ def updater_install_requested(data_dir: Path) -> bool:
         return False
     if credible_handoff_plan:
         return True
+    repair_plan = _load_credible_repair_plan(paths)
+    if repair_plan:
+        return True
+    if paths.repair_request_path.exists() or paths.repair_plan_path.exists():
+        clear_repair_request(paths)
+        clear_repair_plan(paths)
     return bool(_handoff_status_pending(state))
 
 
@@ -213,6 +284,16 @@ def clear_install_plan(paths: Any) -> None:
         paths.install_plan_path.unlink()
 
 
+def clear_repair_request(paths: Any) -> None:
+    with contextlib.suppress(OSError):
+        paths.repair_request_path.unlink()
+
+
+def clear_repair_plan(paths: Any) -> None:
+    with contextlib.suppress(OSError):
+        paths.repair_plan_path.unlink()
+
+
 def clear_staged_helper(path: Path | None) -> None:
     if path is None:
         return
@@ -227,10 +308,36 @@ def helper_runtime_tmpdir() -> Path:
 
 
 def launch_staged_update_helper(paths: Any) -> None:
+    repair_plan = _load_credible_repair_plan(paths)
+    if repair_plan:
+        helper_path = Path(str(repair_plan.get("helperPath") or "")).expanduser().resolve()
+        if not helper_path.is_file():
+            raise RuntimeError(f"Staged desktop repair helper not found: {helper_path}")
+        _spawn_helper(
+            paths,
+            helper_path,
+            ["--repair-desktop-install", "--repair-plan", str(paths.repair_plan_path)],
+            repair_plan,
+        )
+        return
     plan = validate_install_plan(read_json(paths.install_plan_path, {}))
     helper_path = Path(str(plan.get("tempHelperPath") or "")).expanduser().resolve()
     if not helper_path.is_file():
         raise RuntimeError(f"Staged desktop updater helper not found: {helper_path}")
+    _spawn_helper(
+        paths,
+        helper_path,
+        ["--install-plan", str(paths.install_plan_path)],
+        plan,
+    )
+
+
+def _spawn_helper(
+    paths: Any,
+    helper_path: Path,
+    helper_args: list[str],
+    plan: dict[str, Any],
+) -> None:
     paths.updater_dir.mkdir(parents=True, exist_ok=True)
     runtime_tmpdir = helper_runtime_tmpdir()
     runtime_tmpdir.mkdir(parents=True, exist_ok=True)
@@ -252,7 +359,7 @@ def launch_staged_update_helper(paths: Any) -> None:
         paths.helper_stderr_log_path.open("ab") as helper_stderr,
     ):
         subprocess.Popen(
-            [str(helper_path), "--install-plan", str(paths.install_plan_path)],
+            [str(helper_path), *helper_args],
             cwd=str(paths.updater_dir),
             stdout=helper_stdout,
             stderr=helper_stderr,

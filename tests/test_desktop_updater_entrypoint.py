@@ -102,6 +102,71 @@ def test_main_reports_a_failed_terminal_install_repair(monkeypatch, capsys) -> N
     show_message.assert_called_once_with("Baluffo Update Repair Failed", error)
 
 
+def test_panel_repair_waits_for_the_launcher_before_restoring_and_relaunches(
+    monkeypatch, tmp_path
+) -> None:
+    data_dir = tmp_path / "portable" / "ship" / "data"
+    install_root = tmp_path / "portable"
+    data_dir.mkdir(parents=True)
+    plan_path = tmp_path / "repair-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "planVersion": 1,
+                "mode": "restore-snapshot",
+                "dataDir": str(data_dir),
+                "installRoot": str(install_root),
+                "launcherPid": 4242,
+                "desktopSessionRoot": str(tmp_path / "session"),
+                "relaunch": True,
+                "panel": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    order: list[str] = []
+
+    def fake_repair(*_args, **_kwargs):
+        order.append("repair")
+        return {
+            "ok": True,
+            "action": "restore-snapshot",
+            "version": "0.3.064",
+            "snapshotRemoved": True,
+            "snapshotPath": "rollback/0.3.065",
+        }
+
+    def fake_wait(*_args, **_kwargs):
+        order.append("wait")
+
+    def fake_launch(*_args, **_kwargs):
+        order.append("launch")
+
+    repair = mock.Mock(side_effect=fake_repair)
+    wait = mock.Mock(side_effect=fake_wait)
+    launch = mock.Mock(side_effect=fake_launch)
+    show_message = mock.Mock()
+    monkeypatch.setattr(updater, "repair_terminal_install", repair)
+    monkeypatch.setattr(updater, "_wait_for_launcher_exit", wait)
+    monkeypatch.setattr(updater, "_launch_executable", launch)
+    monkeypatch.setattr(updater, "_show_message", show_message)
+    monkeypatch.setattr(
+        updater,
+        "parse_args",
+        lambda argv=None: SimpleNamespace(repair_desktop_install=True, repair_plan=str(plan_path)),
+    )
+
+    assert updater.main([]) == 0
+
+    assert order == ["wait", "repair", "launch"]
+    wait.assert_called_once()
+    assert wait.call_args.args[0]["launcherPid"] == 4242
+    repair.assert_called_once()
+    launch.assert_called_once()
+    show_message.assert_not_called()
+    assert not plan_path.exists()
+
+
 def test_main_failure_path_still_uses_native_error_message(monkeypatch) -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
         plan_path = Path(tmp) / "install-plan.json"

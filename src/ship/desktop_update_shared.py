@@ -551,6 +551,8 @@ class DesktopUpdatePaths:
     success_marker_path: Path
     handoff_request_path: Path
     handoff_diagnostics_path: Path
+    repair_plan_path: Path
+    repair_request_path: Path
     helper_stdout_log_path: Path
     helper_stderr_log_path: Path
     helper_diagnostics_log_path: Path
@@ -591,6 +593,8 @@ class DesktopUpdatePaths:
             success_marker_path=updater_dir / constants_mod.SUCCESS_MARKER_FILE,
             handoff_request_path=updater_dir / constants_mod.HANDOFF_REQUEST_FILE,
             handoff_diagnostics_path=updater_dir / constants_mod.HANDOFF_DIAGNOSTICS_FILE,
+            repair_plan_path=updater_dir / constants_mod.REPAIR_PLAN_FILE,
+            repair_request_path=updater_dir / constants_mod.REPAIR_REQUEST_FILE,
             helper_stdout_log_path=updater_dir / constants_mod.HELPER_STDOUT_LOG_FILE,
             helper_stderr_log_path=updater_dir / constants_mod.HELPER_STDERR_LOG_FILE,
             helper_diagnostics_log_path=updater_dir / constants_mod.HELPER_DIAGNOSTICS_LOG_FILE,

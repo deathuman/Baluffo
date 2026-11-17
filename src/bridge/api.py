@@ -395,6 +395,7 @@ class BridgeApi:
     check_for_update: Callable[..., JsonObject] = _not_started_result
     download_update: Callable[[], JsonObject] = _not_started_noarg
     install_update: Callable[[], JsonObject] = _not_started_noarg
+    repair_update: Callable[[], JsonObject] = _not_started_noarg
 
     load_state: LoadStateFunc = _empty_registry_state
     summarize_state: SummarizeStateFunc = _empty_state_summary
