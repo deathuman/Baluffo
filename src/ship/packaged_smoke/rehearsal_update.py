@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import threading
 import time
+import zipfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -531,6 +532,36 @@ def _assert_desktop_update_helper_succeeded(
         raise RuntimeError(f"Updated desktop app reported a failed updater state: {status}")
 
 
+def _assert_installed_tree_matches_target(install_root: Path, target_zip: Path) -> None:
+    """The install must hold every file the target archive carries, not a subset.
+
+    The desktop update that broke a live install fetched a complete archive and
+    then left a version tree without the route modules it imports lazily, so a
+    success signal that only reads `/ops/health` cannot prove the tree came back.
+    """
+    deps = _root()
+    with zipfile.ZipFile(target_zip) as archive:
+        expected = {
+            info.filename.replace("\\", "/")
+            for info in archive.infolist()
+            if not info.is_dir() and not info.filename.replace("\\", "/").startswith("ship/data/")
+        }
+    missing = sorted(rel for rel in expected if not (install_root / rel).is_file())
+    if missing:
+        raise RuntimeError(
+            "Installed tree is missing "
+            f"{len(missing)} of {len(expected)} target files: " + ", ".join(missing[:5])
+        )
+    pointer = install_root / "ship" / "app" / "current.txt"
+    installed_version = pointer.read_text(encoding="utf-8").strip() if pointer.is_file() else ""
+    expected_version = str(deps.get_app_version() or "").strip()
+    if installed_version != expected_version:
+        raise RuntimeError(
+            "Installed tree did not switch to the target version "
+            f"(expected {expected_version!r}, found {installed_version!r})"
+        )
+
+
 def run_desktop_update_rehearsal(
     *,
     exe_path: Path,
@@ -748,6 +779,7 @@ def run_desktop_update_rehearsal(
                 "targetZip": str(target_zip),
                 "releaseBaseUrl": str(base_url),
                 "relaunchBridgePort": relaunch_bridge_port,
+                "relaunchHealth": relaunched.get("health") if isinstance(relaunched, dict) else {},
                 "helperStdoutLog": str(paths.helper_stdout_log_path),
                 "helperStderrLog": str(paths.helper_stderr_log_path),
                 "helperDiagnosticsLog": str(paths.helper_diagnostics_log_path),
@@ -789,3 +821,47 @@ def run_desktop_update_rehearsal(
             relaunch_site_port,
             relaunch_bridge_port,
         )
+
+
+def run_desktop_update_path_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    """Update an installed copy from an older reported version and prove it boots.
+
+    The install reports 0.0.9 through the rehearsal's version override, the helper
+    replaces it with the current build, and the lane requires the relaunched bridge
+    to answer `/ops/health` with `startupReady: true` over a complete installed
+    tree -- not only the files the smoke happens to read.
+    """
+    result = run_desktop_update_rehearsal(
+        exe_path=exe_path,
+        artifacts_dir=artifacts_dir,
+        runtime_timeout_s=runtime_timeout_s,
+    )
+    result["name"] = "Packaged desktop update path rehearsal"
+    result["slug"] = "desktop-update-path-rehearsal"
+    details = (
+        cast(dict[str, Any], result.get("details"))
+        if isinstance(result.get("details"), dict)
+        else {}
+    )
+    health = details.get("relaunchHealth")
+    if result.get("status") != "passed":
+        return result
+    if not bool(isinstance(health, dict) and health.get("startupReady")):
+        return {
+            **result,
+            "status": "failed",
+            "error": "Relaunched runtime did not report startupReady after the update.",
+        }
+    try:
+        _assert_installed_tree_matches_target(
+            Path(str(details.get("installRoot") or "")),
+            Path(str(details.get("targetZip") or "")),
+        )
+    except RuntimeError as exc:
+        return {**result, "status": "failed", "error": str(exc)}
+    return result

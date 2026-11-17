@@ -1354,6 +1354,9 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
     assert scripts["test:frontend:packaged:first-run"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path desktop-probe.html --node-smoke-script tests/frontend/packaged-desktop-smoke.first-run-jobs.mjs --runtime-timeout 60 --playwright-timeout 240"
     )
+    assert scripts["test:frontend:packaged:update-path-rehearsal"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --desktop-update-path-rehearsal --runtime-timeout 60"
+    )
     assert scripts["test:frontend:packaged:active-task-close-rehearsal"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --active-task-close-rehearsal --runtime-timeout 60"
     )
@@ -1370,7 +1373,7 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
         "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run security:js && npm run check:published-version"
     )
     assert scripts["release:preflight:packaged"] == (
-        "npm run build:portable-exe:prepare && npm run test:frontend:packaged && npm run test:frontend:packaged:update-panel-gate && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:admin-active-run && npm run test:frontend:packaged:fetch-evidence && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:desktop-lifecycle-rehearsal && npm run test:frontend:packaged:active-task-close-rehearsal && npm run test:frontend:packaged:task-abort-schedule-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
+        "npm run build:portable-exe:prepare && npm run test:frontend:packaged && npm run test:frontend:packaged:update-panel-gate && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:admin-active-run && npm run test:frontend:packaged:fetch-evidence && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:update-path-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:desktop-lifecycle-rehearsal && npm run test:frontend:packaged:active-task-close-rehearsal && npm run test:frontend:packaged:task-abort-schedule-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
     )
     assert scripts["release:preflight"] == (
         "npm run release:preflight:fast && npm run release:preflight:packaged"

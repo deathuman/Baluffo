@@ -298,6 +298,9 @@ run_packaged_sync_rehearsal = _make_rehearsal_runner(
 run_desktop_update_rehearsal = _make_rehearsal_runner(
     rehearsal_update_mod, "run_desktop_update_rehearsal"
 )
+run_desktop_update_path_rehearsal = _make_rehearsal_runner(
+    rehearsal_update_mod, "run_desktop_update_path_rehearsal"
+)
 run_packaged_browser_job_rehearsal = _make_rehearsal_runner(
     rehearsal_browser_mod, "run_packaged_browser_job_rehearsal"
 )

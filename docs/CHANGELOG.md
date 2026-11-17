@@ -48,6 +48,17 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.065] - 2026-11-17
+
+### Fixed
+
+- A desktop update that fails its startup check now stops the app it just launched before rolling back, then reads the restored install back from disk. If `ship\app\current.txt` or any file from the previous install is missing, the update reports a failed restore and keeps the rollback snapshot instead of leaving a half-restored folder that still answers some requests and then fails on the next module it loads. The updater also reports a specific restore failure rather than ending quietly in a failed state.
+
+### Notes
+
+- The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility are unchanged. Existing feeds, saved jobs, notes, and compatibility exports are preserved; a failed update keeps the previous install intact and relaunches it.
+- Release preflight now runs `npm run test:frontend:packaged:update-path-rehearsal`, which updates an installed copy from a version that reports 0.0.9 and requires the relaunched bridge to answer `/ops/health` with `startupReady: true` over a complete installed tree, not just a reachable process.
+
 ## [0.3.064] - 2026-11-17
 
 ### Fixed

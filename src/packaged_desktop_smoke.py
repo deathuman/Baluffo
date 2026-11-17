@@ -309,6 +309,7 @@ _wait_for_desktop_update_helper_completion = (
 )
 run_packaged_sync_rehearsal = packaged_smoke_rehearsals_mod.run_packaged_sync_rehearsal
 run_desktop_update_rehearsal = packaged_smoke_rehearsals_mod.run_desktop_update_rehearsal
+run_desktop_update_path_rehearsal = packaged_smoke_rehearsals_mod.run_desktop_update_path_rehearsal
 run_packaged_browser_job_rehearsal = (
     packaged_smoke_rehearsals_mod.run_packaged_browser_job_rehearsal
 )
@@ -345,6 +346,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--embedded-probes", action="store_true")
     parser.add_argument("--sync-rehearsal", action="store_true")
     parser.add_argument("--desktop-update-rehearsal", action="store_true")
+    parser.add_argument("--desktop-update-path-rehearsal", action="store_true")
     _appimage_update_rehearsal_mod.add_cli_arguments(parser)
     parser.add_argument("--orphan-reclaim-rehearsal", action="store_true")
     parser.add_argument("--browser-job-rehearsal", action="store_true")

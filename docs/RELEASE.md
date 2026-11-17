@@ -662,9 +662,11 @@ npm run test:frontend:packaged:first-run
 npm run test:frontend:packaged:admin-active-run
 npm run test:frontend:packaged:jobs-pipeline
 npm run test:frontend:packaged:update-rehearsal
+npm run test:frontend:packaged:update-path-rehearsal
 npm run probe:desktop:startup:jobs:cold
 ```
 
+The `npm run test:frontend:packaged:update-path-rehearsal` lane rehearses the same helper-driven update from an install that reports an older version, and additionally requires the relaunched bridge to answer `/ops/health` with `startupReady: true` over a complete installed tree: every file in the target archive must exist after the install and `ship\app\current.txt` must name the target version, so an update that leaves a partial tree fails the lane even when the running process still answers.
 The `npm run test:frontend:packaged:update-rehearsal` lane uses a locally generated, self-signed manifest. As a release-closeout step, additionally validate the updater end-to-end against the real published manifest and assets (signed by the release key) once the GitHub release is live, so the signed publish path — not only the local rehearsal — is confirmed accepted by the updater.
 
 These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo.exe` artifact. Normal release and perf lanes reuse the same content-addressed portable build when its fingerprint is current; cold startup coverage gets a fresh runtime data/profile state rather than a rebuilt executable. Local portable builds also mirror the successful output to `_out\latest\build\portable\Baluffo.exe` so the familiar latest path does not remain stale after `npm run build:portable-exe`.

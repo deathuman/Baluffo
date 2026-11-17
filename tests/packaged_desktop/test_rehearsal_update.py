@@ -69,6 +69,50 @@ def test_run_packaged_smoke_can_run_desktop_update_rehearsal_mode() -> None:
         assert saved["ok"] is True
 
 
+def test_run_packaged_smoke_can_run_desktop_update_path_rehearsal_mode() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--desktop-update-path-rehearsal",
+            ]
+        )
+        with (
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(
+                smoke,
+                "collect_packaged_smoke_env_diagnostics",
+                return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False},
+            ),
+            mock.patch.object(
+                smoke,
+                "run_desktop_update_path_rehearsal",
+                return_value={
+                    "name": "Packaged desktop update path rehearsal",
+                    "slug": "desktop-update-path-rehearsal",
+                    "status": "passed",
+                    "durationMs": 1500,
+                    "error": "",
+                    "details": {},
+                },
+            ) as rehearsal_mock,
+        ):
+            payload = smoke.run_packaged_smoke(args)
+        assert payload["ok"] is True
+        assert payload["scenarios"][0]["slug"] == "desktop-update-path-rehearsal"
+        rehearsal_mock.assert_called_once()
+
+
 def test_desktop_update_rehearsal_removes_optional_psutil_from_source_runtime() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         portable_root = Path(tmp) / "portable"
