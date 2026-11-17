@@ -201,13 +201,19 @@ def _restore_install_snapshot(install_root: Path, rollback_root: Path) -> dict[s
         raise RuntimeError(
             f"Install rollback snapshot is incomplete: {snapshot_pointer} is missing"
         )
+    expected_version = snapshot_pointer.read_text(encoding="utf-8").strip()
+    if not expected_version:
+        raise RuntimeError(f"Install rollback snapshot is incomplete: {snapshot_pointer} is empty")
+    if not (snapshot_root / "Baluffo.exe").is_file():
+        raise RuntimeError(
+            f"Install rollback snapshot is incomplete: {snapshot_root / 'Baluffo.exe'} is missing"
+        )
     for path in _files_under(install_root):
         rel = path.relative_to(install_root)
         if rel.as_posix().startswith("ship/data/"):
             continue
         path.unlink(missing_ok=True)
     restored_files = _copy_tree_files(snapshot_root, install_root)
-    expected_version = snapshot_pointer.read_text(encoding="utf-8").strip()
     restored_version = (install_root / pointer_rel).read_text(encoding="utf-8").strip()
     if restored_version != expected_version:
         raise RuntimeError(
@@ -277,8 +283,7 @@ def _sync_extract_to_install(install_root: Path, extracted_root: Path) -> None:
         if rel_text.startswith("ship/data/"):
             continue
         if rel_text not in target_paths:
-            with contextlib.suppress(OSError):
-                path.unlink()
+            path.unlink(missing_ok=True)
     for path in extracted_root.rglob("*"):
         if not path.is_file():
             continue
@@ -338,7 +343,9 @@ def _migration_backup_ref(status: dict[str, Any]) -> Path | None:
     if not backup_ref_text:
         return None
     backup_ref = Path(backup_ref_text).expanduser().resolve()
-    return backup_ref if backup_ref.exists() else None
+    if not backup_ref.exists():
+        raise RuntimeError(f"Migration backup is missing: {backup_ref}")
+    return backup_ref
 
 
 def _restore_previous_install(
@@ -354,6 +361,11 @@ def _restore_previous_install(
     app is still running, and a live install holds the files it restores.
     """
     stopped = _stop_relaunched_app(plan)
+    if bool(stopped.get("aliveAfter")):
+        raise RuntimeError(
+            "Relaunched app did not stop "
+            f"(pid {int(stopped.get('pid') or 0)}); refusing to restore over a live install."
+        )
     if backup_ref is not None:
         try:
             _restore_data_backup(
@@ -451,7 +463,7 @@ def _recover_interrupted_install(
             rollbackPath=str(rollback_root),
             rollbackVerified=False,
         )
-        return False
+        raise RuntimeError(f"Install recovery failed: {exc}") from exc
     remove_rollback_path(rollback_root)
     _save_install_stage_status(
         paths,
@@ -513,8 +525,11 @@ def _rollback_failed_install(
             rollbackVerified=False,
         )
         return
-    with contextlib.suppress(OSError, RuntimeError):
+    relaunch_error = ""
+    try:
         _launch_executable(paths.install_root / "Baluffo.exe", data_dir=paths.data_dir)
+    except (OSError, RuntimeError) as exc:
+        relaunch_error = str(exc)
     _save_install_stage_status(
         paths,
         install_state="failed",
@@ -527,6 +542,7 @@ def _rollback_failed_install(
         rollbackVersion=str(restored.get("currentVersion") or ""),
         rollbackStoppedPid=int(restored.get("stoppedPid") or 0),
         rollbackStopVerified=bool(restored.get("stopVerified")),
+        rollbackRelaunchError=relaunch_error,
     )
 
 
@@ -561,6 +577,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
     temp_extract.mkdir(parents=True, exist_ok=True)
     backup_ref: Path | None = None
     mutation_started = False
+    recovery_failed = False
     try:
         manifest = _recover_manifest_for_install(
             plan,
@@ -573,11 +590,15 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             manifest=manifest,
             zip_path=Path(str(plan.get("downloadedZipPath") or "")).expanduser().resolve(),
         )
-        recovered_as_complete = _recover_interrupted_install(
-            plan,
-            paths=paths,
-            rollback_root=rollback_root,
-        )
+        try:
+            recovered_as_complete = _recover_interrupted_install(
+                plan,
+                paths=paths,
+                rollback_root=rollback_root,
+            )
+        except RuntimeError:
+            recovery_failed = True
+            raise
         if recovered_as_complete:
             return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
         _save_install_stage_status(
@@ -679,6 +700,10 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         _finalize_success(paths, plan, rollback_root)
         return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
     except BaseException as exc:
+        # A failed recovery already left a rollback_failed status and the only
+        # good snapshot on disk; continuing would re-snapshot over it.
+        if recovery_failed:
+            raise
         # Treat install mutation as a transactional cleanup boundary, then re-raise.
         progress.update(install_stage_label("installing", "rolling_back"))
         _rollback_failed_install(

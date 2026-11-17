@@ -160,6 +160,38 @@ def test_restore_previous_install_surfaces_a_data_backup_restore_failure(
     restore_snapshot.assert_not_called()
 
 
+def test_restore_previous_install_refuses_to_restore_while_the_app_is_alive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_root = tmp_path / "portable"
+    data_dir = install_root / "ship" / "data"
+    data_dir.mkdir(parents=True)
+    paths = du_shared.DesktopUpdatePaths.from_data_dir(data_dir)
+    rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
+    backup_ref = tmp_path / "data-backup.zip"
+    backup_ref.write_text("backup", encoding="utf-8")
+    restore_backup = mock.Mock()
+    restore_snapshot = mock.Mock()
+    monkeypatch.setattr(
+        updater_install,
+        "_stop_relaunched_app",
+        lambda plan, **kwargs: {"pid": 4242, "terminated": False, "aliveAfter": True},
+    )
+    monkeypatch.setattr(updater_install, "_restore_data_backup", restore_backup)
+    monkeypatch.setattr(updater_install, "_restore_install_snapshot", restore_snapshot)
+
+    with pytest.raises(RuntimeError, match="did not stop"):
+        updater_install._restore_previous_install(
+            plan={},
+            paths=paths,
+            rollback_root=rollback_root,
+            backup_ref=backup_ref,
+        )
+
+    restore_backup.assert_not_called()
+    restore_snapshot.assert_not_called()
+
+
 def test_stop_relaunched_app_kills_the_session_launcher_and_confirms_exit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -218,6 +250,101 @@ def test_restore_install_snapshot_rejects_a_snapshot_without_current_pointer(
 
     with pytest.raises(RuntimeError, match="snapshot is incomplete"):
         updater_install._restore_install_snapshot(tmp_path / "portable", tmp_path / "rollback")
+
+
+def test_restore_install_snapshot_rejects_a_snapshot_without_baluffo_exe(
+    tmp_path: Path,
+) -> None:
+    snapshot_root = tmp_path / "rollback" / "runtime"
+    (snapshot_root / "ship" / "app").mkdir(parents=True)
+    (snapshot_root / "ship" / "app" / "current.txt").write_text("0.1.0\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="Baluffo.exe is missing"):
+        updater_install._restore_install_snapshot(tmp_path / "portable", tmp_path / "rollback")
+
+
+def test_restore_install_snapshot_rejects_an_empty_current_pointer(tmp_path: Path) -> None:
+    snapshot_root = tmp_path / "rollback" / "runtime"
+    (snapshot_root / "ship" / "app").mkdir(parents=True)
+    (snapshot_root / "Baluffo.exe").write_text("previous", encoding="utf-8")
+    (snapshot_root / "ship" / "app" / "current.txt").write_text("\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="current.txt is empty"):
+        updater_install._restore_install_snapshot(tmp_path / "portable", tmp_path / "rollback")
+
+
+def test_sync_extract_to_install_surfaces_a_locked_stale_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_root = tmp_path / "portable"
+    install_root.mkdir()
+    (install_root / "stale.txt").write_text("old", encoding="utf-8")
+    extracted_root = tmp_path / "extracted"
+    extracted_root.mkdir()
+    original_unlink = Path.unlink
+
+    def fail_stale(self: Path, missing_ok: bool = False) -> None:
+        if self.name == "stale.txt":
+            raise OSError("stale file is locked")
+        original_unlink(self, missing_ok=missing_ok)
+
+    with (
+        mock.patch.object(Path, "unlink", fail_stale),
+        pytest.raises(OSError, match="stale file is locked"),
+    ):
+        updater_install._sync_extract_to_install(install_root, extracted_root)
+
+
+def test_run_install_aborts_when_interrupted_recovery_fails(monkeypatch) -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        paths, _install_root, _rollback_root = _rollback_fixture(tmp, monkeypatch)
+        monkeypatch.setattr(
+            updater_install,
+            "_recover_interrupted_install",
+            mock.Mock(side_effect=RuntimeError("Install recovery failed: snapshot is missing")),
+        )
+        copy_snapshot = mock.Mock()
+        monkeypatch.setattr(updater_install, "_copy_install_snapshot", copy_snapshot)
+        rollback_failed_install = mock.Mock()
+        monkeypatch.setattr(updater_install, "_rollback_failed_install", rollback_failed_install)
+
+        with pytest.raises(RuntimeError, match="Install recovery failed"):
+            updater_install.run_install(paths.install_plan_path)
+
+        copy_snapshot.assert_not_called()
+        rollback_failed_install.assert_not_called()
+
+
+def test_run_install_records_a_failed_rollback_relaunch(monkeypatch) -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        paths, _install_root, _rollback_root = _rollback_fixture(tmp, monkeypatch)
+        monkeypatch.setattr(
+            updater_install,
+            "_stop_relaunched_app",
+            lambda plan, **kwargs: {"pid": 4242, "terminated": True, "aliveAfter": False},
+        )
+        monkeypatch.setattr(
+            updater_install,
+            "_restore_install_snapshot",
+            mock.Mock(return_value={"files": 1, "currentVersion": "0.1.0"}),
+        )
+        launches: list[tuple[object, ...]] = []
+
+        def launch(*args: object, **kwargs: object) -> None:
+            launches.append(args)
+            if len(launches) == 2:
+                raise OSError("previous app did not relaunch")
+
+        monkeypatch.setattr(updater_install, "_launch_executable", launch)
+
+        with pytest.raises(RuntimeError, match="startup readiness"):
+            updater_install.run_install(paths.install_plan_path)
+
+        status = update_state.load_status(paths, current_version="0.1.0")
+        assert status["installStage"] == "rolled_back"
+        assert status["rollbackVerified"] is True
+        assert status["rollbackRelaunchError"] == "previous app did not relaunch"
+        assert len(launches) == 2
 
 
 def test_run_install_records_specific_failure_when_relaunch_verification_fails(
