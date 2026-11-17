@@ -1,3 +1,31 @@
 {
-  "allowlist": []
+  "allowlist": [
+    {
+      "id": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "reason": "ReDoS through single-branch repeated extglobs. Dev-only: reached only through knip@6.38.0 deadcode tooling, which is not shipped in the desktop EXE, the container image, or any runtime bundle. No patched release exists: 4.0.7 is the newest published version, the upstream fix (picomatch PR #237) is unreleased, and knip@latest still pins picomatch ^4.0.7, so it cannot be upgraded away yet. Re-review at expiry.",
+      "owner": "@deathuman",
+      "review_by": "2026-12-17"
+    }
+  ],
+  "package_allowlist": [
+    {
+      "package": "fdir",
+      "reason": "Chain effect knip -> fdir -> picomatch: npm reports only the parent package name in `via`, so there is no advisory id to accept. Dev-only deadcode tooling, not shipped in any runtime artifact.",
+      "owner": "@deathuman",
+      "review_by": "2026-12-17"
+    },
+    {
+      "package": "knip",
+      "reason": "Root of the chain: npm reports knip with only child package names in `via`, so there is no advisory id to accept. Dev-only deadcode tooling; downgrading to the fixAvailable knip@3.13.2 would move the deadcode lane back three majors. Re-review at expiry.",
+      "owner": "@deathuman",
+      "review_by": "2026-12-17"
+    },
+    {
+      "package": "tinyglobby",
+      "reason": "Chain effect knip -> tinyglobby -> picomatch: npm reports only the parent package name in `via`, so there is no advisory id to accept. Dev-only deadcode tooling, not shipped in any runtime artifact.",
+      "owner": "@deathuman",
+      "review_by": "2026-12-17"
+    }
+  ]
 }

@@ -7,6 +7,12 @@ above the severity floor fail the gate unless their advisory ids are recorded
 in the expiry-enforced allowlist (``tools/security/npm-audit-allowlist.json``),
 and every run writes a JSON report to ``.tmp/security/npm-audit.json``.
 
+Chain-effect records carry no advisory id at all (``via`` holds only parent
+package names), so those are accepted by package name in the same file's
+``package_allowlist`` array under the same reason/owner/expiry discipline. That
+array is consulted only for records with no advisory id, so it cannot hide a
+named advisory.
+
 The gate fails closed: a missing npm, an unparsable report, or malformed
 advisory data exits 2 rather than passing the lane. Findings exit 1; a clean
 tree exits 0. Wired into CI on PRs and main pushes via ``lint.yml``
@@ -30,7 +36,11 @@ if str(ROOT) not in sys.path:
     # not the repo root; bootstrap it so the pip-lane config reuse imports.
     sys.path.insert(0, str(ROOT))
 
-from scripts.security_audit import SecurityAuditConfigError, load_allowlist  # noqa: E402
+from scripts.security_audit import (  # noqa: E402
+    SecurityAuditConfigError,
+    load_allowlist,
+    load_package_allowlist,
+)
 
 LOCKFILE = ROOT / "package-lock.json"
 ALLOWLIST_PATH = ROOT / "tools" / "security" / "npm-audit-allowlist.json"
@@ -95,8 +105,13 @@ def assess_audit_payload(
     payload: object,
     allowlisted: set[str],
     audit_level: str = DEFAULT_AUDIT_LEVEL,
+    accepted_packages: set[str] | None = None,
 ) -> list[str]:
-    """Return human-readable findings that survive allowlist and severity floor."""
+    """Return human-readable findings that survive allowlist and severity floor.
+
+    ``accepted_packages`` suppresses only records whose ``via`` yields no advisory
+    id (chain effects); a named advisory still has to be accepted by its id.
+    """
     if not isinstance(payload, dict):
         raise SecurityAuditConfigError("npm audit JSON output was not an object.")
     vulnerabilities = payload.get("vulnerabilities")
@@ -104,6 +119,7 @@ def assess_audit_payload(
         raise SecurityAuditConfigError("npm audit JSON output is missing `vulnerabilities`.")
 
     floor_rank = _SEVERITY_ORDER[audit_level]
+    accepted = accepted_packages or set()
     findings: list[str] = []
     for name, record in sorted(vulnerabilities.items()):
         if not isinstance(record, dict):
@@ -113,8 +129,10 @@ def assess_audit_payload(
         if rank is not None and rank < floor_rank:
             continue
         advisory_ids = _advisory_ids(record.get("via"))
-        surviving = [advisory for advisory in advisory_ids if advisory not in allowlisted]
-        if advisory_ids and not surviving:
+        if advisory_ids:
+            if not [advisory for advisory in advisory_ids if advisory not in allowlisted]:
+                continue
+        elif name in accepted:
             continue
         severity_label = severity if severity in _SEVERITY_ORDER else "unknown"
         advisories_label = (
@@ -132,6 +150,7 @@ def run_audit(audit_level: str = DEFAULT_AUDIT_LEVEL) -> int:
         raise SecurityAuditConfigError(f"Missing {LOCKFILE}.")
 
     allowlisted = set(load_allowlist(ALLOWLIST_PATH))
+    accepted_packages = set(load_package_allowlist(ALLOWLIST_PATH))
     npm = npm_executable()
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     command = build_npm_audit_command(npm)
@@ -154,7 +173,7 @@ def run_audit(audit_level: str = DEFAULT_AUDIT_LEVEL) -> int:
         ) from exc
 
     REPORT_PATH.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    findings = assess_audit_payload(payload, allowlisted, audit_level)
+    findings = assess_audit_payload(payload, allowlisted, audit_level, accepted_packages)
     if findings:
         print(
             f"npm dependency security audit FAILED: {len(findings)} finding(s) "
@@ -164,12 +183,15 @@ def run_audit(audit_level: str = DEFAULT_AUDIT_LEVEL) -> int:
             print(f"  - {finding}")
         print(f"Full npm audit JSON report: {REPORT_PATH.relative_to(ROOT).as_posix()}")
         print(
-            "Accept knowingly via tools/security/npm-audit-allowlist.json "
-            "(id/package/reason/owner/review_by)."
+            "Accept knowingly via tools/security/npm-audit-allowlist.json: "
+            "`allowlist` (id/package/reason/owner/review_by) for named advisories, "
+            "`package_allowlist` (package/reason/owner/review_by) for id-less chain records."
         )
         return 1
     print(
-        f"npm dependency security audit passed (floor {audit_level}, allowlisted {len(allowlisted)})."
+        f"npm dependency security audit passed (floor {audit_level}, "
+        f"allowlisted {len(allowlisted)} advisory id(s), "
+        f"{len(accepted_packages)} package acceptance(s))."
     )
     print(f"npm audit JSON report: {REPORT_PATH.relative_to(ROOT).as_posix()}")
     return 0

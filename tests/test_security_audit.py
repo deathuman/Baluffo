@@ -56,6 +56,55 @@ def test_expired_allowlist_entry_fails(tmp_path: Path) -> None:
         raise AssertionError("Expired allowlist entry should fail.")
 
 
+def test_package_allowlist_is_optional(tmp_path: Path) -> None:
+    allowlist = tmp_path / "npm-audit-allowlist.json"
+    _write_allowlist(allowlist, json.dumps({"allowlist": []}))
+
+    assert security_audit.load_package_allowlist(allowlist, today=date(2026, 11, 17)) == []
+
+
+def test_expired_package_allowlist_entry_fails(tmp_path: Path) -> None:
+    allowlist = tmp_path / "npm-audit-allowlist.json"
+    _write_allowlist(
+        allowlist,
+        json.dumps(
+            {
+                "allowlist": [],
+                "package_allowlist": [
+                    {
+                        "package": "fdir",
+                        "reason": "Chain effect of a dev-only advisory.",
+                        "owner": "@deathuman",
+                        "review_by": "2026-04-24",
+                    }
+                ],
+            }
+        ),
+    )
+
+    try:
+        security_audit.load_package_allowlist(allowlist, today=date(2026, 4, 25))
+    except security_audit.SecurityAuditConfigError as exc:
+        assert "expired on 2026-04-24" in str(exc)
+    else:
+        raise AssertionError("Expired package allowlist entry should fail.")
+
+
+def test_package_allowlist_entry_needs_reason_owner_and_review_by(tmp_path: Path) -> None:
+    allowlist = tmp_path / "npm-audit-allowlist.json"
+    _write_allowlist(
+        allowlist,
+        json.dumps({"allowlist": [], "package_allowlist": [{"package": "fdir"}]}),
+    )
+
+    try:
+        security_audit.load_package_allowlist(allowlist, today=date(2026, 11, 17))
+    except security_audit.SecurityAuditConfigError as exc:
+        assert "reason" in str(exc)
+    else:
+        raise AssertionError("Malformed package allowlist entry should fail.")
+
+
 def test_valid_allowlist_entries_become_ignore_args(tmp_path: Path, monkeypatch) -> None:
     requirements = tmp_path / "requirements-lock.txt"
     report = tmp_path / ".tmp" / "security" / "pip-audit.json"

@@ -40,43 +40,56 @@ CONTAINER_PLATFORMS = (
 )
 
 REQUIRED_ALLOWLIST_FIELDS = ("id", "package", "reason", "owner", "review_by")
+# npm audit reports some findings only as chain effects: their `via` holds the
+# parent package names and no advisory id at all, so they can never be accepted
+# by id. Those live in a separate array, keyed by package name, and the npm lane
+# consults it only for records that carry no advisory id -- accepting a package
+# here can never hide a named advisory.
+PACKAGE_ALLOWLIST_FIELDS = ("package", "reason", "owner", "review_by")
+PACKAGE_ALLOWLIST_KEY = "package_allowlist"
 
 
 class SecurityAuditConfigError(ValueError):
     pass
 
 
-def _parse_review_by(raw_value: object, entry_id: str) -> date:
+def _parse_review_by(raw_value: object, entry_id: str, label: str = "Allowlist entry") -> date:
     if not isinstance(raw_value, str) or not raw_value.strip():
-        raise SecurityAuditConfigError(f"Allowlist entry {entry_id!r} needs review_by date.")
+        raise SecurityAuditConfigError(f"{label} {entry_id!r} needs review_by date.")
     try:
         return date.fromisoformat(raw_value)
     except ValueError as exc:
         raise SecurityAuditConfigError(
-            f"Allowlist entry {entry_id!r} has invalid review_by date {raw_value!r}."
+            f"{label} {entry_id!r} has invalid review_by date {raw_value!r}."
         ) from exc
 
 
+def _entry_text(raw_entry: dict[str, object], field: str, index: int, label: str) -> str:
+    value = raw_entry.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise SecurityAuditConfigError(f"{label} #{index} needs non-empty {field!r}.")
+    return value.strip()
+
+
 def _validate_allowlist_entry(raw_entry: object, index: int, today: date) -> str:
+    return _validate_entry(raw_entry, index, today, REQUIRED_ALLOWLIST_FIELDS, "Allowlist entry")
+
+
+def _validate_entry(
+    raw_entry: object, index: int, today: date, fields: tuple[str, ...], label: str
+) -> str:
     if not isinstance(raw_entry, dict):
-        raise SecurityAuditConfigError(f"Allowlist entry #{index} must be an object.")
+        raise SecurityAuditConfigError(f"{label} #{index} must be an object.")
 
-    for field in REQUIRED_ALLOWLIST_FIELDS:
-        value = raw_entry.get(field)
-        if not isinstance(value, str) or not value.strip():
-            raise SecurityAuditConfigError(f"Allowlist entry #{index} needs non-empty {field!r}.")
-
-    entry_id = raw_entry["id"].strip()
-    review_by = _parse_review_by(raw_entry["review_by"], entry_id)
+    values = {field: _entry_text(raw_entry, field, index, label) for field in fields}
+    entry_id = values[fields[0]]
+    review_by = _parse_review_by(values["review_by"], entry_id, label)
     if review_by < today:
-        raise SecurityAuditConfigError(
-            f"Allowlist entry {entry_id!r} expired on {review_by.isoformat()}."
-        )
+        raise SecurityAuditConfigError(f"{label} {entry_id!r} expired on {review_by.isoformat()}.")
     return entry_id
 
 
-def load_allowlist(path: Path = ALLOWLIST_PATH, today: date | None = None) -> list[str]:
-    today = today or datetime.now(UTC).date()
+def _load_entries(path: Path, key: str, *, required: bool) -> list[object]:
     if not path.exists():
         return []
 
@@ -88,22 +101,51 @@ def load_allowlist(path: Path = ALLOWLIST_PATH, today: date | None = None) -> li
     if not isinstance(payload, dict):
         raise SecurityAuditConfigError(f"{path} must contain a JSON object.")
 
-    raw_entries = payload.get("allowlist")
+    raw_entries = payload.get(key)
+    if raw_entries is None and not required:
+        return []
     if not isinstance(raw_entries, list):
-        raise SecurityAuditConfigError(f"{path} must contain an allowlist array.")
+        raise SecurityAuditConfigError(f"{path} must contain a {key} array.")
+    return raw_entries
+
+
+def _reject_duplicates(entries: list[str], label: str) -> None:
+    duplicates = sorted({entry for entry in entries if entries.count(entry) > 1})
+    if duplicates:
+        raise SecurityAuditConfigError(f"Duplicate {label}: {', '.join(duplicates)}.")
+
+
+def load_allowlist(path: Path = ALLOWLIST_PATH, today: date | None = None) -> list[str]:
+    today = today or datetime.now(UTC).date()
+    raw_entries = _load_entries(path, "allowlist", required=True)
 
     advisory_ids = [
         _validate_allowlist_entry(raw_entry, index, today)
         for index, raw_entry in enumerate(raw_entries, start=1)
     ]
-    duplicates = sorted(
-        {advisory_id for advisory_id in advisory_ids if advisory_ids.count(advisory_id) > 1}
-    )
-    if duplicates:
-        raise SecurityAuditConfigError(
-            f"Duplicate pip-audit allowlist advisory ids: {', '.join(duplicates)}."
-        )
+    _reject_duplicates(advisory_ids, "pip-audit allowlist advisory ids")
     return advisory_ids
+
+
+def load_package_allowlist(path: Path = ALLOWLIST_PATH, today: date | None = None) -> list[str]:
+    """Package names accepted for id-less chain findings (npm audit).
+
+    A dependency pulled in only by an advisory-carrying package is reported with
+    `via: ["<parent>"]` and no advisory id, so the documented id acceptance
+    cannot express it. These entries carry the same reason/owner/expiry fields;
+    the npm lane applies them only to records whose `via` yields no advisory id.
+    """
+    today = today or datetime.now(UTC).date()
+    raw_entries = _load_entries(path, PACKAGE_ALLOWLIST_KEY, required=False)
+
+    packages = [
+        _validate_entry(
+            raw_entry, index, today, PACKAGE_ALLOWLIST_FIELDS, "Package allowlist entry"
+        )
+        for index, raw_entry in enumerate(raw_entries, start=1)
+    ]
+    _reject_duplicates(packages, "package allowlist entries")
+    return packages
 
 
 def _canonical_name(name: str) -> str:

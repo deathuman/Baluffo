@@ -71,6 +71,20 @@ def test_transitive_effect_without_advisory_id_still_fails() -> None:
     ]
 
 
+def test_package_acceptance_suppresses_only_id_less_chain_records() -> None:
+    """A package acceptance covers chain effects, never a named advisory."""
+    payload = {
+        "vulnerabilities": {
+            "fdir": {"severity": "high", "via": ["picomatch"]},
+            "picomatch": {"severity": "high", "via": [{"id": "GHSA-fc5q-39xc-vjpf"}]},
+        }
+    }
+    findings = js_security_audit.assess_audit_payload(
+        payload, set(), accepted_packages={"fdir", "picomatch"}
+    )
+    assert findings == ["picomatch [high] advisories: GHSA-fc5q-39xc-vjpf fixAvailable: no"]
+
+
 def test_fix_available_rendering_variants() -> None:
     payload = {
         "vulnerabilities": {
@@ -174,6 +188,40 @@ def test_run_audit_clean_tree_exits_zero(tmp_path: Path, monkeypatch) -> None:
     assert report.is_file()
 
 
+def test_run_audit_reads_package_acceptances(tmp_path: Path, monkeypatch) -> None:
+    report = tmp_path / ".tmp" / "security" / "npm-audit.json"
+    allowlist = _allowlist(
+        tmp_path,
+        json.dumps(
+            {
+                "allowlist": [],
+                "package_allowlist": [
+                    {
+                        "package": "fdir",
+                        "reason": "Chain effect of a dev-only advisory.",
+                        "owner": "@deathuman",
+                        "review_by": "2099-01-01",
+                    }
+                ],
+            }
+        ),
+    )
+    monkeypatch.setattr(js_security_audit, "LOCKFILE", tmp_path / "package-lock.json")
+    monkeypatch.setattr(js_security_audit, "REPORT_PATH", report)
+    monkeypatch.setattr(js_security_audit, "ALLOWLIST_PATH", allowlist)
+    monkeypatch.setattr(js_security_audit, "npm_executable", lambda: "npm-fake")
+    (tmp_path / "package-lock.json").write_text("{}", encoding="utf-8")
+
+    stdout = _payload({"fdir": {"severity": "high", "via": ["picomatch"]}})
+
+    def fake_run(command, cwd, capture_output, check, text, encoding):  # noqa: ANN001
+        return subprocess.CompletedProcess(command, 1, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(js_security_audit.subprocess, "run", fake_run)
+
+    assert js_security_audit.run_audit() == 0
+
+
 def test_run_audit_non_json_output_fails_closed(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(js_security_audit, "LOCKFILE", tmp_path / "package-lock.json")
     monkeypatch.setattr(js_security_audit, "ALLOWLIST_PATH", _allowlist(tmp_path))
@@ -201,7 +249,16 @@ def test_committed_security_inputs_close_the_js_lane(repo_root: Path) -> None:
     lint_workflow = (repo_root / ".github" / "workflows" / "lint.yml").read_text(encoding="utf-8")
 
     assert package["scripts"]["security:js"] == "python scripts/js_security_audit.py"
-    assert js_security_audit.load_allowlist(js_security_audit.ALLOWLIST_PATH) == []
+    # The gate has to stay closed: the only committed acceptance is the known
+    # dev-only knip chain, and both loaders fail on expiry (30-day review date).
+    assert js_security_audit.load_allowlist(js_security_audit.ALLOWLIST_PATH) == [
+        "GHSA-fc5q-39xc-vjpf"
+    ]
+    assert js_security_audit.load_package_allowlist(js_security_audit.ALLOWLIST_PATH) == [
+        "fdir",
+        "knip",
+        "tinyglobby",
+    ]
     assert 'package-ecosystem: "npm"' in dependabot
     assert "npm run security:js" in lint_workflow
     # npm audit exits nonzero on findings; the gate must read the JSON payload
