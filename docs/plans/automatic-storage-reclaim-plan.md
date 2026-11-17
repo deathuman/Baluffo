@@ -41,11 +41,11 @@
   claims, starts on the measured gate when the heuristic is short, and reports the
   relief and both gates. Step 5 stays the panel's **Delete old database** click.
   Presentation (§6) is partly implemented: the inline desktop panel and the container modal
-  (Stop, Hide, status text, exits, `aria-live`) are shipped in
+  (Stop, Hide, status text, exits, `aria-live`) ship in
   `frontend/admin/app/storage-reclaim-panel.js` and
   `frontend/admin/render/storage-reclaim-dialog.js`, a `role="dialog"` element toggled
-  with `hidden` rather than a native `<dialog>`; its focus and ESC/backdrop mechanics and
-  the slow-copy ETA are not.
+  with `hidden` rather than a native `<dialog>`; its focus, inert background and the
+  slow-copy ETA are not.
 
 ## Scope
 
@@ -236,7 +236,7 @@ run would block every fetch start until the bridge restarted. Reclaim stores
 Task-start replies carry `releasedBy: terminal | watchdog | ttl | shutdown`, so a normal
 release is distinguishable from a rescue.
 
-**Restart policy — decided, not open.** A pending delete does **not** resume after a
+**Restart policy.** A pending delete does **not** resume after a
 bridge restart. The unlink is the only irreversible step, and a journal is evidence,
 not intent. Nothing is lost: the journal reads `complete` with the copy on disk, so
 the storage panel renders **Delete old database** with the reviewed byte count, and
@@ -356,22 +356,21 @@ immediately; the long work stays on the job thread.
 ## 6. Presentation: modal in the container, inline on desktop
 
 **The blocking dialog is container-only.** A container reclaim copies 0.5-1.5 GB on a
-slow disk, so a user must not start another mutation mid-copy: the dialog blocks the
-app and the bridge hold blocks other tabs.
+slow disk, so a second mutation mid-copy must not start: the dialog blocks the app and the bridge
+hold blocks other tabs.
 Desktop is the opposite — short copy, bridge exits with the app — so the run renders
 inline from the same payload (`scope: "inline"`), cancelled by **Stop**.
 
 **Shipped versus planned.** The modal ships as a `role="dialog"` element toggled with
-`hidden` behind a fixed scrim, with Stop, Hide, statuses and exits; `showModal()`, an
-inert background, focus return and ESC/backdrop blocking, the ETA and per-table progress
-are planned (experience plan §A).
+`hidden` behind a fixed scrim, with Stop, Hide, statuses and exits, and ESC, scrim clicks
+and a dialog's `cancel` are refused while a run is live; `showModal()`, an inert
+background, focus return, the ETA and per-table progress are planned (experience plan §A).
 
 Three decisions follow from backend ownership:
 
 - **Closing the tab is safe.** The run is a bridge thread journaled before it is
-  reported, installed by one atomic rename under the write and read locks, so abandoning
-  the page can neither fail, cancel, nor half-finish it. Only **Stop** cancels, and the
-  dialog says so.
+  reported and installed by one atomic rename, so abandoning the page can neither fail,
+  cancel, nor half-finish it. Only **Stop** cancels.
 - **The endpoint settles the outcome, not the modal.** A restart leaves the job reporting
   `idle`, so the modal's last sample cannot tell a landed swap from an interrupted one.
 - **No invented ETA.** Numbers only from samples it trusts; a stalled disk reads as
@@ -381,7 +380,7 @@ Three decisions follow from backend ownership:
   Refresh re-reads with `?refresh=1`; **Rehearse**, **Run** and **Stop** call the same
   routes.
 
-Element, focus, recovery, slow-copy and bridge-disappears mechanics are in
+Focus, recovery and slow-copy mechanics are in
 [`automatic-storage-reclaim-experience-plan.md`](automatic-storage-reclaim-experience-plan.md).
 
 ## 7. Files

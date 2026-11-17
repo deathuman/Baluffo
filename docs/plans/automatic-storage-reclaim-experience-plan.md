@@ -25,9 +25,10 @@ In a container, the modal is one native `<dialog>` in `admin.html`, opened with
   cannot reach it.
 - `state.adminBusyState.storageReclaim` keeps existing `shouldDefer()` guards and
   mutating polls off; the bridge hold covers other tabs and the Jobs page.
-- **Stop** renders only in the cancellable phases listed in the parent plan's §3. During `installing`,
-  `verifying` and `deleting-backup` the dialog's `cancel` event (ESC) and backdrop
-  clicks are `preventDefault()`ed and the body states that it cannot be interrupted.
+- **Stop** renders only in the cancellable phases listed in the parent plan's §3. ESC, a
+  scrim click and a native dialog's `cancel` are `preventDefault()`ed while the run is
+  live, because the modal is the only view of it; **Hide** and **Stop** are the exits. The
+  per-phase "cannot be interrupted" body text is still planned.
 - `aria-live="polite"` phase line, focus moves to the primary action on open and
   returns to the storage panel on close.
 - Recovery: `GET /ops/storage-reclaim` on Admin init reopens the modal for a run

@@ -316,12 +316,47 @@ export function createStorageReclaimController({
     renderModal();
   }
 
+  /**
+   * The modal is the container's only view of a live run, so ESC and a scrim click
+   * are not ways out of it: hiding it there would look like a cancel that never
+   * happened. **Hide** and **Stop** stay the exits.
+   */
+  function liveModalVisible() {
+    const modal = el("adminStorageReclaimModalEl");
+    return Boolean(modal && !modal.hidden && reclaimRunning(reclaim));
+  }
+
+  function blockEscapeWhileLive(event) {
+    if (event?.key !== "Escape") return;
+    if (!liveModalVisible()) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+  }
+
+  /** Only a click whose target is the scrim itself counts as a backdrop click. */
+  function blockBackdropWhileLive(event) {
+    if (!liveModalVisible()) return;
+    if (event?.target !== el("adminStorageReclaimModalEl")) return;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+  }
+
+  /** A native `<dialog>` reports ESC as `cancel`; the same rule holds if this becomes one. */
+  function blockCancelWhileLive(event) {
+    if (!liveModalVisible()) return;
+    event.preventDefault?.();
+  }
+
   function init() {
     el("adminStorageReclaimRehearseBtnEl")?.addEventListener?.("click", () => start("rehearse"));
     el("adminStorageReclaimRunBtnEl")?.addEventListener?.("click", () => start("run"));
     el("adminStorageReclaimStopBtnEl")?.addEventListener?.("click", () => stop());
     el("adminStorageReclaimModalStopBtnEl")?.addEventListener?.("click", () => stop());
     el("adminStorageReclaimModalHideBtnEl")?.addEventListener?.("click", () => dismissModal());
+    globalThis.document?.addEventListener?.("keydown", blockEscapeWhileLive);
+    const modal = el("adminStorageReclaimModalEl");
+    modal?.addEventListener?.("click", blockBackdropWhileLive);
+    modal?.addEventListener?.("cancel", blockCancelWhileLive);
   }
 
   return {
