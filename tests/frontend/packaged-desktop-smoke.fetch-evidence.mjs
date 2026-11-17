@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { request as playwrightRequest } from "@playwright/test";
-import { buildWriteReport, BASE_URL, BRIDGE_BASE } from "./helpers/packaged-smoke-shared.mjs";
+import {
+  buildWriteReport,
+  BASE_URL,
+  BRIDGE_BASE,
+} from "./helpers/packaged-smoke-shared.mjs";
 
 const REPORT_PATH =
   process.env.PACKAGED_SMOKE_REPORT_PATH ||
@@ -12,6 +16,17 @@ const OUTPUT_DIR =
   process.env.PACKAGED_SMOKE_OUTPUT_DIR ||
   process.env.PACKAGED_SMOKE_ARTIFACTS_DIR ||
   path.resolve(".tmp/packaged-desktop-smoke/fetch-evidence-output");
+
+// Read the newest migration from the tree instead of pinning a literal: the
+// packaged app must have applied every migration, and a pinned version goes
+// stale the moment a migration is added.
+const LATEST_MIGRATION_VERSION = (
+  await fs.readdir(path.resolve("src/storage/migrations"))
+)
+  .filter((name) => name.endsWith(".sql"))
+  .map((name) => name.split("_", 1)[0])
+  .sort()
+  .at(-1);
 
 async function writeJson(name, payload) {
   await fs.mkdir(OUTPUT_DIR, { recursive: true });
@@ -29,36 +44,47 @@ async function fetchBridgeJson(apiRequest, relativePath, label) {
 }
 
 async function postBridgeJson(apiRequest, relativePath, data, label) {
-  const response = await apiRequest.post(`${BRIDGE_BASE}${relativePath}`, { data });
+  const response = await apiRequest.post(`${BRIDGE_BASE}${relativePath}`, {
+    data,
+  });
   assert.equal(response.ok(), true, `${label} request should succeed`);
   return response.json();
 }
 
 function diagnosticsFor(storageHealth, surface) {
   return Array.isArray(storageHealth?.storage?.diagnostics)
-    ? storageHealth.storage.diagnostics.filter(row => row?.surface === surface)
+    ? storageHealth.storage.diagnostics.filter(
+        (row) => row?.surface === surface,
+      )
     : [];
 }
 
 function hasPassingDiagnostic(storageHealth, surface, codes) {
   const expected = new Set(codes);
   return diagnosticsFor(storageHealth, surface).some(
-    row => row?.ok === true && expected.has(String(row?.code || ""))
+    (row) => row?.ok === true && expected.has(String(row?.code || "")),
   );
 }
 
 function registryJournalMetricsAreBounded(storageMetrics) {
-  const registryMetrics = storageMetrics?.registryJournals || storageMetrics?.jsonJournals || {};
+  const registryMetrics =
+    storageMetrics?.registryJournals || storageMetrics?.jsonJournals || {};
   const rows = Array.isArray(registryMetrics)
     ? registryMetrics
-    : Object.values(registryMetrics).filter(row => row && typeof row === "object");
+    : Object.values(registryMetrics).filter(
+        (row) => row && typeof row === "object",
+      );
   if (!rows.length) {
     return true;
   }
-  return rows.every(row => {
+  return rows.every((row) => {
     const bytes = Number(row?.bytes || row?.sizeBytes || 0);
-    const compactMax = Number(row?.compactMaxBytes || row?.maxBytes || 1_048_576);
-    return Number.isFinite(bytes) && bytes <= Math.max(compactMax * 4, 4_194_304);
+    const compactMax = Number(
+      row?.compactMaxBytes || row?.maxBytes || 1_048_576,
+    );
+    return (
+      Number.isFinite(bytes) && bytes <= Math.max(compactMax * 4, 4_194_304)
+    );
   });
 }
 
@@ -74,7 +100,7 @@ async function main() {
       slug: "packaged-m6-fetch-evidence",
       status: "passed",
       durationMs: 0,
-      error: ""
+      error: "",
     };
     scenarios.push(fetchEvidence);
 
@@ -84,42 +110,58 @@ async function main() {
         apiRequest,
         "/tasks/run-fetcher",
         { preset: "default", quiet: true, socialEnabled: false },
-        "packaged fetch evidence run"
+        "packaged fetch evidence run",
       );
-      assert.equal(Boolean(startPayload?.started), true, "fetch evidence run should start");
+      assert.equal(
+        Boolean(startPayload?.started),
+        true,
+        "fetch evidence run should start",
+      );
       const runId = String(startPayload?.runId || "").trim();
-      assert.match(runId, /^fetch_[a-f0-9]{10}$/i, "fetch evidence run id should look valid");
+      assert.match(
+        runId,
+        /^fetch_[a-f0-9]{10}$/i,
+        "fetch evidence run id should look valid",
+      );
       const deterministic = startPayload?.smokeMode === "source-runs";
 
       const fetchReport = await fetchBridgeJson(
         apiRequest,
         `/ops/fetch-report?runId=${encodeURIComponent(runId)}`,
-        "fetch report"
+        "fetch report",
       );
       const registrySummary = await fetchBridgeJson(
         apiRequest,
         "/registry/summary",
-        "registry summary"
+        "registry summary",
       );
       // The deterministic fetch stub does not load the source registry, while a
       // real fetch does. Read the full conflicts view (which calls load_state) so
       // the fresh runtime seeds SQLite and records the source-registry diagnostic
       // this lane checks; the summary paths intentionally never seed.
-      await fetchBridgeJson(apiRequest, "/registry/conflicts", "registry conflicts");
+      await fetchBridgeJson(
+        apiRequest,
+        "/registry/conflicts",
+        "registry conflicts",
+      );
       const storageHealth = await fetchBridgeJson(
         apiRequest,
         "/ops/storage-health",
-        "storage health"
+        "storage health",
       );
       const storageMetrics = await fetchBridgeJson(
         apiRequest,
         "/ops/storage-metrics",
-        "storage metrics"
+        "storage metrics",
       );
       const feedResponse = await apiRequest.get(
-        `${BASE_URL}/data/jobs-unified-light.json?m6=${encodeURIComponent(runId)}`
+        `${BASE_URL}/data/jobs-unified-light.json?m6=${encodeURIComponent(runId)}`,
       );
-      assert.equal(feedResponse.ok(), true, "static jobs feed should be served");
+      assert.equal(
+        feedResponse.ok(),
+        true,
+        "static jobs feed should be served",
+      );
       const staticJobsFeed = await feedResponse.json();
 
       await writeJson("storage-health.post-fetch.json", storageHealth);
@@ -128,38 +170,59 @@ async function main() {
       await writeJson("registry-summary.post-fetch.json", registrySummary);
       await writeJson("jobs-unified-light.sample.json", staticJobsFeed);
 
-      assert.equal(storageHealth?.storage?.migrationVersion, "008");
-      assert.equal(storageHealth?.storage?.authorityModes?.sourceRuns, "sqlite");
+      assert.equal(
+        storageHealth?.storage?.migrationVersion,
+        LATEST_MIGRATION_VERSION,
+      );
+      assert.equal(
+        storageHealth?.storage?.authorityModes?.sourceRuns,
+        "sqlite",
+      );
       assert.equal(storageHealth?.storage?.authorityModes?.jobsFeed, "sqlite");
-      assert.equal(storageHealth?.storage?.authorityModes?.sourceRegistry, "sqlite");
-      assert.equal(fetchReport?.runId, runId, "fetch report should match fetch evidence run");
+      assert.equal(
+        storageHealth?.storage?.authorityModes?.sourceRegistry,
+        "sqlite",
+      );
+      assert.equal(
+        fetchReport?.runId,
+        runId,
+        "fetch report should match fetch evidence run",
+      );
       // The full /ops/fetch-report view does not expose a `source` field; SQLite
       // authority is already pinned via storageHealth.authorityModes.sourceRuns above.
       assert.ok(registryJournalMetricsAreBounded(storageMetrics));
       assert.ok(
         hasPassingDiagnostic(storageHealth, "sourceRuns", [
           "source_runs_projection_match",
-          "source_runs_read_projection_match"
+          "source_runs_read_projection_match",
         ]),
-        "storage diagnostics should include passing source-runs diagnostics"
+        "storage diagnostics should include passing source-runs diagnostics",
       );
       assert.ok(
-        hasPassingDiagnostic(storageHealth, "jobsFeed", ["jobs_feed_projection_match"]),
-        "storage diagnostics should include passing jobs-feed diagnostics"
+        hasPassingDiagnostic(storageHealth, "jobsFeed", [
+          "jobs_feed_projection_match",
+        ]),
+        "storage diagnostics should include passing jobs-feed diagnostics",
       );
       assert.ok(
         hasPassingDiagnostic(storageHealth, "sourceRegistry", [
           "source_registry_projection_match",
-          "source_registry_seeded_from_json"
+          "source_registry_seeded_from_json",
         ]),
-        "storage diagnostics should include passing source-registry diagnostics"
+        "storage diagnostics should include passing source-registry diagnostics",
       );
 
       if (deterministic) {
         assert.equal(startPayload?.smokeMode, "source-runs");
         assert.equal(fetchReport?.sources?.[0]?.name, "Packaged Smoke Source");
-        assert.equal(fetchReport?.sources?.[0]?.details?.[0]?.name, "Packaged Smoke Job");
-        assert.equal(fetchReport?.sources?.[0]?.details?.[0]?.name, "Packaged Smoke Job");
+        assert.equal(
+          fetchReport?.sources?.[0]?.details?.[0]?.name,
+          "Packaged Smoke Job",
+        );
+        assert.equal(
+          fetchReport?.sources?.[0]?.details?.[0]?.name,
+          "Packaged Smoke Job",
+        );
         assert.equal(staticJobsFeed?.[0]?.title, "Packaged Smoke Job");
         assert.equal(staticJobsFeed?.[0]?.company, "Packaged Smoke Studio");
       }
@@ -173,24 +236,32 @@ async function main() {
         diagnostics: {
           sourceRuns: diagnosticsFor(storageHealth, "sourceRuns"),
           jobsFeed: diagnosticsFor(storageHealth, "jobsFeed"),
-          sourceRegistry: diagnosticsFor(storageHealth, "sourceRegistry")
+          sourceRegistry: diagnosticsFor(storageHealth, "sourceRegistry"),
         },
-        compactFetchReportHydrated: Boolean(fetchReport?.sources?.[0]?.details?.length),
+        compactFetchReportHydrated: Boolean(
+          fetchReport?.sources?.[0]?.details?.length,
+        ),
         sourceDetailsQuerySource: fetchReport?.source || "",
-        staticJobsFeedCount: Array.isArray(staticJobsFeed) ? staticJobsFeed.length : 0,
+        staticJobsFeedCount: Array.isArray(staticJobsFeed)
+          ? staticJobsFeed.length
+          : 0,
         registrySummary: registrySummary?.summary || registrySummary || {},
-        boundedRegistryJournalMetrics: registryJournalMetricsAreBounded(storageMetrics)
+        boundedRegistryJournalMetrics:
+          registryJournalMetricsAreBounded(storageMetrics),
       };
       await writeJson("m6-fetch-evidence-summary.json", evidenceSummary);
     } catch (error) {
       fetchEvidence.status = "failed";
-      fetchEvidence.error = error instanceof Error ? error.message : String(error);
+      fetchEvidence.error =
+        error instanceof Error ? error.message : String(error);
       throw error;
     } finally {
       fetchEvidence.durationMs = Date.now() - startedAt;
     }
   } catch (error) {
-    errors.push(error instanceof Error ? error.stack || error.message : String(error));
+    errors.push(
+      error instanceof Error ? error.stack || error.message : String(error),
+    );
   } finally {
     if (apiRequest) {
       await apiRequest.dispose();
@@ -199,7 +270,7 @@ async function main() {
       ok: errors.length === 0,
       scenarios,
       errors,
-      outputDir: OUTPUT_DIR
+      outputDir: OUTPUT_DIR,
     });
   }
   if (errors.length) {
