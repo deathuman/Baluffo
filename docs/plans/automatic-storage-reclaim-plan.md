@@ -4,8 +4,6 @@
 > - **Trigger:** a runtime database whose file is mostly feed history the retention
 >   policy would already delete — the case where the bounded prune needs weeks
 >   (measured ~7.3k rows/min) and only a rebuild returns the space
-> - **Verified against:** `560ed78f` (tree inspection of the existing rebuild,
->   retention, and storage-health surface; no reclaim code exists yet)
 > - **Status:** In progress. The four preview fields (§1) are implemented in
   `cleanup_preview` (pinned by `tests/storage/test_job_runtime_preview.py`), the
   verdict leaf is `src/storage/reclaim_policy.py` (pinned by
@@ -42,7 +40,12 @@
   `src/bridge/storage_reclaim_space.py`: a copy removes a staging file no live run
   claims, starts on the measured gate when the heuristic is short, and reports the
   relief and both gates. Step 5 stays the panel's **Delete old database** click.
-  Presentation (§6) is unimplemented.
+  Presentation (§6) is partly implemented: the inline desktop panel and the container modal
+  (Stop, Hide, status text, exits, `aria-live`) are shipped in
+  `frontend/admin/app/storage-reclaim-panel.js` and
+  `frontend/admin/render/storage-reclaim-dialog.js`, a `role="dialog"` element toggled
+  with `hidden` rather than a native `<dialog>`; its focus and ESC/backdrop mechanics and
+  the slow-copy ETA are not.
 
 ## Scope
 
@@ -83,16 +86,16 @@ generation with no known row count contributes only its sampled bytes, so the
 structural error always runs low. The one place it is an estimate rather than a strict
 bound is a generation whose count is known, projected from its sample mean — a sample
 unrepresentative of that generation can read high, which is why the rehearsal in §9
-prints the numbers before auto mode is switched on. `freelistBytes`
-comes from the exact freelist page count, and `databaseBytes` is the file size.
+prints the numbers before auto mode is switched on. `freelistBytes` is the
+exact freelist page count and `databaseBytes` the file size.
 
 `cleanup_preview` is capped at `DEFAULT_GENERATION_DELETE_CAP = 4`, so its candidate
 list cannot describe a weeks-old backlog. It therefore gains **four** fields. The
-current method samples only the capped candidates, not the current generation or the
-uncapped history, so the first two are new bounded samples rather than free fields:
+current method samples only the capped candidates, so the first two are new bounded
+samples rather than free fields:
 
 - `currentGenerationEstimatedBytes` — bounded payload sample of the generation being
-  kept (also the ETA target, not a subtraction term);
+  kept (also the ETA target);
 - `historicalGenerationEstimatedBytes` — bounded payload sample across the
   generations outside the keep window (every non-current generation at the
   default `keep_generations=1`, so a keep-two preview cannot count a generation
@@ -368,9 +371,8 @@ Three decisions follow from the run being backend-owned:
   guarantee stops starts.
 - **The endpoint settles the outcome, not the modal.** A restart leaves the job reporting
   `idle`, so the modal's last sample cannot tell a landed swap from an interrupted one.
-- **No invented ETA.** The dialog shows staged bytes and a table count, and minutes only
-  from samples it trusts; a stalled disk reads as slow, not "2 minutes remaining"
-  forever.
+- **No invented ETA.** Numbers only from samples it trusts; a stalled disk reads as
+  slow, not "2 minutes remaining" forever.
 - **Reads follow a live run; nothing else polls.** The panel reads the route on a 3 s
   timer while a run is live, one read at a time, stopping after five failed reads;
   Refresh re-reads with `?refresh=1`; **Rehearse**, **Run** and **Stop** call the same
@@ -441,11 +443,10 @@ request would exceed the Admin request budget on a multi-GB copy, so this is a j
 Gates match a real run: the §3 pre-flight, no active task, retention stopped.
 
 The hold is refreshed by a pulse every `RECLAIM_HOLD_PULSE_S` for the whole
-blocking stretch (the retention-stop wait and the copy). The copy reports progress
-per batch, but validation is a few monolithic SQLite calls with no progress of
-its own, and a pass longer than the stall timeout would otherwise release the hold
-mid-run. The pulse only beats the hold the run already took: no phase, no renewal
-of the hard maximum.
+blocking stretch. Validation is a few monolithic SQLite calls with no progress of its
+own, and a pass longer than the stall timeout would otherwise release the hold
+mid-run. The pulse only beats the hold the run already took: no phase, no renewal of
+the hard maximum.
 
 That is what makes auto mode honest: a host arms only from a rehearsal whose report
 shows staging size, reclaimed bytes and duration, and the decision is journaled with

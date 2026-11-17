@@ -4,8 +4,7 @@
 >   [`automatic-storage-reclaim-plan.md`](automatic-storage-reclaim-plan.md)
 > - **Trigger:** implementing or reviewing the reclaim dialog, the inline desktop panel,
 >   or the reclaim test suite, without re-reading the whole parent plan
-> - **Verified against:** `928c70c9` (the follow-up reads checked in source; the ETA and
->   the remaining mechanics are still planned against `560ed78f`)
+> - **Verified against:** `928c70c9` (the follow-up reads checked in source)
 > - **Status:** Partly shipped — §A's follow-up reads (3 s cadence, five-failure stop)
 >   are implemented; the ETA, the slow-copy numbers and the rest of this slice are not.
 
