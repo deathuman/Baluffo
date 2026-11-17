@@ -359,16 +359,19 @@ immediately; the long work stays on the job thread.
 slow disk, so a user must not start another mutation mid-copy: the dialog blocks the
 app and the bridge hold blocks other tabs.
 Desktop is the opposite — short copy, bridge exits with the app — so the run renders
-inline from the same payload (`scope: "inline"`), cancelled by **Stop**. `scope` is the
-only difference.
+inline from the same payload (`scope: "inline"`), cancelled by **Stop**.
 
-Three decisions follow from the run being backend-owned:
+**Shipped versus planned.** The modal ships as a `role="dialog"` element toggled with
+`hidden` behind a fixed scrim, with Stop, Hide, statuses and exits; `showModal()`, an
+inert background, focus return and ESC/backdrop blocking, the ETA and per-table progress
+are planned (experience plan §A).
 
-- **Closing the tab is safe.** The run is a bridge thread
-  keyed by data directory, journaled before it is reported, and installed by one atomic
-  rename under the write and read locks, so abandoning the page can neither fail, cancel,
-  nor half-finish it. Only **Stop** cancels, and the dialog says so because an unbelieved
-  guarantee stops starts.
+Three decisions follow from backend ownership:
+
+- **Closing the tab is safe.** The run is a bridge thread journaled before it is
+  reported, installed by one atomic rename under the write and read locks, so abandoning
+  the page can neither fail, cancel, nor half-finish it. Only **Stop** cancels, and the
+  dialog says so.
 - **The endpoint settles the outcome, not the modal.** A restart leaves the job reporting
   `idle`, so the modal's last sample cannot tell a landed swap from an interrupted one.
 - **No invented ETA.** Numbers only from samples it trusts; a stalled disk reads as
