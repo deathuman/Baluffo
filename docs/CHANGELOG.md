@@ -48,6 +48,16 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.064] - 2026-11-17
+
+### Fixed
+
+- Release builds type-check against the Playwright version the shipped lockfile pins. The desktop and Linux packages are built again from a release whose gates pass; nothing else in this release changes behaviour from 0.3.063.
+
+### Notes
+
+- The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility are unchanged. Existing feeds, saved jobs, notes, and compatibility exports are preserved.
+
 ## [0.3.063] - 2026-11-15
 
 > This is a desktop rollup: it includes the guarded delete that shipped to the container

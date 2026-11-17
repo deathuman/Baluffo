@@ -17,6 +17,7 @@ No value here changes browser policy. Every read is best-effort and returns an
 
 from __future__ import annotations
 
+import importlib
 import os
 import tempfile
 import threading
@@ -182,8 +183,10 @@ def capture_browser_stderr_for_driver(sink: BrowserStderrSink) -> Iterator[bool]
     forwarding browser stderr there after the context exits. If a future Playwright version
     changes those internals, the pool falls back to the old ``--log-file`` sink.
     """
+    # importlib keeps this off mypy's attribute lookup: the lockfile's Playwright
+    # stubs do not declare the transport submodule, while newer local builds do.
     try:
-        from playwright._impl import transport as _transport
+        _transport: Any = importlib.import_module("playwright._impl.transport")
     except ImportError:
         yield False
         return
