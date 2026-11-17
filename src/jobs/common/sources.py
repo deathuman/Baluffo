@@ -51,7 +51,10 @@ def _load_registry_from_sqlite_authority(path: Path) -> list[dict[str, Any]]:
     if not (data_dir / DEFAULT_DB_NAME).exists():
         return []
     try:
-        with BaluffoStore(data_dir) as store:
+        # A transient read must not schedule maintenance: its write path starts a
+        # compaction here, and ``close()`` would join it while the caller holds the
+        # import lock, stalling every bridge route (including /ops/health).
+        with BaluffoStore(data_dir, defer_maintenance=True) as store:
             if store.get_authority_modes().get("sourceRegistry") != "sqlite":
                 return []
             runtime = SourceRegistryRuntimeStore(store)
