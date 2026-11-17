@@ -43,6 +43,7 @@ from src.ship.desktop_update_shared import (
     resolve_desktop_session_root,
     resolve_github_api_base,
     resolve_release_repo,
+    terminal_install_stage,
     validate_desktop_manifest,
     verify_manifest_signature,
     write_json_atomic,
@@ -179,6 +180,11 @@ class DesktopUpdateService:
             self.paths,
             existing,
         )
+        terminal_stage = terminal_install_stage(
+            existing.get("installState"),
+            existing.get("installStage"),
+        )
+        terminal_error = str(existing.get("lastError") or "")
         (
             cached,
             cached_manifest_payload,
@@ -237,6 +243,17 @@ class DesktopUpdateService:
             next_status["releaseNotesHistory"] = release_notes_history
         if not desktop_update_install_supported():
             next_status = platform_unsupported_status(next_status)
+        if terminal_stage:
+            # A manifest that now looks current must not erase the terminal
+            # install failure and offer an install the helper will refuse.
+            next_status.update(
+                {
+                    "installState": "failed",
+                    "installStage": terminal_stage,
+                    "installStageLabel": install_stage_label("failed", terminal_stage),
+                    "lastError": terminal_error,
+                }
+            )
         if next_status != existing:
             return _as_dict(save_status(self.paths, next_status))
         return dict(next_status)
@@ -398,6 +415,11 @@ class DesktopUpdateService:
         with self._lock:
             current_version = self.current_version()
             status = self._reconcile_status_locked()
+            terminal_stage = terminal_install_stage(
+                status.get("installState"),
+                status.get("installStage"),
+            )
+            terminal_error = str(status.get("lastError") or "").strip()
             last_checked_at = str(status.get("lastCheckedAt") or "").strip()
             if not force and last_checked_at and self.paths.manifest_cache_path.exists():
                 last_checked = parse_iso(last_checked_at)
@@ -427,7 +449,10 @@ class DesktopUpdateService:
                                     ),
                                 )
                             )
-            save_status(self.paths, {**status, "availability": "checking", "lastError": ""})
+            checking_status = {**status, "availability": "checking"}
+            if not terminal_stage:
+                checking_status["lastError"] = ""
+            save_status(self.paths, checking_status)
         try:
             release = self._resolve_latest_release()
             manifest = self._resolve_manifest_from_release(release)
@@ -492,7 +517,7 @@ class DesktopUpdateService:
                         "lastCheckedAt": iso_now(),
                         "availability": "error",
                         "updateAvailable": False,
-                        "lastError": str(exc),
+                        "lastError": terminal_error if terminal_stage else str(exc),
                     },
                 )
             )
@@ -713,6 +738,20 @@ class DesktopUpdateService:
     def request_install(self) -> dict[str, Any]:
         with self._lock:
             status = self._reconcile_status_locked()
+            if terminal_install_stage(
+                status.get("installState"),
+                status.get("installStage"),
+            ):
+                return _as_dict(
+                    _failure_result(
+                        status=status,
+                        error=(
+                            "The previous desktop update could not be rolled back. "
+                            "Repair the install before trying again."
+                        ),
+                        error_code="install_terminal_rollback_failed",
+                    )
+                )
             if str(status.get("downloadState") or "").strip().lower() != "downloaded":
                 return self._install_failure_locked(
                     status=status,

@@ -147,6 +147,15 @@ def install_stage_label(
     return str(constants_mod.INSTALL_STAGE_LABELS.get(stage) or "")
 
 
+def terminal_install_stage(
+    install_state: str | None,
+    install_stage: str | None = None,
+) -> str:
+    """The stage name when an install failure is terminal, else an empty string."""
+    stage = normalize_install_stage(install_state, install_stage)
+    return stage if stage in constants_mod.TERMINAL_INSTALL_STAGES else ""
+
+
 def _replace_with_retry(source: Path, target: Path) -> None:
     for attempt in range(constants_mod.ATOMIC_WRITE_RETRY_ATTEMPTS):
         try:

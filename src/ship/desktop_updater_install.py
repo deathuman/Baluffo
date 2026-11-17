@@ -42,6 +42,9 @@ from src.ship.desktop_update_shared import (
 from src.ship.desktop_update_shared import (
     pid_is_running as _pid_is_running,
 )
+from src.ship.desktop_update_shared import (
+    terminal_install_stage as _terminal_install_stage,
+)
 from src.ship.desktop_update_state import (
     clear_handoff_request as _clear_handoff_request,
 )
@@ -96,9 +99,7 @@ MUTATING_INSTALL_STAGES = frozenset(
     }
 )
 SUCCESS_RECOVERY_STAGES = frozenset({"relaunching", "verifying"})
-# A failed rollback is terminal: a retry must not install over the unverified
-# tree or replace the snapshot retained for repair.
-TERMINAL_INSTALL_STAGES = frozenset({"rollback_failed"})
+TERMINAL_INSTALL_REPAIR_MODES = ("restore-snapshot", "accept-install")
 
 # Preserve these names on the module root for desktop_updater.py facade compatibility.
 time = _time
@@ -188,7 +189,12 @@ def _copy_install_snapshot(install_root: Path, rollback_root: Path) -> None:
     _copy_tree_files(install_root, snapshot_root, skip_data=True)
 
 
-def _restore_install_snapshot(install_root: Path, rollback_root: Path) -> dict[str, Any]:
+def _restore_install_snapshot(
+    install_root: Path,
+    rollback_root: Path,
+    *,
+    expected_version: str = "",
+) -> dict[str, Any]:
     """Put the rollback snapshot back and report what came back.
 
     Locked files are not suppressed: restoring over a live install has to fail
@@ -203,9 +209,15 @@ def _restore_install_snapshot(install_root: Path, rollback_root: Path) -> dict[s
         raise RuntimeError(
             f"Install rollback snapshot is incomplete: {snapshot_pointer} is missing"
         )
-    expected_version = snapshot_pointer.read_text(encoding="utf-8").strip()
-    if not expected_version:
+    snapshot_version = snapshot_pointer.read_text(encoding="utf-8").strip()
+    if not snapshot_version:
         raise RuntimeError(f"Install rollback snapshot is incomplete: {snapshot_pointer} is empty")
+    required_version = str(expected_version or "").strip()
+    if required_version and snapshot_version != required_version:
+        raise RuntimeError(
+            "Install rollback snapshot version does not match the requested repair "
+            f"(expected {required_version!r}, found {snapshot_version!r})"
+        )
     if not (snapshot_root / "Baluffo.exe").is_file():
         raise RuntimeError(
             f"Install rollback snapshot is incomplete: {snapshot_root / 'Baluffo.exe'} is missing"
@@ -217,10 +229,10 @@ def _restore_install_snapshot(install_root: Path, rollback_root: Path) -> dict[s
         path.unlink(missing_ok=True)
     restored_files = _copy_tree_files(snapshot_root, install_root)
     restored_version = (install_root / pointer_rel).read_text(encoding="utf-8").strip()
-    if restored_version != expected_version:
+    if restored_version != snapshot_version:
         raise RuntimeError(
             "Install rollback did not restore ship/app/current.txt "
-            f"(expected {expected_version!r}, found {restored_version!r})"
+            f"(expected {snapshot_version!r}, found {restored_version!r})"
         )
     return {"files": restored_files, "currentVersion": restored_version}
 
@@ -424,11 +436,6 @@ def _recover_interrupted_install(
 ) -> bool:
     status = load_status(paths)
     stage = str(status.get("installStage") or "").strip().lower()
-    if stage in TERMINAL_INSTALL_STAGES:
-        raise RuntimeError(
-            "Previous install rollback failed; refusing to retry. "
-            f"The failed install and rollback snapshot at {rollback_root} are left untouched."
-        )
     if not stage or stage in {
         "idle",
         "preparing",
@@ -553,14 +560,219 @@ def _rollback_failed_install(
     )
 
 
+def _refuse_terminal_install(paths: DesktopUpdatePaths, rollback_root: Path) -> None:
+    """A terminal failure is an install-entry barrier, not a recovery detail.
+
+    It has to run before the AppImage dispatch and before staging, so no backend
+    installs over the failed tree or replaces the retained snapshot.
+    """
+    status = load_status(paths)
+    stage = _terminal_install_stage(status.get("installState"), status.get("installStage"))
+    if not stage:
+        return
+    retained_text = str(status.get("rollbackPath") or "").strip()
+    retained_root = Path(retained_text).expanduser().resolve() if retained_text else rollback_root
+    raise RuntimeError(
+        "Previous install rollback failed; refusing to retry. "
+        f"The failed install and rollback snapshot at {retained_root} are left untouched. "
+        "Repair the desktop install before trying again."
+    )
+
+
+def _save_terminal_repair_status(
+    paths: DesktopUpdatePaths,
+    *,
+    mode: str,
+    previous_stage: str,
+    previous_error: str,
+    version: str,
+    snapshot_path: Path,
+    snapshot_removed: bool,
+    verified: bool,
+) -> dict[str, Any]:
+    return _as_dict(
+        _save_install_stage_status(
+            paths,
+            install_state="idle",
+            install_stage="idle",
+            lastError="",
+            migrationBackupPath="",
+            rollbackPath="",
+            rollbackVerified=bool(verified),
+            rollbackVersion=str(version or ""),
+            lastRepair={
+                "at": iso_now(),
+                "action": mode,
+                "previousInstallStage": previous_stage,
+                "previousError": previous_error,
+                "version": str(version or ""),
+                "snapshotPath": str(snapshot_path),
+                "snapshotRemoved": bool(snapshot_removed),
+            },
+        )
+    )
+
+
+def _restore_terminal_install(
+    paths: DesktopUpdatePaths,
+    *,
+    repair_mode: str,
+    stage: str,
+    previous_error: str,
+    rollback_root: Path,
+    required_version: str,
+) -> dict[str, Any]:
+    restored = _restore_install_snapshot(
+        paths.install_root,
+        rollback_root,
+        expected_version=required_version,
+    )
+    version = str(restored.get("currentVersion") or "").strip()
+    # Clear the barrier before deleting the snapshot: if the status write
+    # fails, the retained tree is still there to retry the repair.
+    saved = _save_terminal_repair_status(
+        paths,
+        mode=repair_mode,
+        previous_stage=stage,
+        previous_error=previous_error,
+        version=version,
+        snapshot_path=rollback_root,
+        snapshot_removed=False,
+        verified=True,
+    )
+    remove_rollback_path(rollback_root)
+    snapshot_removed = not rollback_root.exists()
+    if snapshot_removed:
+        saved = _save_terminal_repair_status(
+            paths,
+            mode=repair_mode,
+            previous_stage=stage,
+            previous_error=previous_error,
+            version=version,
+            snapshot_path=rollback_root,
+            snapshot_removed=True,
+            verified=True,
+        )
+    return {
+        "ok": True,
+        "action": repair_mode,
+        "version": version,
+        "files": int(restored.get("files") or 0),
+        "snapshotPath": str(rollback_root),
+        "snapshotRemoved": snapshot_removed,
+        "status": saved,
+    }
+
+
+def _accept_terminal_install(
+    paths: DesktopUpdatePaths,
+    *,
+    repair_mode: str,
+    stage: str,
+    previous_error: str,
+    rollback_root: Path,
+    required_version: str,
+    discard_snapshot: bool,
+) -> dict[str, Any]:
+    install_exe = paths.install_root / "Baluffo.exe"
+    pointer_path = paths.ship_root / "app" / "current.txt"
+    if not install_exe.is_file():
+        raise RuntimeError(f"The install is not usable: {install_exe} is missing.")
+    version = pointer_path.read_text(encoding="utf-8").strip() if pointer_path.is_file() else ""
+    if not version:
+        raise RuntimeError(f"The install is not usable: {pointer_path} is missing or empty.")
+    if required_version and version != required_version:
+        raise RuntimeError(
+            "The install version does not match the requested repair "
+            f"(expected {required_version!r}, found {version!r})."
+        )
+    if rollback_root.exists() and not discard_snapshot:
+        raise RuntimeError(
+            f"The retained rollback snapshot is still on disk: {rollback_root}. "
+            "Confirm the accepted install first, then repeat the repair with "
+            "--discard-snapshot."
+        )
+    if discard_snapshot:
+        remove_rollback_path(rollback_root)
+    snapshot_removed = not rollback_root.exists()
+    saved = _save_terminal_repair_status(
+        paths,
+        mode=repair_mode,
+        previous_stage=stage,
+        previous_error=previous_error,
+        version=version,
+        snapshot_path=rollback_root,
+        snapshot_removed=snapshot_removed,
+        verified=False,
+    )
+    return {
+        "ok": True,
+        "action": repair_mode,
+        "version": version,
+        "files": 0,
+        "snapshotPath": str(rollback_root),
+        "snapshotRemoved": snapshot_removed,
+        "status": saved,
+    }
+
+
+def repair_terminal_install(
+    paths: DesktopUpdatePaths,
+    *,
+    mode: str,
+    expected_version: str = "",
+    discard_snapshot: bool = False,
+) -> dict[str, Any]:
+    """Clear a terminal rollback failure only after an explicit operator repair.
+
+    ``restore-snapshot`` puts the retained last-good tree back and removes the
+    snapshot. ``accept-install`` clears the barrier for a tree the operator has
+    already replaced, and refuses while the old snapshot is still on disk unless
+    they also confirm discarding it. ``ship/data`` is never touched.
+    """
+    repair_mode = str(mode or "").strip().lower()
+    if repair_mode not in TERMINAL_INSTALL_REPAIR_MODES:
+        raise ValueError(
+            "Unknown desktop install repair mode: "
+            f"{mode!r}. Use one of {', '.join(TERMINAL_INSTALL_REPAIR_MODES)}."
+        )
+    status = load_status(paths)
+    stage = _terminal_install_stage(status.get("installState"), status.get("installStage"))
+    if not stage:
+        raise RuntimeError(
+            "No terminal desktop install failure is recorded; there is nothing to repair."
+        )
+    previous_error = str(status.get("lastError") or "").strip()
+    rollback_text = str(status.get("rollbackPath") or "").strip()
+    if not rollback_text:
+        raise RuntimeError(
+            "The terminal install failure does not record a rollback snapshot path; "
+            "refusing to guess which tree to repair."
+        )
+    rollback_root = Path(rollback_text).expanduser().resolve()
+    required_version = str(expected_version or "").strip()
+    if repair_mode == "restore-snapshot":
+        return _restore_terminal_install(
+            paths,
+            repair_mode=repair_mode,
+            stage=stage,
+            previous_error=previous_error,
+            rollback_root=rollback_root,
+            required_version=required_version,
+        )
+    return _accept_terminal_install(
+        paths,
+        repair_mode=repair_mode,
+        stage=stage,
+        previous_error=previous_error,
+        rollback_root=rollback_root,
+        required_version=required_version,
+        discard_snapshot=discard_snapshot,
+    )
+
+
 def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
     plan = validate_install_plan(json.loads(plan_path.read_text(encoding="utf-8")))
-    if str(plan.get("artifactKind") or "").strip().lower() == ARTIFACT_KIND_APPIMAGE:
-        # Imported here: the AppImage backend calls back into this module for its
-        # shared stages, so a module-level import would be a cycle.
-        from src.ship import desktop_updater_install_appimage as appimage_mod
-
-        return appimage_mod.run_appimage_install(plan, progress=progress)
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
     ship_root = install_root / "ship"
     data_dir = Path(str(plan.get("dataDir") or "")).expanduser().resolve()
@@ -570,6 +782,13 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         ship_root=ship_root,
     )
     rollback_root = Path(str(plan.get("rollbackPath") or "")).expanduser().resolve()
+    _refuse_terminal_install(paths, rollback_root)
+    if str(plan.get("artifactKind") or "").strip().lower() == ARTIFACT_KIND_APPIMAGE:
+        # Imported here: the AppImage backend calls back into this module for its
+        # shared stages, so a module-level import would be a cycle.
+        from src.ship import desktop_updater_install_appimage as appimage_mod
+
+        return appimage_mod.run_appimage_install(plan, progress=progress)
     existing_status = load_status(paths)
     progress = progress if progress is not None else _NullProgressWindow()
     progress.start(

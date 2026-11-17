@@ -48,9 +48,13 @@ INSTALL_STAGE_LABELS = {
     "verifying": "Restarting Baluffo",
     "recovering": "Installing update",
     "rolling_back": "Installing update",
+    "rollback_failed": "Update repair required",
     "installed": "",
     "failed": "",
 }
+# A failed rollback is terminal until an operator repairs the install: retrying
+# would replace the snapshot kept for that repair.
+TERMINAL_INSTALL_STAGES = frozenset({"rollback_failed"})
 INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT = frozenset(
     {
         "handoff_requested",
@@ -90,5 +94,6 @@ __all__ = [
     "INSTALL_STATE_STAGE_DEFAULTS",
     "MANIFEST_CACHE_FILE",
     "SUCCESS_MARKER_FILE",
+    "TERMINAL_INSTALL_STAGES",
     "USER_AGENT",
 ]

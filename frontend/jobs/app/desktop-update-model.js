@@ -184,6 +184,7 @@ export function installHandoffFailureStatus(status = {}) {
 export function shouldExposeJobsDesktopUpdateStatus(status = {}, { hasFreshStatus = false } = {}) {
   if (hasFreshStatus) return true;
   const normalized = normalizeDesktopUpdateStatus(status);
+  if (normalized.installStage === "rollback_failed") return true;
   if (normalized.downloadState === "downloading") return true;
   if (normalized.downloadState === "downloaded") return true;
   if (normalized.installState === "ready") return true;
@@ -245,6 +246,18 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
     secondaryLabel: "Close",
     secondaryVisible: false,
   };
+
+  if (normalized.installStage === "rollback_failed") {
+    view.buttonLabel = "Update needs repair";
+    view.title = "Desktop update needs repair";
+    view.body = normalized.lastError || "The previous update could not be rolled back.";
+    view.progress = "The failed install and its rollback snapshot were kept. Repair the install before trying again.";
+    view.primaryVisible = false;
+    view.secondaryAction = "close";
+    view.secondaryLabel = "Close";
+    view.secondaryVisible = true;
+    return view;
+  }
 
   if (normalized.availability === "up_to_date") {
     view.buttonLabel = "Up to date";

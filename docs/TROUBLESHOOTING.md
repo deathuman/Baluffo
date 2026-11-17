@@ -5,7 +5,7 @@
 > - **Canonical for:** common issue triage steps, quick diagnostics, and known recovery paths
 > - **Not canonical for:** subsystem ownership, API contracts, or release policy
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md), and the owning runtime docs for the affected subsystem
-> - **Last updated:** 2026-11-12
+> - **Last updated:** 2026-11-17
 
 ---
 
@@ -520,6 +520,21 @@ Diagnostics:
 | Bad staged ZIP | Delete only the failed file under `%APPDATA%\Baluffo\updater\downloads\` if it remains after a failed attempt, then retry the download |
 
 New Windows packaged installs use `%APPDATA%\Baluffo\updater\post-install-success.json` as the canonical updater success marker. During migration from older source helpers, `ship\data\updater\post-install-success.json` can also appear as a transition-only compatibility marker.
+
+### Desktop update reports `rollback_failed` and refuses to retry
+
+A failed rollback is terminal on purpose: the failed install and the retained last-good snapshot are left untouched so a retry cannot overwrite them. The update panel reports `Update needs repair`, and the helper refuses another install until an operator clears the barrier. Close Baluffo, then choose one repair mode:
+
+```powershell
+# Put the retained last-good tree back and clear the terminal status.
+.\BaluffoUpdater.exe --repair-desktop-install --data-dir "$env:APPDATA\Baluffo" --install-root "<portable-folder>" --mode restore-snapshot
+
+# Or accept a tree you already replaced (for example by re-extracting the released
+# portable ZIP over the install folder), then discard the old snapshot and clear the status.
+.\BaluffoUpdater.exe --repair-desktop-install --data-dir "$env:APPDATA\Baluffo" --install-root "<portable-folder>" --mode accept-install --expect-version <version> --discard-snapshot
+```
+
+`BaluffoUpdater.exe` reports the result in a dialog; from a source checkout, run the same flags with `python -m src.ship.desktop_updater`. `<data-dir>` is the runtime data directory (`%APPDATA%\Baluffo` for a default Windows install, or `ship\data` for a source run), and `<portable-folder>` is the folder that holds `Baluffo.exe` and `ship\`. Both modes leave `ship\data` untouched. `restore-snapshot` verifies the snapshot's `ship\app\current.txt` and `Baluffo.exe` before deleting anything and removes the snapshot only after a successful restore. `accept-install` validates the current `Baluffo.exe` and `ship\app\current.txt`, and refuses while the old snapshot is still on disk unless `--discard-snapshot` is explicit. Do not clear `install-state.json` by hand: the terminal status is the only record that a good snapshot is being retained.
 
 ### Portable update from `v0.1.33` reports `install_handoff_unconfirmed`
 

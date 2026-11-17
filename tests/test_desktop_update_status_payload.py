@@ -19,6 +19,77 @@ _write_credible_handoff_request = write_credible_handoff_request
 _write_required_root_html = write_required_root_html
 
 
+def test_status_reconciliation_preserves_a_terminal_rollback_failure() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        install_root = Path(tmp) / "portable"
+        data_dir = install_root / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {
+                "manifest": {
+                    "version": "0.1.0",
+                    "channel": "stable",
+                    "portable_artifact": {
+                        "url": "https://example.com/baluffo-portable-0.1.0.zip",
+                        "sha256": "unused",
+                        "size_bytes": 0,
+                    },
+                }
+            },
+        )
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "installState": "failed",
+                "installStage": "rollback_failed",
+                "lastError": "install_restore_failed: install is locked",
+                "rollbackPath": str(paths.rollback_root / "1.4.0-20260414-120000"),
+                "rollbackVerified": False,
+            },
+        )
+        service = du.DesktopUpdateService(
+            data_dir=data_dir,
+            current_version_getter=lambda: "0.1.0",
+        )
+
+        status = service.get_status_payload()
+
+        assert status["availability"] == "up_to_date"
+        assert status["installState"] == "failed"
+        assert status["installStage"] == "rollback_failed"
+        assert status["installStageLabel"] == "Update repair required"
+        assert status["lastError"] == "install_restore_failed: install is locked"
+
+
+def test_check_for_update_preserves_a_terminal_rollback_error() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        install_root = Path(tmp) / "portable"
+        data_dir = install_root / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "installState": "failed",
+                "installStage": "rollback_failed",
+                "lastError": "install_restore_failed: install is locked",
+                "rollbackPath": str(paths.rollback_root / "1.4.0-20260414-120000"),
+                "rollbackVerified": False,
+            },
+        )
+        service = du.DesktopUpdateService(
+            data_dir=data_dir,
+            current_version_getter=lambda: "0.1.0",
+        )
+
+        status = service.check_for_update(force=True)
+
+        assert status["installStage"] == "rollback_failed"
+        assert status["lastError"] == "install_restore_failed: install is locked"
+
+
 def test_resolve_github_api_base_honors_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(du.GITHUB_API_BASE_ENV, "http://127.0.0.1:9000/api/")
 

@@ -296,10 +296,8 @@ def test_sync_extract_to_install_surfaces_a_locked_stale_file(
 
 
 def test_run_install_refuses_to_retry_a_persisted_rollback_failure(monkeypatch) -> None:
-    real_recover = updater_install._recover_interrupted_install
     with workspace_tmpdir("desktop-updater") as tmp:
         paths, _install_root, rollback_root = _rollback_fixture(tmp, monkeypatch)
-        monkeypatch.setattr(updater_install, "_recover_interrupted_install", real_recover)
         snapshot_root = rollback_root / "runtime"
         (snapshot_root / "ship" / "app").mkdir(parents=True)
         (snapshot_root / "Baluffo.exe").write_text("previous", encoding="utf-8")
@@ -333,6 +331,7 @@ def test_run_install_refuses_to_retry_a_persisted_rollback_failure(monkeypatch) 
         recover_manifest.assert_not_called()
         ensure_zip.assert_not_called()
         copy_snapshot.assert_not_called()
+        assert not (paths.updater_dir / "staging").exists()
         assert sentinel.read_text(encoding="utf-8") == "keep"
         status = update_state.load_status(paths, current_version="0.1.0")
         assert status["installState"] == "failed"

@@ -73,6 +73,40 @@ def _prepare_ready_install(
     return paths, service, download_path
 
 
+def test_request_install_refuses_a_terminal_rollback_failure() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        install_root = Path(tmp) / "portable"
+        ship_root = install_root / "ship"
+        data_dir = ship_root / "data"
+        paths, service, download_path = _prepare_ready_install(data_dir)
+        rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "availability": "available",
+                "updateAvailable": True,
+                "downloadState": "downloaded",
+                "downloadedZipPath": str(download_path),
+                "installState": "failed",
+                "installStage": "rollback_failed",
+                "lastError": "install_restore_failed: install is locked",
+                "rollbackPath": str(rollback_root),
+                "rollbackVerified": False,
+            },
+        )
+
+        result = service.request_install()
+
+        assert result["started"] is False
+        assert result["errorCode"] == "install_terminal_rollback_failed"
+        assert not paths.install_plan_path.exists()
+        assert not paths.handoff_request_path.exists()
+        status = update_state.load_status(paths, current_version="0.1.0")
+        assert status["installStage"] == "rollback_failed"
+        assert status["lastError"] == "install_restore_failed: install is locked"
+
+
 def test_request_install_writes_plan_and_launches_helper() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         install_root = Path(tmp) / "portable"
