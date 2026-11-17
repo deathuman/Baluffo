@@ -2,13 +2,14 @@
 
 import json
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 import pytest
 
 from src import admin_bridge
-from src.bridge import admin_task_runtime, startup_work_budget
+from src.bridge import admin_entrypoint_runtime, admin_task_runtime, startup_work_budget
 from src.bridge.server import runtime_state
 
 
@@ -518,6 +519,62 @@ def test_on_bridge_started_records_failed_step_before_reraising(
         if event == "desktop_bridge_startup_step_finished" and payload
     ]
     assert [payload["step"] for payload in finished][-1] == "stale_task_cleanup"
+
+
+def test_reclaim_startup_checks_use_the_configured_data_dir_without_an_open_store(
+    admin_bridge_entrypoint_root, tmp_path, monkeypatch
+) -> None:
+    seen: list[tuple[str, Path, dict[str, object]]] = []
+    triggers = admin_entrypoint_runtime.storage_reclaim_triggers
+
+    def record(name: str):
+        def call(path, **kwargs):
+            seen.append((name, Path(path), kwargs))
+            return {} if name != "idle" else True
+
+        return call
+
+    monkeypatch.setattr(triggers, "maintain_auto", record("maintain"))
+    monkeypatch.setattr(triggers, "schedule_startup_check", record("startup"))
+    monkeypatch.setattr(triggers, "start_idle_probe", record("idle"))
+
+    # The store is opened lazily, so a bridge that has not served an Admin route
+    # yet has no "released" row. Its own data dir must still get the checks.
+    admin_entrypoint_runtime._schedule_reclaim_startup_checks(
+        [], desktop_mode=True, data_dir=tmp_path
+    )
+
+    assert [name for name, _path, _kwargs in seen] == ["maintain", "startup", "idle"]
+    assert {path for _name, path, _kwargs in seen} == {tmp_path.resolve()}
+    assert all(kwargs["hold"] is False for _name, _path, kwargs in seen)
+
+
+def test_reclaim_startup_checks_dedupe_the_released_and_configured_data_dir(
+    admin_bridge_entrypoint_root, tmp_path, monkeypatch
+) -> None:
+    seen: list[tuple[str, Path, dict[str, object]]] = []
+    triggers = admin_entrypoint_runtime.storage_reclaim_triggers
+
+    def record(name: str):
+        def call(path, **kwargs):
+            seen.append((name, Path(path), kwargs))
+            return {} if name != "idle" else True
+
+        return call
+
+    monkeypatch.setattr(triggers, "maintain_auto", record("maintain"))
+    monkeypatch.setattr(triggers, "schedule_startup_check", record("startup"))
+    monkeypatch.setattr(triggers, "start_idle_probe", record("idle"))
+
+    admin_entrypoint_runtime._schedule_reclaim_startup_checks(
+        [{"dataDir": str(tmp_path)}], desktop_mode=False, data_dir=str(tmp_path)
+    )
+
+    assert [name for name, _path, _kwargs in seen] == ["maintain", "startup", "idle"]
+    assert {path for _name, path, _kwargs in seen} == {tmp_path.resolve()}
+    # Container presentation holds task starts; the duplicate row must not make
+    # the configured path a second scheduling target.
+    assert all(kwargs["hold"] is True for _name, _path, kwargs in seen)
 
 
 def test_finish_bridge_startup_hooks_releases_storage_maintenance_when_hooks_fail(

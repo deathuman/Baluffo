@@ -355,6 +355,201 @@ def test_an_unarmed_host_schedules_its_first_rehearsal(
     ]
 
 
+def test_the_arming_rehearsal_is_followed_by_the_real_automatic_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    armed = {"value": False}
+
+    def fake_start(
+        _data_dir: Path | str,
+        *,
+        auto: bool = False,
+        hold: bool = True,
+        rehearsal: bool = False,
+    ) -> dict[str, Any]:
+        calls.append({"auto": auto, "hold": hold, "rehearsal": rehearsal})
+        if rehearsal:
+            armed["value"] = True
+            _journal(
+                Path(_data_dir),
+                {
+                    "runId": "rehearsal-1",
+                    "mode": "rehearsal",
+                    "status": "complete",
+                    "autoArm": {"armed": True, "reason": "rehearsal-adequate"},
+                },
+            )
+            return {"ok": True, "started": True, "runId": "rehearsal-1"}
+        return {"ok": True, "started": True, "runId": "reclaim-1"}
+
+    monkeypatch.setattr(storage_reclaim, "start_storage_reclaim", fake_start)
+    monkeypatch.setattr(storage_reclaim_triggers, "_retention_running", lambda _dir: False)
+    monkeypatch.setattr(storage_reclaim, "reclaim_run_active", lambda _dir: False)
+    monkeypatch.setattr(storage_reclaim, "auto_reclaim_enabled", lambda _dir: armed["value"])
+
+    with workspace_tmpdir("reclaim-trigger-arm-then-run") as data_dir:
+        storage_reclaim_triggers._recheck(
+            Path(data_dir), hold=False, delay_s=0.0, rehearsal=True, follow_up=True
+        )
+
+    assert calls == [
+        {"auto": True, "hold": False, "rehearsal": True},
+        {"auto": True, "hold": False, "rehearsal": False},
+    ]
+
+
+def test_the_follow_up_waits_for_the_rehearsal_to_leave(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[bool] = []
+    active = [True, True, False]
+
+    def fake_start(
+        _data_dir: Path | str,
+        *,
+        auto: bool = False,
+        hold: bool = True,
+        rehearsal: bool = False,
+    ) -> dict[str, Any]:
+        calls.append(rehearsal)
+        return {"ok": True, "started": True, "runId": "reclaim-1"}
+
+    monkeypatch.setattr(storage_reclaim, "start_storage_reclaim", fake_start)
+    monkeypatch.setattr(storage_reclaim, "reclaim_run_active", lambda _dir: active.pop(0))
+    monkeypatch.setattr(storage_reclaim, "auto_reclaim_enabled", lambda _dir: True)
+    monkeypatch.setattr(storage_reclaim_triggers, "RECLAIM_REHEARSAL_FOLLOWUP_POLL_S", 0)
+
+    with workspace_tmpdir("reclaim-trigger-follow-up-waits") as data_dir:
+        _journal(
+            data_dir,
+            {
+                "runId": "rehearsal-1",
+                "mode": "rehearsal",
+                "status": "complete",
+                "autoArm": {"armed": True, "reason": "rehearsal-adequate"},
+            },
+        )
+        storage_reclaim_triggers._ask_after_rehearsal(
+            Path(data_dir), hold=False, rehearsal_run_id="rehearsal-1"
+        )
+
+    assert calls == [False]
+
+
+@pytest.mark.parametrize("status", ["failed", "cancelled"])
+def test_the_follow_up_does_not_start_after_an_unfinished_rehearsal(
+    monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    calls: list[bool] = []
+    monkeypatch.setattr(storage_reclaim, "reclaim_run_active", lambda _dir: False)
+    monkeypatch.setattr(storage_reclaim, "auto_reclaim_enabled", lambda _dir: True)
+    monkeypatch.setattr(
+        storage_reclaim,
+        "start_storage_reclaim",
+        lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    with workspace_tmpdir("reclaim-trigger-follow-up-unfinished") as data_dir:
+        _journal(
+            data_dir,
+            {
+                "runId": "rehearsal-1",
+                "mode": "rehearsal",
+                "status": status,
+                "autoArm": {"armed": True, "reason": "rehearsal-adequate"},
+            },
+        )
+        storage_reclaim_triggers._ask_after_rehearsal(
+            Path(data_dir), hold=False, rehearsal_run_id="rehearsal-1"
+        )
+
+    assert calls == []
+
+
+def test_the_follow_up_does_not_start_without_an_adequate_arm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[bool] = []
+    monkeypatch.setattr(storage_reclaim, "reclaim_run_active", lambda _dir: False)
+    monkeypatch.setattr(storage_reclaim, "auto_reclaim_enabled", lambda _dir: True)
+    monkeypatch.setattr(
+        storage_reclaim,
+        "start_storage_reclaim",
+        lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    with workspace_tmpdir("reclaim-trigger-follow-up-inadequate") as data_dir:
+        _journal(
+            data_dir,
+            {
+                "runId": "rehearsal-1",
+                "mode": "rehearsal",
+                "status": "complete",
+                "autoArm": {"armed": True, "reason": "rehearsal-inadequate"},
+            },
+        )
+        storage_reclaim_triggers._ask_after_rehearsal(
+            Path(data_dir), hold=False, rehearsal_run_id="rehearsal-1"
+        )
+
+    assert calls == []
+
+
+def test_the_follow_up_does_not_start_when_another_run_owns_the_journal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[bool] = []
+    monkeypatch.setattr(storage_reclaim, "reclaim_run_active", lambda _dir: False)
+    monkeypatch.setattr(storage_reclaim, "auto_reclaim_enabled", lambda _dir: True)
+    monkeypatch.setattr(
+        storage_reclaim,
+        "start_storage_reclaim",
+        lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    with workspace_tmpdir("reclaim-trigger-follow-up-owned") as data_dir:
+        _journal(
+            data_dir,
+            {
+                "runId": "reclaim-other",
+                "mode": "reclaim",
+                "status": "running",
+                "autoArm": {"armed": True, "reason": "rehearsal-adequate"},
+            },
+        )
+        storage_reclaim_triggers._ask_after_rehearsal(
+            Path(data_dir), hold=False, rehearsal_run_id="rehearsal-1"
+        )
+
+    assert calls == []
+
+
+def test_a_failed_arm_does_not_start_a_reclaim(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[bool] = []
+
+    def fake_start(
+        _data_dir: Path | str,
+        *,
+        auto: bool = False,
+        hold: bool = True,
+        rehearsal: bool = False,
+    ) -> dict[str, Any]:
+        calls.append(rehearsal)
+        return {"ok": True, "started": True}
+
+    monkeypatch.setattr(storage_reclaim, "start_storage_reclaim", fake_start)
+    monkeypatch.setattr(storage_reclaim_triggers, "_retention_running", lambda _dir: False)
+    monkeypatch.setattr(storage_reclaim, "reclaim_run_active", lambda _dir: False)
+    monkeypatch.setattr(storage_reclaim, "auto_reclaim_enabled", lambda _dir: False)
+
+    with workspace_tmpdir("reclaim-trigger-arm-failed") as data_dir:
+        storage_reclaim_triggers._recheck(
+            Path(data_dir), hold=True, delay_s=0.0, rehearsal=True, follow_up=True
+        )
+
+    # The measurement did not arm auto, so nothing may reclaim on its own.
+    assert calls == [True]
+
+
 def test_a_stale_anchor_schedules_a_rehearsal(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(storage_reclaim.RECLAIM_AUTO_ENABLED_ENV, "1")
     monkeypatch.setattr(storage_reclaim_triggers, "_retention_running", lambda _dir: False)

@@ -483,9 +483,24 @@ def test_cooldown_and_auto_disabled_gate_only_the_automatic_trigger() -> None:
     guarded = _bloat_verdict(blockers=["cooldown", "auto-disabled"])
     assert storage_reclaim._preflight_refusal(guarded, auto=True) == ("cooldown", False)
     assert storage_reclaim._preflight_refusal(guarded, auto=False) == ("", True)
+    # A rehearsal is how an unarmed host measures itself: the trigger guards that
+    # exist because auto mode is not on yet cannot refuse that measurement.
+    assert storage_reclaim._preflight_refusal(guarded, auto=True, rehearsal=True) == ("", False)
+    kill_switch = _bloat_verdict(blockers=["auto-disabled"])
+    assert storage_reclaim._preflight_refusal(
+        kill_switch, auto=True, rehearsal=True, auto_switch=False
+    ) == ("auto-disabled", False)
+    # A manual Rehearse remains available while the operator's switch is off.
+    assert storage_reclaim._preflight_refusal(
+        kill_switch, auto=False, rehearsal=True, auto_switch=False
+    ) == ("", False)
 
     safety = _bloat_verdict(blockers=["cooldown", "free-space"])
     assert storage_reclaim._preflight_refusal(safety, auto=False) == ("free-space", True)
+    assert storage_reclaim._preflight_refusal(safety, auto=True, rehearsal=True) == (
+        "free-space",
+        False,
+    )
     assert storage_reclaim._preflight_refusal(_bloat_verdict(), auto=False) == ("", False)
 
     quiet = {**_bloat_verdict(), "verdict": "ok"}

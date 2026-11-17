@@ -304,6 +304,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Packaged deterministic Jobs first-run gate | `npm run test:frontend:packaged:first-run` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
 | Admin startup packaged smoke gate | `npm run test:frontend:packaged:admin-startup` |
+| Admin automatic-reclaim startup rehearsal | `npm run test:frontend:packaged:admin-reclaim-startup` |
 | Admin active-run packaged smoke gate | `npm run test:frontend:packaged:admin-active-run` |
 | Packaged desktop updater rehearsal | `npm run test:frontend:packaged:update-rehearsal` |
 | Orchestrated packaged smoke gate | `npm run test:frontend:packaged:orchestrated` |
@@ -434,6 +435,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - `npm run test:frontend:packaged:desktop-lifecycle-rehearsal`
 - `npm run test:frontend:packaged:first-run`
 - `npm run test:frontend:packaged:admin-startup`
+- `npm run test:frontend:packaged:admin-reclaim-startup`
 - `npm run test:frontend:packaged:admin-active-run`
 - `npm run test:frontend:packaged:update-rehearsal`
   - Packaged test lanes reuse the default portable EXE when its build fingerprint is current. Explicit `--exe-path` values are never auto-rebuilt, and `src/packaged_desktop_smoke.py --rebuild` is an opt-in debugging escape hatch.
@@ -529,6 +531,12 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - startup requests use bounded routes, with the compact `/registry/sources?view=table&buckets=pending,active,rejected&includeHiddenPending=0&limitPerBucket=250` source-table request queued before schedule/history fallback and before `/ops/fetch-kpis?view=summary`, `/registry/conflicts?view=summary`, or `/admin/ops-tab-counts?view=summary`; full multi-MiB diagnostics and fixed startup-delay workarounds are not allowed.
 - Use this lane for Admin startup, ops-summary payloads, desktop local-data overview, and packaged bridge availability changes.
 - For container page-load performance fixes, package/browser startup gates are supporting evidence only. Capture Chrome DevTools Performance traces for Admin cold/warm, Jobs cold/warm, and Jobs-to-Admin navigation before publishing; acceptance is based on Chrome-visible shell/useful-content timing, LCP element, request waterfall, long tasks, and absence of first-load full diagnostics.
+
+## Admin Automatic-Reclaim Startup Rehearsal Contract
+
+- `npm run test:frontend:packaged:admin-reclaim-startup` seeds an unarmed data root with a 640 MiB SQLite freelist, starts the packaged bridge directly, and waits for the startup trigger without a browser or a Rehearse click.
+- The lane fails unless the journal records an armed `rehearsal-adequate` decision and then an automatic `mode: reclaim` run with `auto: true`; a rehearsal-only journal, a manual run, or a terminal automatic failure does not pass.
+- Use this lane for reclaim startup scheduling, automatic-arm journal changes, or packaged storage-reclaim trigger changes that must work before Admin opens.
 
 ## Admin Active-Run Packaged Smoke Contract
 
@@ -656,6 +664,7 @@ Use the narrowest check that matches the risky path:
 - Packaged task abort route, lifecycle cancel evidence, or recurring Jobs pipeline scheduler changes: `npm run test:frontend:packaged:task-abort-schedule-rehearsal`
 - Packaged Jobs first-run, cold empty-state, bootstrap confirm/retry, or popup theme changes: `npm run test:frontend:packaged:first-run`
 - Packaged Admin startup, overview, or heavy ops-payload loading changes: `npm run test:frontend:packaged:admin-startup`
+- Packaged storage-reclaim startup scheduling, automatic arm, or first unattended reclaim changes: `npm run test:frontend:packaged:admin-reclaim-startup`
 - Packaged desktop Admin active-run hydration, schedule controls during active work, KPI placeholders, or abort request-budget changes: `npm run test:frontend:packaged:admin-active-run`
 - Packaged updater, desktop handoff, Windows packaged data-root migration, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
 - Packaged Jobs update-panel visibility, toggle click path, or desktop startup-metric gating changes: `npm run test:frontend:packaged` followed by `npm run test:frontend:packaged:update-panel-gate`

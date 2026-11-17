@@ -6,8 +6,8 @@ Each attempt calls the reclaim orchestrator with ``auto=True``: the verdict is
 recomputed, every safety blocker refuses it, and ``cooldown`` plus ``auto-disabled``
 are the only repeat guards. Auto mode arms itself: an unarmed host gets one rehearsal,
 and the journal records whether that rehearsal's gate is adequate. Until it does,
-every automatic start is refused, so nothing reclaims on a host that has not measured
-itself. ``BALUFFO_RECLAIM_AUTO_ENABLED`` remains the override: ``0`` is a kill switch
+every automatic real start is refused, so nothing reclaims on a host that has not
+measured itself. ``BALUFFO_RECLAIM_AUTO_ENABLED`` remains the override: ``0`` is a kill switch
 that blocks even the arming rehearsal, and ``1`` forces auto on.
 
 Closeout and startup only fire when the application is doing something. A host that
@@ -60,6 +60,10 @@ RECLAIM_IDLE_PROBE_INTERVAL_S = 3 * 60 * 60
 # At most one stale-anchor rehearsal a day: it is a real copy, and the anchor only
 # goes stale after 30 days.
 RECLAIM_ANCHOR_HEAL_RETRY_S = 24 * 60 * 60
+# A rehearsal is the measurement, not the repair. Once it has settled and armed
+# auto, the same trigger asks for the real run without waiting for the operator or
+# the next three-hour beat. Poll briefly so a fast copy is followed promptly.
+RECLAIM_REHEARSAL_FOLLOWUP_POLL_S = 1.0
 # Probe when free space is within this multiple of the copy gate. Below it, the
 # verdict is worth its price; above it, the panel and the triggers that fire on
 # activity are the only ones that need to look.
@@ -151,6 +155,9 @@ def maintain_auto(
         reason=reason,
         delay_s=delay_s,
         rehearsal=True,
+        # The first measurement is also the install: once it arms auto, ask for
+        # the real run without involving the operator.
+        follow_up=reason == "arming",
     )
 
 
@@ -287,7 +294,13 @@ def _request(data_dir: Path, *, hold: bool, reason: str, delay_s: float = 0.0) -
 
 
 def _schedule(
-    data_dir: Path, *, hold: bool, reason: str, delay_s: float, rehearsal: bool = False
+    data_dir: Path,
+    *,
+    hold: bool,
+    reason: str,
+    delay_s: float,
+    rehearsal: bool = False,
+    follow_up: bool = False,
 ) -> dict[str, Any]:
     """Start the single pending check for this data directory, or ride it."""
     with _RECHECKS_LOCK:
@@ -297,7 +310,12 @@ def _schedule(
         thread = threading.Thread(
             target=_recheck,
             args=(data_dir,),
-            kwargs={"hold": hold, "delay_s": delay_s, "rehearsal": rehearsal},
+            kwargs={
+                "hold": hold,
+                "delay_s": delay_s,
+                "rehearsal": rehearsal,
+                "follow_up": follow_up,
+            },
             name=f"baluffo-reclaim-trigger-{reason}",
             daemon=True,
         )
@@ -306,7 +324,14 @@ def _schedule(
     return {"scheduled": True, "reason": reason}
 
 
-def _recheck(data_dir: Path, *, hold: bool, delay_s: float, rehearsal: bool = False) -> None:
+def _recheck(
+    data_dir: Path,
+    *,
+    hold: bool,
+    delay_s: float,
+    rehearsal: bool = False,
+    follow_up: bool = False,
+) -> None:
     """Wait out the startup delay and any retention pass, then ask once."""
     try:
         if delay_s > 0:
@@ -316,7 +341,15 @@ def _recheck(data_dir: Path, *, hold: bool, delay_s: float, rehearsal: bool = Fa
             if time.monotonic() > deadline:
                 return
             time.sleep(RECLAIM_TRIGGER_RETENTION_POLL_S)
-        storage_reclaim.start_storage_reclaim(data_dir, auto=True, hold=hold, rehearsal=rehearsal)
+        result = storage_reclaim.start_storage_reclaim(
+            data_dir, auto=True, hold=hold, rehearsal=rehearsal
+        )
+        if follow_up and rehearsal and bool(result.get("started")):
+            _ask_after_rehearsal(
+                data_dir,
+                hold=hold,
+                rehearsal_run_id=str(result.get("runId") or ""),
+            )
     except (BaluffoStoreError, OSError, RuntimeError, sqlite3.Error, ValueError):
         # A trigger is opportunistic: a store that cannot answer now is the
         # panel's problem to show, and the manual controls remain the fallback.
@@ -325,6 +358,49 @@ def _recheck(data_dir: Path, *, hold: bool, delay_s: float, rehearsal: bool = Fa
         with _RECHECKS_LOCK:
             if _RECHECKS.get(data_dir) is threading.current_thread():
                 _RECHECKS.pop(data_dir, None)
+
+
+def _ask_after_rehearsal(data_dir: Path, *, hold: bool, rehearsal_run_id: str) -> None:
+    """Ask for the real automatic run once *this* rehearsal has armed auto.
+
+    The rehearsal is what arms an unarmed host, so a startup check scheduled beside
+    it would find auto mode still off and give up. Waiting for this run to leave and
+    then asking once makes the first measurement pay for itself. Reading the journal
+    after the wait is the safety check: only the completed rehearsal that armed auto
+    may trigger the real run. If another run already owns the journal, or this
+    rehearsal failed, was cancelled, or wrote no arm, nothing starts here.
+    """
+    deadline = time.monotonic() + storage_reclaim.RECLAIM_MAX_RUN_S
+    while storage_reclaim.reclaim_run_active(data_dir):
+        if time.monotonic() > deadline:
+            return
+        time.sleep(RECLAIM_REHEARSAL_FOLLOWUP_POLL_S)
+    if not _rehearsal_armed(data_dir, rehearsal_run_id):
+        return
+    if not storage_reclaim.auto_reclaim_enabled(data_dir):
+        return
+    storage_reclaim.start_storage_reclaim(data_dir, auto=True, hold=hold)
+
+
+def _rehearsal_armed(data_dir: Path, rehearsal_run_id: str) -> bool:
+    """Whether the journal still records this completed rehearsal as the arm."""
+    if not rehearsal_run_id:
+        return False
+    journal = storage_reclaim.read_reclaim_journal(data_dir)
+    if not journal:
+        return False
+    if str(journal.get("runId") or "") != rehearsal_run_id:
+        return False
+    if str(journal.get("mode") or "") != "rehearsal":
+        return False
+    if str(journal.get("status") or "") != "complete":
+        return False
+    arm = journal.get("autoArm")
+    return bool(
+        isinstance(arm, dict)
+        and arm.get("armed")
+        and str(arm.get("reason") or "") == "rehearsal-adequate"
+    )
 
 
 def _retention_running(data_dir: Path) -> bool:

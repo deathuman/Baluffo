@@ -623,6 +623,8 @@ def main() -> int:
             admin_entrypoint_runtime_mod.finish_bridge_startup_hooks,
             on_started=on_bridge_started,
             append_startup_metric=append_startup_metric,
+            desktop_mode=bool(config.desktop_mode),
+            data_dir=config.data_dir,
         ),
     )
 

@@ -277,6 +277,55 @@ def _apply_rehearsal_result(
     return report
 
 
+def _run_reclaim_rehearsal_mode_if_requested(
+    *,
+    args: argparse.Namespace,
+    report: dict[str, Any],
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any] | None:
+    """Run one of the reclaim-focused packaged modes, or pass through."""
+    deps = _root()
+    if bool(args.orphan_reclaim_rehearsal):
+        rehearsal = deps.run_packaged_orphan_reclaim_rehearsal(
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        return _apply_rehearsal_result(
+            report,
+            rehearsal,
+            artifact_mappings=(
+                ("runtimeStdout", "orphanRehearsalRuntimeStdout"),
+                ("runtimeStderr", "orphanRehearsalRuntimeStderr"),
+                ("staleSiteStdout", "orphanRehearsalSiteStdout"),
+                ("staleSiteStderr", "orphanRehearsalSiteStderr"),
+                ("staleBridgeStdout", "orphanRehearsalBridgeStdout"),
+                ("staleBridgeStderr", "orphanRehearsalBridgeStderr"),
+            ),
+            failure_step="packaged-orphan-reclaim-rehearsal",
+            failure_message="Packaged orphan reclaim rehearsal failed.",
+        )
+    if bool(getattr(args, "admin_reclaim_startup_rehearsal", False)):
+        rehearsal = deps.run_packaged_admin_reclaim_startup_rehearsal(
+            exe_path=exe_path,
+            artifacts_dir=artifacts_dir,
+            runtime_timeout_s=runtime_timeout_s,
+        )
+        return _apply_rehearsal_result(
+            report,
+            rehearsal,
+            artifact_mappings=(
+                ("runtimeStdout", "adminReclaimStartupRuntimeStdout"),
+                ("runtimeStderr", "adminReclaimStartupRuntimeStderr"),
+            ),
+            failure_step="packaged-admin-reclaim-startup-rehearsal",
+            failure_message="Packaged admin automatic reclaim startup rehearsal failed.",
+        )
+    return None
+
+
 def _run_rehearsal_mode_if_requested(
     *,
     args: argparse.Namespace,
@@ -337,26 +386,15 @@ def _run_rehearsal_mode_if_requested(
             failure_step="desktop-update-rollback-rehearsal",
             failure_message="Packaged desktop update rollback rehearsal failed.",
         )
-    if bool(args.orphan_reclaim_rehearsal):
-        rehearsal = deps.run_packaged_orphan_reclaim_rehearsal(
-            exe_path=exe_path,
-            artifacts_dir=artifacts_dir,
-            runtime_timeout_s=runtime_timeout_s,
-        )
-        return _apply_rehearsal_result(
-            report,
-            rehearsal,
-            artifact_mappings=(
-                ("runtimeStdout", "orphanRehearsalRuntimeStdout"),
-                ("runtimeStderr", "orphanRehearsalRuntimeStderr"),
-                ("staleSiteStdout", "orphanRehearsalSiteStdout"),
-                ("staleSiteStderr", "orphanRehearsalSiteStderr"),
-                ("staleBridgeStdout", "orphanRehearsalBridgeStdout"),
-                ("staleBridgeStderr", "orphanRehearsalBridgeStderr"),
-            ),
-            failure_step="packaged-orphan-reclaim-rehearsal",
-            failure_message="Packaged orphan reclaim rehearsal failed.",
-        )
+    reclaim_rehearsal = _run_reclaim_rehearsal_mode_if_requested(
+        args=args,
+        report=report,
+        exe_path=exe_path,
+        artifacts_dir=artifacts_dir,
+        runtime_timeout_s=runtime_timeout_s,
+    )
+    if reclaim_rehearsal is not None:
+        return reclaim_rehearsal
     if bool(args.browser_job_rehearsal):
         rehearsal = deps.run_packaged_browser_job_rehearsal(
             exe_path=exe_path,

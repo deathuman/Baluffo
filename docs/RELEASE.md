@@ -459,6 +459,7 @@ Before any release:
    - `npm run test:frontend:packaged`
    - `npm run test:frontend:packaged:update-panel-gate`
    - `npm run test:frontend:packaged:admin-startup`
+   - `npm run test:frontend:packaged:admin-reclaim-startup`
    - `npm run test:frontend:packaged:fetch-evidence`
    - `npm run test:frontend:packaged:sync-rehearsal`
    - `npm run test:frontend:packaged:update-rehearsal`
@@ -659,6 +660,7 @@ npm run test:frontend:packaged:desktop-lifecycle-rehearsal
 npm run test:frontend:packaged:active-task-close-rehearsal
 npm run test:frontend:packaged:task-abort-schedule-rehearsal
 npm run test:frontend:packaged:first-run
+npm run test:frontend:packaged:admin-reclaim-startup
 npm run test:frontend:packaged:admin-active-run
 npm run test:frontend:packaged:jobs-pipeline
 npm run test:frontend:packaged:update-rehearsal
@@ -697,7 +699,7 @@ For the canonical startup measurement architecture and the preferred `perf:start
 
 ### Local Preflight vs CI Gate Coverage
 
-`npm run release:preflight` composes two independently runnable halves. `release:preflight:fast` runs the all-files pre-commit gate, the extended Python suite, frontend unit tests, the npm dependency security audit, and the published-version check. `release:preflight:packaged` runs the portable EXE build, the 17 packaged smoke and rehearsal lanes above (including `admin-startup`, `admin-active-run` and `fetch-evidence`), and the cold Jobs startup probe. Run the fast half while iterating; after a packaged-lane failure, rerun `release:preflight:packaged` alone, and rerun `build:portable-exe:prepare` first only when the fix changes packaged inputs. It intentionally does not run every release gate:
+`npm run release:preflight` composes two independently runnable halves. `release:preflight:fast` runs the all-files pre-commit gate, the extended Python suite, frontend unit tests, the npm dependency security audit, and the published-version check. `release:preflight:packaged` runs the portable EXE build, the packaged smoke and rehearsal lanes above (including `admin-startup`, `admin-reclaim-startup`, `admin-active-run` and `fetch-evidence`), and the cold Jobs startup probe. Run the fast half while iterating; after a packaged-lane failure, rerun `release:preflight:packaged` alone, and rerun `build:portable-exe:prepare` first only when the fix changes packaged inputs. It intentionally does not run every release gate:
 
 - `npm run typecheck:py` (mypy) and `npm run lint:deadcode:js` (knip) are not part of `release:preflight`, but neither is unowned locally. Both are `stages: [pre-push]` hooks selected by `PRE_PUSH_HOOK_IDS` in `scripts/precommit_gate.py`, and `run_changed` (the commit path) runs them too, so a type or lint error fails the **commit** rather than surfacing seconds later at push. knip is additionally called directly by `.githooks/pre-push`, because it is not a `.pre-commit-config.yaml` hook at all. Both therefore stop a push to `main` or to a `v*` release tag before it reaches the remote; feature branches and `rollback-*` tags are deliberately ungated.
 - The container Jobs boot performance gate (`jobs-boot-perf.yml`) builds and runs the real container; it is deliberately not part of local preflight because preflight has no live container.

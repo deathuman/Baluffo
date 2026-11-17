@@ -145,6 +145,55 @@ def test_a_rehearsal_measures_the_copy_and_installs_nothing(
     assert backup_exists is False
 
 
+def test_an_automatic_rehearsal_arms_an_unarmed_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("reclaim-rehearsal-auto-arm") as data_dir:
+        _seed(data_dir, generations=2)
+        # The state this regression pins: nothing has armed auto yet, so the
+        # verdict carries `auto-disabled`. An automatic rehearsal is precisely the
+        # measurement that removes it, and refusing it leaves the host stuck.
+        monkeypatch.setattr(
+            storage_reclaim,
+            "_compute_verdict",
+            lambda *_args, **_kwargs: _bloat_verdict(blockers=["auto-disabled"]),
+        )
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir, auto=True, rehearsal=True)
+            assert started["started"] is True, started
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 60.0)
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert journal is not None
+    assert journal["status"] == "complete"
+    assert journal["auto"] is True
+    assert journal["autoArm"]["armed"] is True
+    assert journal["autoArm"]["reason"] == "rehearsal-adequate"
+
+
+def test_an_automatic_rehearsal_does_not_bypass_the_kill_switch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(storage_reclaim.RECLAIM_AUTO_ENABLED_ENV, "0")
+    # The verdict does not have to name the switch: the start guard owns it.
+    monkeypatch.setattr(
+        storage_reclaim,
+        "_compute_verdict",
+        lambda *_args, **_kwargs: _bloat_verdict(),
+    )
+    with workspace_tmpdir("reclaim-rehearsal-kill-switch") as data_dir:
+        try:
+            result = storage_reclaim.start_storage_reclaim(data_dir, auto=True, rehearsal=True)
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+
+    assert result["started"] is False
+    assert result["reason"] == "auto-disabled"
+
+
 def test_a_rehearsal_stops_runtime_retention_before_copying(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -251,16 +251,32 @@ def close_storage_reclaim_jobs() -> None:
         job.shutdown()
 
 
-def _preflight_refusal(verdict: dict[str, Any], *, auto: bool) -> tuple[str, bool]:
+def _preflight_refusal(
+    verdict: dict[str, Any],
+    *,
+    auto: bool,
+    rehearsal: bool = False,
+    auto_switch: bool | None = None,
+) -> tuple[str, bool]:
     """The first reason this start must not happen, and whether a guard was overridden.
 
-    A safety blocker refuses both an automatic and an explicit start. ``cooldown``
-    and ``auto-disabled`` refuse only the automatic one: the manual controls stay
-    available when auto mode is off, and the journal records the override.
+    A safety blocker refuses every start. ``cooldown`` and ``auto-disabled`` gate
+    only an automatic *reclaim*: the manual controls stay available when auto mode
+    is off, and a rehearsal must be able to run before auto mode has ever been
+    enabled — that measurement is what arms it. An automatic start still honours
+    the operator's explicit kill switch; a manual one may measure while it is off.
+    Every other blocker still refuses a rehearsal.
     """
+    if auto and auto_switch is False:
+        # The scheduler already refuses to create automatic work under the kill
+        # switch. Enforce it here too, so a direct or stale caller cannot use the
+        # rehearsal waiver to start one, whether or not the verdict names it.
+        return "auto-disabled", False
     blockers = [str(blocker) for blocker in verdict.get("blockers") or []]
     override = False
-    if not auto:
+    if rehearsal:
+        blockers = [blocker for blocker in blockers if blocker not in RECLAIM_TRIGGER_GUARDS]
+    elif not auto:
         override = any(blocker in RECLAIM_TRIGGER_GUARDS for blocker in blockers)
         blockers = [blocker for blocker in blockers if blocker not in RECLAIM_TRIGGER_GUARDS]
     if blockers:
@@ -602,11 +618,17 @@ class StorageReclaimJob:
             if str(rebuild.get("status") or "") in {"running", "cancelling"}:
                 return self._refusal("rebuild-running")
             verdict = _compute_verdict(self.data_dir, read_reclaim_journal(self.data_dir))
-            reason, override = _preflight_refusal(verdict, auto=auto)
+            reason, override = _preflight_refusal(
+                verdict,
+                auto=auto,
+                rehearsal=rehearsal,
+                auto_switch=auto_reclaim_switch(),
+            )
             # A rehearsal measures a host before auto mode is enabled, so "the
             # verdict is not bloat" is exactly the case it exists for. Every
-            # safety blocker still refuses it.
-            if reason != "not-bloated" and reason:
+            # safety blocker still refuses it, and a real run must not start on a
+            # database that no longer reads as bloated.
+            if reason and not (rehearsal and reason == "not-bloated"):
                 return self._refusal(reason, blockers=list(verdict.get("blockers") or []))
             run_id = f"storage_reclaim_{uuid.uuid4().hex[:12]}"
             with self._lock:

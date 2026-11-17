@@ -1369,6 +1369,9 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
     assert scripts["test:frontend:packaged:admin-active-run"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --open-path admin.html --node-smoke-script tests/frontend/packaged-desktop-smoke.admin-active-run.mjs --runtime-timeout 60 --playwright-timeout 180"
     )
+    assert scripts["test:frontend:packaged:admin-reclaim-startup"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --admin-reclaim-startup-rehearsal --runtime-timeout 300"
+    )
     # Each half is pinned exactly, not just the composed entry point: a lane that
     # disappeared from a half would otherwise still satisfy a test that only reads
     # `release:preflight`, which does not expand npm scripts here.
@@ -1376,7 +1379,7 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
         "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run security:js && npm run check:published-version"
     )
     assert scripts["release:preflight:packaged"] == (
-        "npm run build:portable-exe:prepare && npm run test:frontend:packaged && npm run test:frontend:packaged:update-panel-gate && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:admin-active-run && npm run test:frontend:packaged:fetch-evidence && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:update-path-rehearsal && npm run test:frontend:packaged:update-rollback-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:desktop-lifecycle-rehearsal && npm run test:frontend:packaged:active-task-close-rehearsal && npm run test:frontend:packaged:task-abort-schedule-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
+        "npm run build:portable-exe:prepare && npm run test:frontend:packaged && npm run test:frontend:packaged:update-panel-gate && npm run test:frontend:packaged:admin-startup && npm run test:frontend:packaged:admin-reclaim-startup && npm run test:frontend:packaged:admin-active-run && npm run test:frontend:packaged:fetch-evidence && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:update-path-rehearsal && npm run test:frontend:packaged:update-rollback-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:desktop-lifecycle-rehearsal && npm run test:frontend:packaged:active-task-close-rehearsal && npm run test:frontend:packaged:task-abort-schedule-rehearsal && npm run test:frontend:packaged:first-run && npm run test:frontend:packaged:jobs-pipeline && npm run probe:desktop:startup:jobs:cold"
     )
     assert scripts["release:preflight"] == (
         "npm run release:preflight:fast && npm run release:preflight:packaged"
@@ -1416,6 +1419,7 @@ def test_testing_doc_owns_verification_matrix(repo_root: Path) -> None:
         "npm run test:frontend:packaged:update-panel-gate",
         "npm run test:frontend:packaged:sync-rehearsal",
         "npm run test:frontend:packaged:admin-active-run",
+        "npm run test:frontend:packaged:admin-reclaim-startup",
         "npm run test:frontend:packaged:orphan-reclaim-rehearsal",
         "npm run test:frontend:packaged:browser-job-rehearsal",
         "npm run test:frontend:packaged:active-task-close-rehearsal",
@@ -1444,6 +1448,7 @@ def test_release_guide_uses_canonical_release_preflight(repo_root: Path) -> None
     assert "npm run lint:precommit" in release_text
     assert "npm run test:frontend:packaged:sync-rehearsal" in release_text
     assert "npm run test:frontend:packaged:admin-active-run" in release_text
+    assert "npm run test:frontend:packaged:admin-reclaim-startup" in release_text
     assert "npm run test:frontend:packaged:orphan-reclaim-rehearsal" in release_text
     assert "npm run test:frontend:packaged:browser-job-rehearsal" in release_text
     assert "npm run test:frontend:packaged:active-task-close-rehearsal" in release_text

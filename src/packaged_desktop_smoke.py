@@ -39,6 +39,7 @@ from src.ship.packaged_smoke import build_env as packaged_smoke_build_env_mod
 from src.ship.packaged_smoke import common as packaged_smoke_common_mod
 from src.ship.packaged_smoke import orchestrator as packaged_smoke_orchestrator_mod
 from src.ship.packaged_smoke import rehearsal_browser as packaged_smoke_rehearsal_browser_mod
+from src.ship.packaged_smoke import rehearsal_reclaim as packaged_smoke_rehearsal_reclaim_mod
 from src.ship.packaged_smoke import rehearsal_sync as packaged_smoke_rehearsal_sync_mod
 from src.ship.packaged_smoke import rehearsal_update as packaged_smoke_rehearsal_update_mod
 from src.ship.packaged_smoke import (
@@ -134,6 +135,7 @@ packaged_smoke_rehearsals_mod.root = sys.modules[__name__]
 packaged_smoke_rehearsal_sync_mod.root = sys.modules[__name__]
 packaged_smoke_rehearsal_update_mod.root = sys.modules[__name__]
 packaged_smoke_rehearsal_browser_mod.root = sys.modules[__name__]
+packaged_smoke_rehearsal_reclaim_mod.root = sys.modules[__name__]
 ctypes = _ctypes
 errno = _errno
 os = _os
@@ -325,6 +327,9 @@ run_packaged_active_task_close_rehearsal = (
 run_packaged_orphan_reclaim_rehearsal = (
     packaged_smoke_rehearsals_mod.run_packaged_orphan_reclaim_rehearsal
 )
+run_packaged_admin_reclaim_startup_rehearsal = (
+    packaged_smoke_rehearsal_reclaim_mod.run_packaged_admin_reclaim_startup_rehearsal
+)
 
 
 def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
@@ -353,6 +358,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--desktop-update-rollback-rehearsal", action="store_true")
     _appimage_update_rehearsal_mod.add_cli_arguments(parser)
     parser.add_argument("--orphan-reclaim-rehearsal", action="store_true")
+    parser.add_argument("--admin-reclaim-startup-rehearsal", action="store_true")
     parser.add_argument("--browser-job-rehearsal", action="store_true")
     parser.add_argument("--desktop-lifecycle-rehearsal", action="store_true")
     parser.add_argument("--active-task-close-rehearsal", action="store_true")
