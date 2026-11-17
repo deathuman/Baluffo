@@ -23,11 +23,11 @@
   `src/storage/current_feed_rebuild.py`: the immutable-table allowlist is hashed
   on both sides of the copy, `copyDigests` is journaled, and the installed
   database is re-hashed before the delete, failing as `non-feed-mismatch` with the
-  table's name. A write that races the copy settles `superseded` (the source
-  moved, not the copy), so only a copy defect is reported as a mismatch. The
-  rehearsal (§9) is implemented: `POST {dryRun: true}` starts a background
-  read-only copy on the same single-flight and hold, stops runtime retention as
-  the rebuild does, is capped at `RECLAIM_MAX_RUN_S`, reports staging/reclaimed
+  table's name. A write that races the copy settles `superseded`, so only a copy defect
+  is reported as a mismatch. The rehearsal (§9) is implemented:
+  `POST {dryRun: true}` starts a background read-only copy on the same single-flight
+  and hold, stops runtime retention as the rebuild does, is capped at
+  `RECLAIM_MAX_RUN_S`, reports staging/reclaimed
   bytes, duration, per-table counts, validation and content digests under the
   journal's `result`, unlinks its staging file and scratch
   `<db>.reclaim-rehearsal.json` in a `finally`, and pulses the hold while
@@ -36,7 +36,8 @@
   the compaction hold asks once, startup schedules one check `60` s after
   maintenance resumes, both go through `auto: true` so the verdict, every safety
   blocker and the cooldown still apply, and a running retention pass defers them
-  into one coalesced re-check that waits for it (capped at `RECLAIM_MAX_RUN_S`).
+  into one coalesced re-check that waits for it (capped at
+  `RECLAIM_TRIGGER_RECHECK_MAX_S`, two hours, not the run's own ceiling).
   The full-disk order (§3) is implemented in
   `src/bridge/storage_reclaim_space.py`: a copy removes a staging file no live run
   claims, starts on the measured gate when the heuristic is short, and reports the
@@ -210,7 +211,7 @@ evaluating → rebuild(queued … installing) → verifying → deleting-backup 
 
 The hold is a boolean today (`_COMPACTION_HOLD`), and a boolean cannot expire: a crashed
 run would block every fetch start until the bridge restarted. Reclaim stores
-`{runId, heldAt, heartbeatAt, expiresAt}` and evaluates it on every read.
+`{runId, heldAt, heartbeatAt}` and derives `expiresAt` from `heldAt` on every read.
 
 - **Release condition**: the job writes a terminal phase (`complete`, `failed`,
   `superseded`, `interrupted`, `cancelled`) and releases in the same `finally` that
@@ -223,7 +224,10 @@ run would block every fetch start until the bridge restarted. Reclaim stores
   a silent hold with a live thread is released the same way.
 - **Maximum: `RECLAIM_HOLD_MAX_S = 28800` (8 h)** from `heldAt`, hard and not renewable.
   That exceeds the copy envelope (minutes to hours) plus validation, and caps a stuck
-  run at eight hours of blocked starts. Constants, not knobs.
+  run at eight hours of blocked starts. `RECLAIM_MAX_RUN_S` is the same value, given to
+  each long wait rather than to the run as one clock; reaching it stops the copy (up to
+  `RECLAIM_STOP_WAIT_S` = 60 s) before settling, adopting a copy that finished.
+  Constants, not knobs.
 - **Shutdown** releases unconditionally; the next start reconciles from the journal.
 
 Task-start replies carry `releasedBy: terminal | watchdog | ttl | shutdown`, so a normal
@@ -313,8 +317,7 @@ concurrency guard, not whether the operation is allowed.
 - **Desktop**: the same operation, inline. No dialog is constructed; the panel
   renders the phases from the same `GET`, and **Stop** cancels by `runId`. No hold is
   taken: a personal store is tens to hundreds of megabytes, so the copy is seconds and
-  losing a race costs `superseded`, not a burned multi-minute copy. The 512 MiB floor
-  means it rarely fires; when it does, the quiet path is right.
+  losing a race costs `superseded`, not a burned multi-minute copy. The 512 MiB floor makes it rare.
 
 Two reasons the desktop modal is wrong rather than merely unnecessary. **The shell:**
 `admin.html` is embedded in the desktop app
@@ -349,28 +352,29 @@ immediately; the long work stays on the job thread.
 
 ## 6. Presentation: modal in the container, inline on desktop
 
-**The blocking dialog is container-only, and that follows from the cost model.** A
-container reclaim copies 0.5-1.5 GB on a slow disk, so a user must not start another
-mutation mid-copy: the dialog blocks the app and the bridge hold blocks other tabs.
-Desktop is the opposite: the copy is short and the bridge exits with the app, so the
-run renders inline in the Runtime Database Storage panel from the same payload
-(`scope: "inline"`), cancelled by **Stop** by `runId`. `scope` is the only difference.
+**The blocking dialog is container-only.** A container reclaim copies 0.5-1.5 GB on a
+slow disk, so a user must not start another mutation mid-copy: the dialog blocks the
+app and the bridge hold blocks other tabs.
+Desktop is the opposite — short copy, bridge exits with the app — so the run renders
+inline from the same payload (`scope: "inline"`), cancelled by **Stop**. `scope` is the
+only difference.
 
 Three decisions follow from the run being backend-owned:
 
-- **Closing the tab is safe, and the page sends no cancel.** The run is a bridge thread
+- **Closing the tab is safe.** The run is a bridge thread
   keyed by data directory, journaled before it is reported, and installed by one atomic
   rename under the write and read locks, so abandoning the page can neither fail, cancel,
-  nor half-finish it. Only **Stop** cancels, and the dialog states the guarantee because
-  a user who does not believe it will not start the run.
+  nor half-finish it. Only **Stop** cancels, and the dialog says so because an unbelieved
+  guarantee stops starts.
 - **The endpoint settles the outcome, not the modal.** A restart leaves the job reporting
   `idle`, so the modal's last sample cannot tell a landed swap from an interrupted one.
 - **No invented ETA.** The dialog shows staged bytes and a table count, and minutes only
   from samples it trusts; a stalled disk reads as slow, not "2 minutes remaining"
   forever.
-- **No polling.** The panel renders what it read and Refresh re-reads with
-  `?refresh=1`; **Rehearse**, **Run** and **Stop** call the same routes, so progress
-  arrives on demand, not on a timer.
+- **Reads follow a live run; nothing else polls.** The panel reads the route on a 3 s
+  timer while a run is live, one read at a time, stopping after five failed reads;
+  Refresh re-reads with `?refresh=1`; **Rehearse**, **Run** and **Stop** call the same
+  routes.
 
 Element, focus, recovery, slow-copy and bridge-disappears mechanics are in
 [`automatic-storage-reclaim-experience-plan.md`](automatic-storage-reclaim-experience-plan.md).
@@ -429,13 +433,12 @@ and the content digests on that staging copy. It reports `stagingBytes`,
 counts, the validation result, and `freeBytes` / `requiredFreeBytes`; then it unlinks
 staging in a `finally`. It never links a backup, never installs, and never deletes.
 
-The existing copy helper always writes a journal, so the rehearsal passes a scratch
-path, `<db>.reclaim-rehearsal.json`, and unlinks that scratch in the same `finally`.
+The copy helper always journals, so the rehearsal passes a scratch
+path, `<db>.reclaim-rehearsal.json`, and unlinks it in the same `finally`.
 It never writes the real `<db>.rebuild.json`; the real `<db>.reclaim.json` records
 this run's `mode: "rehearsal"` status and result, never a rebuild status. A synchronous
-request would also exceed the Admin request budget on a multi-GB copy, which is why
-this is a job, not a route-thread operation. Gates match a real run (the §3 pre-flight,
-no active task, retention stopped); other conditions measure the wrong thing.
+request would exceed the Admin request budget on a multi-GB copy, so this is a job.
+Gates match a real run: the §3 pre-flight, no active task, retention stopped.
 
 The hold is refreshed by a pulse every `RECLAIM_HOLD_PULSE_S` for the whole
 blocking stretch (the retention-stop wait and the copy). The copy reports progress
@@ -510,8 +513,7 @@ Recorded so implementation does not relitigate them:
 - **`no-current-generation` is a blocker, per §1**, measured rather than imagined: a
   database with no published feed produced a 15 % ratio from nothing.
 - **The modal and the hold are container-only; the operation is not, per §4 and §6.**
-  Desktop runs it inline and unheld: same copy, seconds not minutes, and a bridge that
-  dies with the app.
+  Desktop runs it inline and unheld: same copy, seconds not minutes.
 - **Auto-start arms itself on measurement, per §9.** A host with no recorded arm
   rehearses once; the journal records the decision and its evidence, and the env var
   stays a kill switch, not the enablement step.
