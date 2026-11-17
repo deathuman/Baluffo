@@ -37,6 +37,40 @@ function isRetryableCheckError(error) {
   return RETRYABLE_CHECK_ERROR_CODES.has(String(error?.code || ""));
 }
 
+// A completed repair is a launch message: it opens the panel once. Without a
+// persisted dismissal every relaunch reopened a result the user had already
+// closed, because a fresh page has no in-memory dismissal. The stored key
+// carries the completion timestamp, so a newer repair still opens.
+const DISMISSED_REPAIR_STORAGE_KEY = "baluffo.desktopUpdate.dismissedRepair";
+
+function resolveDismissalStorage() {
+  try {
+    return globalThis.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function readDismissedRepairKey(storage) {
+  try {
+    return String(storage?.getItem?.(DISMISSED_REPAIR_STORAGE_KEY) || "");
+  } catch {
+    return "";
+  }
+}
+
+function persistDismissedRepairKey(storage, key) {
+  try {
+    if (key) {
+      storage?.setItem?.(DISMISSED_REPAIR_STORAGE_KEY, key);
+    } else {
+      storage?.removeItem?.(DISMISSED_REPAIR_STORAGE_KEY);
+    }
+  } catch {
+    // Private mode or a quota failure must not stop the panel from closing.
+  }
+}
+
 export function createJobsDesktopUpdateController({
   refs,
   documentObject = null,
@@ -54,7 +88,9 @@ export function createJobsDesktopUpdateController({
   openExternalUrl,
   setTimeoutFn = setTimeout,
   clearTimeoutFn = clearTimeout,
+  storage,
 }) {
+  const dismissalStorage = storage === undefined ? resolveDismissalStorage() : storage;
   const state = {
     bound: false,
     mounted: false,
@@ -69,7 +105,7 @@ export function createJobsDesktopUpdateController({
     pollTimer: null,
     status: normalizeDesktopUpdateStatus(),
     dismissedTargetVersion: "",
-    dismissedRepairKey: "",
+    dismissedRepairKey: readDismissedRepairKey(dismissalStorage),
     installStartPending: false,
   };
 
@@ -80,6 +116,13 @@ export function createJobsDesktopUpdateController({
       repairState,
       status.repairCompletedAt || status.repairFailedAt || status.repairRequestedAt || ""
     ].join(":");
+  }
+
+  function dismissRepairResult() {
+    const repairKey = repairResultKey(state.status);
+    if (!repairKey) return;
+    state.dismissedRepairKey = repairKey;
+    persistDismissedRepairKey(dismissalStorage, repairKey);
   }
 
   const clickDiagnostics = createDesktopUpdateClickDiagnostics({
@@ -570,10 +613,7 @@ export function createJobsDesktopUpdateController({
 
   async function handleSecondaryAction() {
     const action = String(refs.desktopUpdateSecondaryBtn?.dataset?.action || "close");
-    const repairKey = repairResultKey(state.status);
-    if (repairKey) {
-      state.dismissedRepairKey = repairKey;
-    }
+    dismissRepairResult();
     if (action === "later") {
       const targetVersion = String(state.status.targetVersion || state.status.latestVersion || "").trim();
       if (targetVersion) {
@@ -618,6 +658,7 @@ export function createJobsDesktopUpdateController({
       }
       return;
     }
+    dismissRepairResult();
     state.panelOpen = false;
     render();
     clickDiagnostics.recordHandled(clickRecord, { action: "close", panelVisible: isPanelVisible() });
