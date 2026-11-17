@@ -93,10 +93,12 @@ MUTATING_INSTALL_STAGES = frozenset(
         "relaunching",
         "verifying",
         "rolling_back",
-        "rollback_failed",
     }
 )
 SUCCESS_RECOVERY_STAGES = frozenset({"relaunching", "verifying"})
+# A failed rollback is terminal: a retry must not install over the unverified
+# tree or replace the snapshot retained for repair.
+TERMINAL_INSTALL_STAGES = frozenset({"rollback_failed"})
 
 # Preserve these names on the module root for desktop_updater.py facade compatibility.
 time = _time
@@ -422,6 +424,11 @@ def _recover_interrupted_install(
 ) -> bool:
     status = load_status(paths)
     stage = str(status.get("installStage") or "").strip().lower()
+    if stage in TERMINAL_INSTALL_STAGES:
+        raise RuntimeError(
+            "Previous install rollback failed; refusing to retry. "
+            f"The failed install and rollback snapshot at {rollback_root} are left untouched."
+        )
     if not stage or stage in {
         "idle",
         "preparing",
@@ -579,17 +586,6 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
     mutation_started = False
     recovery_failed = False
     try:
-        manifest = _recover_manifest_for_install(
-            plan,
-            install_root=install_root,
-            ship_root=ship_root,
-            paths=paths,
-        )
-        zip_path = _ensure_verified_zip_for_install(
-            plan,
-            manifest=manifest,
-            zip_path=Path(str(plan.get("downloadedZipPath") or "")).expanduser().resolve(),
-        )
         try:
             recovered_as_complete = _recover_interrupted_install(
                 plan,
@@ -601,6 +597,17 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             raise
         if recovered_as_complete:
             return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
+        manifest = _recover_manifest_for_install(
+            plan,
+            install_root=install_root,
+            ship_root=ship_root,
+            paths=paths,
+        )
+        zip_path = _ensure_verified_zip_for_install(
+            plan,
+            manifest=manifest,
+            zip_path=Path(str(plan.get("downloadedZipPath") or "")).expanduser().resolve(),
+        )
         _save_install_stage_status(
             paths,
             install_state="handoff_requested",

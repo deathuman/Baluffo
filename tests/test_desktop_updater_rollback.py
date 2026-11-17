@@ -295,6 +295,52 @@ def test_sync_extract_to_install_surfaces_a_locked_stale_file(
         updater_install._sync_extract_to_install(install_root, extracted_root)
 
 
+def test_run_install_refuses_to_retry_a_persisted_rollback_failure(monkeypatch) -> None:
+    real_recover = updater_install._recover_interrupted_install
+    with workspace_tmpdir("desktop-updater") as tmp:
+        paths, _install_root, rollback_root = _rollback_fixture(tmp, monkeypatch)
+        monkeypatch.setattr(updater_install, "_recover_interrupted_install", real_recover)
+        snapshot_root = rollback_root / "runtime"
+        (snapshot_root / "ship" / "app").mkdir(parents=True)
+        (snapshot_root / "Baluffo.exe").write_text("previous", encoding="utf-8")
+        (snapshot_root / "ship" / "app" / "current.txt").write_text("0.1.0\n", encoding="utf-8")
+        sentinel = snapshot_root / "keep.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        update_state.save_status(
+            paths,
+            {
+                **update_state.default_status_payload(current_version="0.1.0"),
+                "installState": "failed",
+                "installStage": "rollback_failed",
+                "lastError": "install_restore_failed: install is locked",
+                "rollbackPath": str(rollback_root),
+                "rollbackVerified": False,
+            },
+        )
+        restore_previous = mock.Mock()
+        recover_manifest = mock.Mock(side_effect=AssertionError("manifest recovery must not run"))
+        ensure_zip = mock.Mock(side_effect=AssertionError("zip verification must not run"))
+        copy_snapshot = mock.Mock()
+        monkeypatch.setattr(updater_install, "_restore_previous_install", restore_previous)
+        monkeypatch.setattr(updater_install, "_recover_manifest_for_install", recover_manifest)
+        monkeypatch.setattr(updater_install, "_ensure_verified_zip_for_install", ensure_zip)
+        monkeypatch.setattr(updater_install, "_copy_install_snapshot", copy_snapshot)
+
+        with pytest.raises(RuntimeError, match="Previous install rollback failed"):
+            updater_install.run_install(paths.install_plan_path)
+
+        restore_previous.assert_not_called()
+        recover_manifest.assert_not_called()
+        ensure_zip.assert_not_called()
+        copy_snapshot.assert_not_called()
+        assert sentinel.read_text(encoding="utf-8") == "keep"
+        status = update_state.load_status(paths, current_version="0.1.0")
+        assert status["installState"] == "failed"
+        assert status["installStage"] == "rollback_failed"
+        assert status["lastError"] == "install_restore_failed: install is locked"
+        assert status["rollbackVerified"] is False
+
+
 def test_run_install_aborts_when_interrupted_recovery_fails(monkeypatch) -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
         paths, _install_root, _rollback_root = _rollback_fixture(tmp, monkeypatch)
