@@ -41,7 +41,6 @@ def test_current_desktop_updater_root_dependency_inventory_is_complete() -> None
         "_helper_failure_dialog_enabled",
         "_helper_relaunch_verify_timeout_s",
         "_helper_window_layout",
-        "_restore_data_backup_if_needed",
         "_save_install_stage_status",
         "DesktopUpdatePaths",
         "clear_handoff_request",

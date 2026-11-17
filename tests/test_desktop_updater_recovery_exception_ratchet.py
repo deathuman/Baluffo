@@ -37,7 +37,7 @@ def _verifying_recovery_context(
 
 def test_recover_interrupted_install_continues_after_expected_startup_failure() -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
-        install_root, ship_root, paths, rollback_root, plan = _verifying_recovery_context(tmp)
+        install_root, _ship_root, paths, rollback_root, plan = _verifying_recovery_context(tmp)
 
         with (
             mock.patch.object(
@@ -49,8 +49,6 @@ def test_recover_interrupted_install_continues_after_expected_startup_failure() 
         ):
             completed = updater._recover_interrupted_install(
                 plan,
-                install_root=install_root,
-                ship_root=ship_root,
                 paths=paths,
                 rollback_root=rollback_root,
             )
@@ -61,7 +59,7 @@ def test_recover_interrupted_install_continues_after_expected_startup_failure() 
 
 def test_recover_interrupted_install_does_not_suppress_unexpected_startup_failure() -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
-        install_root, ship_root, paths, rollback_root, plan = _verifying_recovery_context(tmp)
+        install_root, _ship_root, paths, rollback_root, plan = _verifying_recovery_context(tmp)
 
         with (
             mock.patch.object(
@@ -73,8 +71,6 @@ def test_recover_interrupted_install_does_not_suppress_unexpected_startup_failur
         ):
             updater._recover_interrupted_install(
                 plan,
-                install_root=install_root,
-                ship_root=ship_root,
                 paths=paths,
                 rollback_root=rollback_root,
             )

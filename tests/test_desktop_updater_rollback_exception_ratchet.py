@@ -94,12 +94,8 @@ def _run_install_with_backup_restore_failure(
         mock.patch.object(
             updater,
             "_restore_install_snapshot",
-            side_effect=snapshot_failure,
-        ),
-        mock.patch.object(
-            updater,
-            "_verify_restored_install",
             return_value={"files": 1, "currentVersion": "0.1.0"},
+            side_effect=snapshot_failure,
         ),
         mock.patch.object(updater, "_launch_executable", side_effect=launch_failure),
     ):

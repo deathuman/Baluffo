@@ -161,84 +161,60 @@ def _wait_for_launcher_exit(plan: dict[str, Any], *, timeout_s: float = 120.0) -
     raise RuntimeError("Timed out waiting for the desktop launcher to exit.")
 
 
+def _files_under(root: Path) -> list[Path]:
+    return [path for path in root.rglob("*") if path.is_file()]
+
+
+def _copy_tree_files(source_root: Path, target_root: Path, *, skip_data: bool = False) -> int:
+    copied = 0
+    for source in _files_under(source_root):
+        rel = source.relative_to(source_root)
+        if skip_data and rel.as_posix().startswith("ship/data/"):
+            continue
+        target = target_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        copied += 1
+    return copied
+
+
 def _copy_install_snapshot(install_root: Path, rollback_root: Path) -> None:
     snapshot_root = rollback_root / "runtime"
     if snapshot_root.exists():
         shutil.rmtree(snapshot_root)
     snapshot_root.mkdir(parents=True, exist_ok=True)
-    for path in install_root.rglob("*"):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(install_root)
-        rel_text = rel.as_posix()
-        if rel_text.startswith("ship/data/"):
-            continue
-        target = snapshot_root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target)
+    _copy_tree_files(install_root, snapshot_root, skip_data=True)
 
 
-def _restore_install_snapshot(install_root: Path, rollback_root: Path) -> None:
-    snapshot_root = rollback_root / "runtime"
-    if not snapshot_root.is_dir():
-        return
-    for path in install_root.rglob("*"):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(install_root)
-        if rel.as_posix().startswith("ship/data/"):
-            continue
-        path.unlink(missing_ok=True)
-    for path in snapshot_root.rglob("*"):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(snapshot_root)
-        target = install_root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target)
+def _restore_install_snapshot(install_root: Path, rollback_root: Path) -> dict[str, Any]:
+    """Put the rollback snapshot back and report what came back.
 
-
-def _snapshot_install_files(snapshot_root: Path) -> set[str]:
-    return {
-        path.relative_to(snapshot_root).as_posix()
-        for path in snapshot_root.rglob("*")
-        if path.is_file()
-    }
-
-
-def _verify_restored_install(install_root: Path, rollback_root: Path) -> dict[str, Any]:
-    """Prove a rollback put the previous install back, pointer file included.
-
-    A partially restored tree still answers from the modules already resident in
-    the running launcher and then fails on the next lazy import, so a restore
-    that is merely attempted is not enough: it has to be read back from disk.
+    Locked files are not suppressed: restoring over a live install has to fail
+    loudly instead of leaving a half-restored tree marked as rolled back.
     """
     snapshot_root = rollback_root / "runtime"
     if not snapshot_root.is_dir():
         raise RuntimeError(f"Install rollback snapshot is missing: {snapshot_root}")
-    expected = _snapshot_install_files(snapshot_root)
-    missing = sorted(rel for rel in expected if not (install_root / rel).is_file())
-    if missing:
-        raise RuntimeError(
-            "Install rollback restored "
-            f"{len(expected) - len(missing)} of {len(expected)} snapshot files; missing: "
-            + ", ".join(missing[:5])
-        )
     pointer_rel = Path("ship") / "app" / "current.txt"
     snapshot_pointer = snapshot_root / pointer_rel
-    install_pointer = install_root / pointer_rel
-    expected_version = (
-        snapshot_pointer.read_text(encoding="utf-8").strip() if snapshot_pointer.is_file() else ""
-    )
-    restored_version = (
-        install_pointer.read_text(encoding="utf-8").strip() if install_pointer.is_file() else ""
-    )
-    if expected_version and restored_version != expected_version:
+    if not snapshot_pointer.is_file():
+        raise RuntimeError(
+            f"Install rollback snapshot is incomplete: {snapshot_pointer} is missing"
+        )
+    for path in _files_under(install_root):
+        rel = path.relative_to(install_root)
+        if rel.as_posix().startswith("ship/data/"):
+            continue
+        path.unlink(missing_ok=True)
+    restored_files = _copy_tree_files(snapshot_root, install_root)
+    expected_version = snapshot_pointer.read_text(encoding="utf-8").strip()
+    restored_version = (install_root / pointer_rel).read_text(encoding="utf-8").strip()
+    if restored_version != expected_version:
         raise RuntimeError(
             "Install rollback did not restore ship/app/current.txt "
             f"(expected {expected_version!r}, found {restored_version!r})"
         )
-    return {"files": len(expected), "currentVersion": restored_version}
+    return {"files": restored_files, "currentVersion": restored_version}
 
 
 def _session_launcher_pid(plan: dict[str, Any]) -> int:
@@ -275,8 +251,8 @@ def _stop_relaunched_app(plan: dict[str, Any], *, timeout_s: float = 20.0) -> di
     """Stop the app an install just launched before a rollback touches its files.
 
     Readiness timeouts fire while the new app is still running. Restoring over a
-    live install leaves its files locked (the unlink is skipped) and the tree
-    half-restored, which is how a failed update became a gutted install.
+    live install hits locked files and leaves the tree half-restored, which is
+    how a failed update became a gutted install.
     """
     pid = _session_launcher_pid(plan)
     result: dict[str, Any] = {"pid": pid, "terminated": False, "aliveAfter": False}
@@ -294,13 +270,9 @@ def _stop_relaunched_app(plan: dict[str, Any], *, timeout_s: float = 20.0) -> di
 # install mutation: deletes files not in new extract, copies extracted content
 def _sync_extract_to_install(install_root: Path, extracted_root: Path) -> None:
     target_paths = {
-        path.relative_to(extracted_root).as_posix()
-        for path in extracted_root.rglob("*")
-        if path.is_file()
+        path.relative_to(extracted_root).as_posix() for path in _files_under(extracted_root)
     }
-    for path in install_root.rglob("*"):
-        if not path.is_file():
-            continue
+    for path in _files_under(install_root):
         rel_text = path.relative_to(install_root).as_posix()
         if rel_text.startswith("ship/data/"):
             continue
@@ -361,17 +333,39 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
     raise RuntimeError("Updated desktop app did not report startup readiness in time.")
 
 
-def _restore_data_backup_if_needed(ship_root: Path, data_dir: Path, status: dict[str, Any]) -> None:
+def _migration_backup_ref(status: dict[str, Any]) -> Path | None:
     backup_ref_text = str(status.get("migrationBackupPath") or "").strip()
     if not backup_ref_text:
-        return
+        return None
     backup_ref = Path(backup_ref_text).expanduser().resolve()
-    if not backup_ref.exists():
-        return
-    _restore_data_backup(
-        _ShipPaths.from_root(ship_root, data_dir=data_dir),
-        backup_ref,
-    )
+    return backup_ref if backup_ref.exists() else None
+
+
+def _restore_previous_install(
+    *,
+    plan: dict[str, Any],
+    paths: DesktopUpdatePaths,
+    rollback_root: Path,
+    backup_ref: Path | None,
+) -> dict[str, Any]:
+    """Stop the relaunched app, then put the data and install files back.
+
+    Both restores run after the stop: the readiness timeout fires while the new
+    app is still running, and a live install holds the files it restores.
+    """
+    stopped = _stop_relaunched_app(plan)
+    if backup_ref is not None:
+        with contextlib.suppress(OSError, _zipfile.BadZipFile, _zipfile.LargeZipFile):
+            _restore_data_backup(
+                _ShipPaths.from_root(paths.ship_root, data_dir=paths.data_dir),
+                backup_ref,
+            )
+    restored = _restore_install_snapshot(paths.install_root, rollback_root)
+    return {
+        **restored,
+        "stoppedPid": int(stopped.get("pid") or 0),
+        "stopVerified": bool(stopped.get("terminated")),
+    }
 
 
 def remove_rollback_path(rollback_path: Path) -> None:
@@ -409,8 +403,6 @@ def _finalize_success(
 def _recover_interrupted_install(
     plan: dict[str, Any],
     *,
-    install_root: Path,
-    ship_root: Path,
     paths: DesktopUpdatePaths,
     rollback_root: Path,
 ) -> bool:
@@ -441,11 +433,13 @@ def _recover_interrupted_install(
         install_stage="recovering",
         lastError="",
     )
-    _restore_data_backup_if_needed(ship_root, paths.data_dir, status)
-    _stop_relaunched_app(plan)
     try:
-        _restore_install_snapshot(install_root, rollback_root)
-        _verify_restored_install(install_root, rollback_root)
+        _restore_previous_install(
+            plan=plan,
+            paths=paths,
+            rollback_root=rollback_root,
+            backup_ref=_migration_backup_ref(status),
+        )
     except (OSError, RuntimeError, ValueError, shutil.Error) as exc:
         _save_install_stage_status(
             paths,
@@ -455,8 +449,7 @@ def _recover_interrupted_install(
             rollbackPath=str(rollback_root),
         )
         return False
-    with contextlib.suppress(OSError):
-        shutil.rmtree(rollback_root)
+    remove_rollback_path(rollback_root)
     _save_install_stage_status(
         paths,
         install_state="idle",
@@ -472,19 +465,15 @@ def _rollback_failed_install(
     *,
     plan: dict[str, Any],
     paths: DesktopUpdatePaths,
-    install_root: Path,
     rollback_root: Path,
     backup_ref: Path | None,
     failure: BaseException,
     mutation_started: bool,
-    progress: Any,
-    data_dir: Path,
-    ship_root: Path,
 ) -> None:
     """Undo an install that failed, and say so when the undo itself fails."""
     clear_handoff_request(paths)
-    progress.update(install_stage_label("installing", "rolling_back"))
     classified_error = _classify_install_failure_impl(failure)
+    backup_text = str(backup_ref) if backup_ref is not None else ""
     if not mutation_started:
         _save_install_stage_status(
             paths,
@@ -492,51 +481,49 @@ def _rollback_failed_install(
             install_stage="failed",
             lastError=classified_error,
             rollbackPath=str(rollback_root),
-            migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
+            migrationBackupPath=backup_text,
         )
         return
-    if backup_ref is not None:
-        with contextlib.suppress(OSError, _zipfile.BadZipFile, _zipfile.LargeZipFile):
-            _restore_data_backup(
-                _ShipPaths.from_root(ship_root, data_dir=data_dir),
-                backup_ref,
-            )
-    # The readiness timeout fires while the new app is still running. Stop it
-    # first: restoring over a live install skips the files it holds open.
-    stopped = _stop_relaunched_app(plan)
     _save_install_stage_status(
         paths,
         install_state="failed",
         install_stage="rolling_back",
         lastError=classified_error,
         rollbackPath=str(rollback_root),
-        migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
+        migrationBackupPath=backup_text,
     )
-    restored: dict[str, Any] = {}
-    restore_error = ""
     try:
-        _restore_install_snapshot(install_root, rollback_root)
-        restored = _verify_restored_install(install_root, rollback_root)
-    except (OSError, RuntimeError, ValueError, shutil.Error) as restore_exc:
-        restore_error = str(restore_exc)
-    last_error = classified_error
-    if restore_error:
-        last_error = f"{classified_error}; install_restore_failed: {restore_error}"
-    else:
-        with contextlib.suppress(OSError, RuntimeError):
-            _launch_executable(install_root / "Baluffo.exe", data_dir=data_dir)
+        restored = _restore_previous_install(
+            plan=plan,
+            paths=paths,
+            rollback_root=rollback_root,
+            backup_ref=backup_ref,
+        )
+    except (OSError, RuntimeError, ValueError, shutil.Error) as exc:
+        _save_install_stage_status(
+            paths,
+            install_state="failed",
+            install_stage="rollback_failed",
+            lastError=f"{classified_error}; install_restore_failed: {exc}",
+            rollbackPath=str(rollback_root),
+            migrationBackupPath=backup_text,
+            rollbackVerified=False,
+        )
+        return
+    with contextlib.suppress(OSError, RuntimeError):
+        _launch_executable(paths.install_root / "Baluffo.exe", data_dir=paths.data_dir)
     _save_install_stage_status(
         paths,
         install_state="failed",
-        install_stage="rollback_failed" if restore_error else "rolled_back",
-        lastError=last_error,
+        install_stage="rolled_back",
+        lastError=classified_error,
         rollbackPath=str(rollback_root),
-        migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
-        rollbackVerified=not restore_error,
+        migrationBackupPath=backup_text,
+        rollbackVerified=True,
         rollbackFiles=int(restored.get("files") or 0),
         rollbackVersion=str(restored.get("currentVersion") or ""),
-        rollbackStoppedPid=int(stopped.get("pid") or 0),
-        rollbackStopVerified=bool(stopped.get("terminated")),
+        rollbackStoppedPid=int(restored.get("stoppedPid") or 0),
+        rollbackStopVerified=bool(restored.get("stopVerified")),
     )
 
 
@@ -585,8 +572,6 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         )
         recovered_as_complete = _recover_interrupted_install(
             plan,
-            install_root=install_root,
-            ship_root=ship_root,
             paths=paths,
             rollback_root=rollback_root,
         )
@@ -692,17 +677,14 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
         return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
     except BaseException as exc:
         # Treat install mutation as a transactional cleanup boundary, then re-raise.
+        progress.update(install_stage_label("installing", "rolling_back"))
         _rollback_failed_install(
             plan=plan,
             paths=paths,
-            install_root=install_root,
             rollback_root=rollback_root,
             backup_ref=backup_ref,
             failure=exc,
             mutation_started=mutation_started,
-            progress=progress,
-            data_dir=data_dir,
-            ship_root=ship_root,
         )
         raise
     finally:

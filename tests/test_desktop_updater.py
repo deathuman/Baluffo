@@ -185,6 +185,9 @@ def test_recover_interrupted_install_restores_runtime_snapshot_and_backup(monkey
         snapshot_file = rollback_root / "runtime" / "Baluffo.exe"
         snapshot_file.parent.mkdir(parents=True, exist_ok=True)
         snapshot_file.write_text("previous-runtime", encoding="utf-8")
+        snapshot_pointer = rollback_root / "runtime" / "ship" / "app" / "current.txt"
+        snapshot_pointer.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_pointer.write_text("0.1.0\n", encoding="utf-8")
         backup_ref = Path(tmp) / "backup-ref"
         backup_ref.mkdir(parents=True, exist_ok=True)
         update_state.save_status(
@@ -202,8 +205,6 @@ def test_recover_interrupted_install_restores_runtime_snapshot_and_backup(monkey
 
         completed = updater._recover_interrupted_install(
             {"targetVersion": "1.4.0"},
-            install_root=install_root,
-            ship_root=ship_root,
             paths=paths,
             rollback_root=rollback_root,
         )

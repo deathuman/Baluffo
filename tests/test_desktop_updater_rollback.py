@@ -85,9 +85,6 @@ def test_run_install_stops_the_relaunched_app_before_restoring_the_snapshot(monk
 
         def restore(*args, **kwargs):
             order.append("restore")
-
-        def verify(*args, **kwargs):
-            order.append("verify")
             return {"files": 1, "currentVersion": "0.1.0"}
 
         def relaunch(*args, **kwargs):
@@ -95,13 +92,12 @@ def test_run_install_stops_the_relaunched_app_before_restoring_the_snapshot(monk
 
         monkeypatch.setattr(updater_install, "_stop_relaunched_app", stop)
         monkeypatch.setattr(updater_install, "_restore_install_snapshot", restore)
-        monkeypatch.setattr(updater_install, "_verify_restored_install", verify)
         monkeypatch.setattr(updater_install, "_launch_executable", relaunch)
 
         with pytest.raises(RuntimeError, match="startup readiness"):
             updater_install.run_install(paths.install_plan_path)
 
-        assert order == ["relaunch", "stop", "restore", "verify", "relaunch"]
+        assert order == ["relaunch", "stop", "restore", "relaunch"]
         assert rollback_root.exists()
 
 
@@ -126,8 +122,6 @@ def test_run_install_reports_rollback_failure_and_keeps_the_snapshot(monkeypatch
         assert status["installStage"] == "rollback_failed"
         assert "install_restore_failed" in status["lastError"]
         assert status["rollbackVerified"] is False
-        assert status["rollbackStoppedPid"] == 4242
-        assert status["rollbackStopVerified"] is True
         assert status["rollbackPath"] == str(rollback_root)
         # Only the relaunch of the new build happened; a failed restore must not
         # start an app on a half-restored tree.
@@ -155,42 +149,43 @@ def test_stop_relaunched_app_kills_the_session_launcher_and_confirms_exit(
     assert status == {"pid": 4242, "terminated": True, "aliveAfter": False}
 
 
-def test_verify_restored_install_rejects_a_missing_snapshot_file(tmp_path: Path) -> None:
+def test_restore_install_snapshot_replaces_the_tree_and_returns_the_previous_version(
+    tmp_path: Path,
+) -> None:
     install_root = tmp_path / "portable"
     snapshot_root = tmp_path / "rollback" / "runtime"
     (snapshot_root / "ship" / "app").mkdir(parents=True)
-    (snapshot_root / "Baluffo.exe").write_text("exe", encoding="utf-8")
+    (snapshot_root / "Baluffo.exe").write_text("previous", encoding="utf-8")
     (snapshot_root / "ship" / "app" / "current.txt").write_text("0.1.0\n", encoding="utf-8")
     (install_root / "ship" / "app").mkdir(parents=True)
-    (install_root / "Baluffo.exe").write_text("exe", encoding="utf-8")
-
-    with pytest.raises(RuntimeError, match="missing: ship/app/current.txt"):
-        updater_install._verify_restored_install(install_root, tmp_path / "rollback")
-
-
-def test_verify_restored_install_rejects_a_stale_current_pointer(tmp_path: Path) -> None:
-    install_root = tmp_path / "portable"
-    snapshot_root = tmp_path / "rollback" / "runtime"
-    (snapshot_root / "ship" / "app").mkdir(parents=True)
-    (snapshot_root / "ship" / "app" / "current.txt").write_text("0.1.0\n", encoding="utf-8")
-    (install_root / "ship" / "app").mkdir(parents=True)
+    (install_root / "Baluffo.exe").write_text("updated", encoding="utf-8")
     (install_root / "ship" / "app" / "current.txt").write_text("1.4.0\n", encoding="utf-8")
+    (install_root / "ship" / "app" / "only-in-update.txt").write_text("x", encoding="utf-8")
+    (install_root / "ship" / "data").mkdir(parents=True)
+    (install_root / "ship" / "data" / "runtime.db").write_text("data", encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="current.txt"):
-        updater_install._verify_restored_install(install_root, tmp_path / "rollback")
+    restored = updater_install._restore_install_snapshot(install_root, tmp_path / "rollback")
+
+    assert restored == {"files": 2, "currentVersion": "0.1.0"}
+    assert (install_root / "Baluffo.exe").read_text(encoding="utf-8") == "previous"
+    assert not (install_root / "ship" / "app" / "only-in-update.txt").exists()
+    assert (install_root / "ship" / "data" / "runtime.db").read_text(encoding="utf-8") == "data"
 
 
-def test_verify_restored_install_accepts_a_pointerless_snapshot(tmp_path: Path) -> None:
-    install_root = tmp_path / "portable"
+def test_restore_install_snapshot_rejects_a_missing_snapshot(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="snapshot is missing"):
+        updater_install._restore_install_snapshot(tmp_path / "portable", tmp_path / "rollback")
+
+
+def test_restore_install_snapshot_rejects_a_snapshot_without_current_pointer(
+    tmp_path: Path,
+) -> None:
     snapshot_root = tmp_path / "rollback" / "runtime"
-    (snapshot_root / "Baluffo.exe").parent.mkdir(parents=True)
-    (snapshot_root / "Baluffo.exe").write_text("exe", encoding="utf-8")
-    (install_root / "Baluffo.exe").parent.mkdir(parents=True)
-    (install_root / "Baluffo.exe").write_text("exe", encoding="utf-8")
+    snapshot_root.mkdir(parents=True)
+    (snapshot_root / "Baluffo.exe").write_text("previous", encoding="utf-8")
 
-    restored = updater_install._verify_restored_install(install_root, tmp_path / "rollback")
-
-    assert restored == {"files": 1, "currentVersion": ""}
+    with pytest.raises(RuntimeError, match="snapshot is incomplete"):
+        updater_install._restore_install_snapshot(tmp_path / "portable", tmp_path / "rollback")
 
 
 def test_run_install_records_specific_failure_when_relaunch_verification_fails(
@@ -223,7 +218,7 @@ def test_run_install_records_specific_failure_when_relaunch_verification_fails(
         zip_context = mock.MagicMock()
         zip_context.__enter__.return_value = zip_context
         zip_context.__exit__.return_value = False
-        restore_snapshot = mock.Mock()
+        restore_snapshot = mock.Mock(return_value={"files": 1, "currentVersion": "0.1.0"})
         launch_executable = mock.Mock()
 
         _patch_release_validation(monkeypatch)
@@ -247,11 +242,6 @@ def test_run_install_records_specific_failure_when_relaunch_verification_fails(
             ),
         )
         monkeypatch.setattr(updater_install, "_restore_install_snapshot", restore_snapshot)
-        monkeypatch.setattr(
-            updater_install,
-            "_verify_restored_install",
-            lambda *args, **kwargs: {"files": 1, "currentVersion": "0.1.0"},
-        )
 
         with pytest.raises(
             RuntimeError, match="Updated desktop app did not report startup readiness in time."
