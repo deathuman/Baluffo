@@ -224,9 +224,9 @@ def set_storage_compaction_hold(held: bool) -> list[dict[str, Any]]:
 
 
 # The reclaim hold blocks task starts while a container reclaim copies the
-# database. A boolean cannot expire, so the record carries its own deadlines and
+# database. A boolean cannot expire, so its record {runId, heldAt, heartbeatAt}
 # is evaluated on every read: a crashed run must not block fetches until the
-# bridge restarts. `expiresAt` is a hard maximum and is never renewed.
+# bridge restarts. Expiry is derived from `heldAt`; nothing stores `expiresAt`.
 RECLAIM_HOLD_HEARTBEAT_TIMEOUT_S = 60.0
 # Eight hours, not two. A copy of a few hundred gigabytes on a slow disk is real
 # work, not a hang: at the ~85 MB/s measured here a 200 GB store copies in about
