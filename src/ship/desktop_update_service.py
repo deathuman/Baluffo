@@ -254,7 +254,9 @@ class DesktopUpdateService:
                     "lastError": terminal_error,
                 }
             )
-        next_status["repairAvailable"] = self._repair_available(next_status)
+        next_status["repairAvailable"] = self._repair_available(
+            next_status, cached_manifest_payload
+        )
         if next_status != existing:
             return _as_dict(save_status(self.paths, next_status))
         return dict(next_status)
@@ -744,21 +746,43 @@ class DesktopUpdateService:
         text = str(status.get("rollbackPath") or "").strip()
         return Path(text).expanduser().resolve() if text else None
 
-    def _repair_available(self, status: dict[str, Any]) -> bool:
-        if not terminal_install_stage(status.get("installState"), status.get("installStage")):
-            return False
-        artifact = desktop_artifact()
-        if artifact.is_appimage:
-            return False
+    def _repair_snapshot_available(self, status: dict[str, Any]) -> bool:
         rollback_root = self._repair_snapshot_root(status)
         if rollback_root is None:
             return False
         snapshot_root = rollback_root / "runtime"
         return bool(
-            (self.paths.install_root / artifact.helper_name).is_file()
-            and (snapshot_root / "Baluffo.exe").is_file()
+            (snapshot_root / "Baluffo.exe").is_file()
             and (snapshot_root / "ship" / "app" / "current.txt").is_file()
         )
+
+    @staticmethod
+    def _repair_zip_available(status: dict[str, Any], manifest: dict[str, Any]) -> bool:
+        """A signed release ZIP can rebuild the install when the snapshot is gone."""
+        artifact = _as_dict(manifest.get("portable_artifact"))
+        if not str(artifact.get("url") or "").strip():
+            return False
+        if not str(artifact.get("sha256") or "").strip():
+            return False
+        target = str(status.get("targetVersion") or "").strip()
+        return not target or str(manifest.get("version") or "").strip() == target
+
+    def _repair_mode(self, status: dict[str, Any], manifest: dict[str, Any]) -> str:
+        if not terminal_install_stage(status.get("installState"), status.get("installStage")):
+            return ""
+        artifact = desktop_artifact()
+        if artifact.is_appimage:
+            return ""
+        if not (self.paths.install_root / artifact.helper_name).is_file():
+            return ""
+        if self._repair_snapshot_available(status):
+            return "restore-snapshot"
+        if self._repair_zip_available(status, manifest):
+            return "reextract-zip"
+        return ""
+
+    def _repair_available(self, status: dict[str, Any], manifest: dict[str, Any]) -> bool:
+        return bool(self._repair_mode(status, manifest))
 
     @staticmethod
     def _repair_snapshot_version(status: dict[str, Any]) -> str:
@@ -812,17 +836,6 @@ class DesktopUpdateService:
                         error_code="install_repair_not_needed",
                     )
                 )
-            if not self._repair_available(status):
-                return _as_dict(
-                    _failure_result(
-                        status=status,
-                        error=(
-                            "Automatic repair is unavailable for this install. "
-                            "The retained portable rollback snapshot is missing."
-                        ),
-                        error_code="install_repair_unavailable",
-                    )
-                )
             artifact = desktop_artifact()
             if artifact.is_appimage:
                 return _as_dict(
@@ -831,6 +844,29 @@ class DesktopUpdateService:
                         error=(
                             "Automatic repair is only available for the portable "
                             "desktop build. Follow the recovery steps for the AppImage."
+                        ),
+                        error_code="install_repair_unavailable",
+                    )
+                )
+            helper_source = self.paths.install_root / artifact.helper_name
+            if not helper_source.is_file():
+                return _as_dict(
+                    _failure_result(
+                        status=status,
+                        error=f"Installed desktop updater helper not found: {helper_source}",
+                        error_code="install_repair_unavailable",
+                    )
+                )
+            _cached, repair_manifest, _notes, _history = self._load_cached_manifest_parts()
+            repair_mode = self._repair_mode(status, repair_manifest)
+            if not repair_mode:
+                return _as_dict(
+                    _failure_result(
+                        status=status,
+                        error=(
+                            "Automatic repair is unavailable for this install. "
+                            "Neither the retained portable rollback snapshot nor a "
+                            "verified release ZIP is available."
                         ),
                         error_code="install_repair_unavailable",
                     )
@@ -848,14 +884,6 @@ class DesktopUpdateService:
                     )
                 )
             helper_source = self.paths.install_root / artifact.helper_name
-            if not helper_source.is_file():
-                return _as_dict(
-                    _failure_result(
-                        status=status,
-                        error=f"Installed desktop updater helper not found: {helper_source}",
-                        error_code="install_repair_unavailable",
-                    )
-                )
             helper_suffix = Path(artifact.helper_name).suffix
             temp_helper = (
                 Path(tempfile.gettempdir()).resolve()
@@ -874,14 +902,18 @@ class DesktopUpdateService:
             requested_at = iso_now()
             repair_plan = {
                 "planVersion": 1,
-                "mode": "restore-snapshot",
+                "mode": repair_mode,
                 "dataDir": str(self.paths.data_dir),
                 "installRoot": str(self.paths.install_root),
                 "helperPath": str(temp_helper),
                 "launcherPid": launcher_pid,
                 "launcherToken": launcher_token,
                 "desktopSessionRoot": str(session_root),
-                "expectedVersion": self._repair_snapshot_version(status),
+                "expectedVersion": (
+                    self._repair_snapshot_version(status)
+                    if repair_mode == "restore-snapshot"
+                    else str(status.get("targetVersion") or status.get("latestVersion") or "")
+                ),
                 "discardSnapshot": False,
                 "relaunch": True,
                 "panel": True,
@@ -899,7 +931,7 @@ class DesktopUpdateService:
                         {
                             **status,
                             "repairState": "repairing",
-                            "repairAction": "restore-snapshot",
+                            "repairAction": repair_mode,
                             "repairRequestedAt": requested_at,
                             "repairError": "",
                             "repairAvailable": True,
@@ -910,7 +942,7 @@ class DesktopUpdateService:
                     self.paths.repair_request_path,
                     {
                         "requestedAt": requested_at,
-                        "mode": "restore-snapshot",
+                        "mode": repair_mode,
                         "launcherPid": launcher_pid,
                         "launcherToken": launcher_token,
                     },

@@ -55,6 +55,9 @@ from src.ship.desktop_update_state import (
     load_status as _load_status,
 )
 from src.ship.desktop_update_state import (
+    read_cached_manifest as _read_cached_manifest,
+)
+from src.ship.desktop_update_state import (
     save_status as _save_status,
 )
 from src.ship.desktop_update_state import (
@@ -99,7 +102,7 @@ MUTATING_INSTALL_STAGES = frozenset(
     }
 )
 SUCCESS_RECOVERY_STAGES = frozenset({"relaunching", "verifying"})
-TERMINAL_INSTALL_REPAIR_MODES = ("restore-snapshot", "accept-install")
+TERMINAL_INSTALL_REPAIR_MODES = ("reextract-zip", "restore-snapshot", "accept-install")
 
 # Preserve these names on the module root for desktop_updater.py facade compatibility.
 time = _time
@@ -586,9 +589,10 @@ def _save_terminal_repair_status(
     previous_stage: str,
     previous_error: str,
     version: str,
-    snapshot_path: Path,
+    snapshot_path: Path | str,
     snapshot_removed: bool,
     verified: bool,
+    extras: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return _as_dict(
         _save_install_stage_status(
@@ -613,6 +617,7 @@ def _save_terminal_repair_status(
                 "version": str(version or ""),
                 "snapshotPath": str(snapshot_path),
                 "snapshotRemoved": bool(snapshot_removed),
+                **(extras or {}),
             },
         )
     )
@@ -730,8 +735,11 @@ def _repair_success_result(
     show_func: Any,
 ) -> int:
     version = str(result.get("version") or "")
-    if str(result.get("action") or "") == "restore-snapshot":
+    action = str(result.get("action") or "")
+    if action == "restore-snapshot":
         message = f"Restored Baluffo {version} from the retained rollback snapshot."
+    elif action == "reextract-zip":
+        message = f"Re-extracted Baluffo {version} from the verified release ZIP."
     else:
         message = f"Accepted the Baluffo {version} install and cleared the failed rollback."
     if not bool(result.get("snapshotRemoved")):
@@ -910,6 +918,157 @@ def _accept_terminal_install(
     }
 
 
+def _repair_release_manifest(
+    paths: DesktopUpdatePaths,
+    *,
+    target_version: str,
+) -> tuple[dict[str, Any], str]:
+    """Trust the signed manifest for the release that failed to install."""
+    cached = _as_dict(_read_cached_manifest(paths).get("manifest"))
+    cached_version = str(cached.get("version") or "").strip()
+    wanted = str(target_version or "").strip() or cached_version
+    if not wanted:
+        raise RuntimeError("The failed install does not record which release to re-extract.")
+    use_cache = cached_version == wanted
+    manifest = _recover_manifest_for_install(
+        {
+            "targetVersion": wanted,
+            "manifestKeyId": str(cached.get("key_id") or "").strip() if use_cache else "",
+            "expectedZipSha256": "",
+        },
+        install_root=paths.install_root,
+        ship_root=paths.ship_root,
+        paths=paths,
+        use_cache=use_cache,
+    )
+    found = str(manifest.get("version") or "").strip()
+    if found != wanted:
+        raise RuntimeError(
+            f"Verified desktop manifest is for {found!r}, not the failed update {wanted!r}."
+        )
+    return manifest, wanted
+
+
+def _verified_release_zip_version(zip_path: Path, *, expected_version: str) -> str:
+    """Reject a release ZIP that cannot replace the install before touching it."""
+    try:
+        with _zipfile.ZipFile(zip_path, "r") as archive:
+            names = {name.replace("\\", "/") for name in archive.namelist()}
+            if "Baluffo.exe" not in names or "ship/app/current.txt" not in names:
+                raise RuntimeError(
+                    "Desktop release ZIP is incomplete: it must contain "
+                    "Baluffo.exe and ship/app/current.txt."
+                )
+            try:
+                version = archive.read("ship/app/current.txt").decode("utf-8").strip()
+            except (KeyError, UnicodeDecodeError) as exc:
+                raise RuntimeError(
+                    f"Desktop release ZIP has an unreadable ship/app/current.txt: {exc}"
+                ) from exc
+    except (_zipfile.BadZipFile, _zipfile.LargeZipFile, OSError) as exc:
+        raise RuntimeError(f"Desktop release ZIP could not be read: {exc}") from exc
+    if not version:
+        raise RuntimeError("Desktop release ZIP records an empty version.")
+    wanted = str(expected_version or "").strip()
+    if wanted and version != wanted:
+        raise RuntimeError(
+            "Desktop release ZIP version does not match the requested repair "
+            f"(expected {wanted!r}, found {version!r})"
+        )
+    return version
+
+
+def _release_zip_path(
+    paths: DesktopUpdatePaths,
+    *,
+    manifest: dict[str, Any],
+    version: str,
+) -> Path:
+    """The canonical download path, so a repair cannot overwrite another artifact."""
+    url = str(_as_dict(manifest.get("portable_artifact")).get("url") or "").strip()
+    name = url.rsplit("/", 1)[-1] or f"baluffo-portable-{version}.zip"
+    return paths.downloads_dir / name
+
+
+def _reextract_terminal_install(
+    paths: DesktopUpdatePaths,
+    *,
+    repair_mode: str,
+    stage: str,
+    previous_error: str,
+    rollback_root: Path,
+    required_version: str,
+    target_version: str,
+) -> dict[str, Any]:
+    """Rebuild the install from the signed release ZIP when no snapshot is left."""
+    snapshot_root = rollback_root / "runtime"
+    if (snapshot_root / "Baluffo.exe").is_file() and (
+        snapshot_root / "ship" / "app" / "current.txt"
+    ).is_file():
+        raise RuntimeError(
+            "The retained rollback snapshot is still usable; run restore-snapshot instead."
+        )
+    manifest, wanted = _repair_release_manifest(paths, target_version=target_version)
+    artifact = _as_dict(manifest.get("portable_artifact"))
+    digest = str(artifact.get("sha256") or "").strip().lower()
+    if not digest:
+        raise RuntimeError("Verified desktop manifest is missing its portable artifact checksum.")
+    zip_path = _ensure_verified_zip_for_install(
+        {"expectedZipSha256": digest},
+        manifest=manifest,
+        zip_path=_release_zip_path(paths, manifest=manifest, version=wanted),
+    )
+    version = _verified_release_zip_version(
+        zip_path,
+        expected_version=str(required_version or wanted).strip(),
+    )
+    staging_root = paths.updater_dir / "staging"
+    staging_root.mkdir(parents=True, exist_ok=True)
+    temp_extract = (staging_root / f"baluffo-repair-{uuid.uuid4().hex}").resolve()
+    if temp_extract.exists():
+        shutil.rmtree(temp_extract)
+    pointer_rel = Path("ship") / "app" / "current.txt"
+    installed_files = 0
+    try:
+        with _zipfile.ZipFile(zip_path, "r") as archive:
+            archive.extractall(temp_extract)
+        if (temp_extract / pointer_rel).read_text(encoding="utf-8").strip() != version:
+            raise RuntimeError("Desktop release ZIP did not extract its recorded version.")
+        installed_files = len(_files_under(temp_extract))
+        _sync_extract_to_install(paths.install_root, temp_extract)
+        installed_version = (paths.install_root / pointer_rel).read_text(encoding="utf-8").strip()
+        if installed_version != version:
+            raise RuntimeError(
+                "Desktop release ZIP did not install its recorded version "
+                f"(expected {version!r}, found {installed_version!r})."
+            )
+    finally:
+        with contextlib.suppress(OSError):
+            shutil.rmtree(temp_extract)
+    saved = _save_terminal_repair_status(
+        paths,
+        mode=repair_mode,
+        previous_stage=stage,
+        previous_error=previous_error,
+        version=version,
+        snapshot_path="",
+        snapshot_removed=False,
+        verified=False,
+        extras={"zipPath": str(zip_path), "zipSha256": digest},
+    )
+    remove_rollback_path(rollback_root)
+    return {
+        "ok": True,
+        "action": repair_mode,
+        "version": version,
+        "files": installed_files,
+        "zipPath": str(zip_path),
+        "snapshotPath": str(rollback_root),
+        "snapshotRemoved": not rollback_root.exists(),
+        "status": saved,
+    }
+
+
 def repair_terminal_install(
     paths: DesktopUpdatePaths,
     *,
@@ -920,9 +1079,10 @@ def repair_terminal_install(
     """Clear a terminal rollback failure only after an explicit operator repair.
 
     ``restore-snapshot`` puts the retained last-good tree back and removes the
-    snapshot. ``accept-install`` clears the barrier for a tree the operator has
-    already replaced, and refuses while the old snapshot is still on disk unless
-    they also confirm discarding it. ``ship/data`` is never touched.
+    snapshot. ``reextract-zip`` rebuilds the tree from the signed release ZIP when
+    that snapshot is missing. ``accept-install`` clears the barrier for a tree the
+    operator has already replaced, and refuses while the old snapshot is still on
+    disk unless they also confirm discarding it. ``ship/data`` is never touched.
     """
     repair_mode = str(mode or "").strip().lower()
     if repair_mode not in TERMINAL_INSTALL_REPAIR_MODES:
@@ -945,6 +1105,16 @@ def repair_terminal_install(
         )
     rollback_root = Path(rollback_text).expanduser().resolve()
     required_version = str(expected_version or "").strip()
+    if repair_mode == "reextract-zip":
+        return _reextract_terminal_install(
+            paths,
+            repair_mode=repair_mode,
+            stage=stage,
+            previous_error=previous_error,
+            rollback_root=rollback_root,
+            required_version=required_version,
+            target_version=str(status.get("targetVersion") or status.get("latestVersion") or ""),
+        )
     if repair_mode == "restore-snapshot":
         return _restore_terminal_install(
             paths,

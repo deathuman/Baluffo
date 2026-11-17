@@ -291,7 +291,7 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
   if (normalized.repairState === "repairing") {
     view.buttonLabel = "Repairing update";
     view.title = "Repairing desktop install";
-    view.body = "Baluffo is closing so the updater helper can restore the previous build from the retained snapshot.";
+    view.body = "Baluffo is closing so the updater helper can put a working build back. Your ship data folder is preserved.";
     view.progress = "The app will reopen automatically when the repair finishes.";
     view.primaryVisible = false;
     view.secondaryVisible = false;
@@ -301,9 +301,12 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
   if (normalized.repairState === "repaired") {
     view.buttonLabel = "Repair complete";
     view.title = "Desktop install repaired";
+    const reextracted = normalized.repairAction === "reextract-zip";
     view.body = normalized.repairVersion
-      ? `Restored Baluffo ${normalized.repairVersion} from the retained rollback snapshot.`
-      : "Restored the previous Baluffo build from the retained rollback snapshot.";
+      ? `${reextracted ? "Re-extracted" : "Restored"} Baluffo ${normalized.repairVersion} ${reextracted ? "from the verified release ZIP." : "from the retained rollback snapshot."}`
+      : (reextracted
+        ? "Re-extracted Baluffo from the verified release ZIP."
+        : "Restored the previous Baluffo build from the retained rollback snapshot.");
     view.progress = "The failed update is cleared. Check for updates when you are ready to try again.";
     view.primaryAction = "check";
     view.primaryLabel = "Check for updates";
@@ -320,7 +323,7 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
     view.body = normalized.repairError
       || normalized.lastError
       || "Baluffo could not restore the previous build.";
-    view.progress = "The failed install and its rollback snapshot are still retained.";
+    view.progress = "The failed install is still retained.";
     view.primaryAction = "repair";
     view.primaryLabel = "Try repair again";
     view.primaryVisible = normalized.repairAvailable;
@@ -335,7 +338,7 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
     view.title = "Desktop update needs repair";
     view.body = normalized.lastError || "The previous update could not be rolled back.";
     view.progress = normalized.repairAvailable
-      ? "Repair restores the previous build from the retained rollback snapshot and reopens Baluffo."
+      ? "Repair puts a working build back from the retained rollback snapshot or the verified release ZIP and reopens Baluffo. Your ship data folder is preserved."
       : "Automatic repair is unavailable for this install. Follow the recovery steps in the troubleshooting guide.";
     view.primaryAction = "repair";
     view.primaryLabel = "Repair install";

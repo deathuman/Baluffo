@@ -89,9 +89,10 @@ def _recover_manifest_for_install(
     install_root: Path,
     ship_root: Path,
     paths,
+    use_cache: bool = True,
 ) -> dict[str, Any]:
     cached_manifest = _read_cached_manifest(paths)
-    manifest = _as_dict(cached_manifest.get("manifest"))
+    manifest = _as_dict(cached_manifest.get("manifest")) if use_cache else {}
     if manifest:
         return manifest
     repo = resolve_release_repo(install_root=install_root, ship_root=ship_root)
@@ -131,7 +132,8 @@ def _recover_manifest_for_install(
     )
     if str(manifest.get("version") or "").strip() != str(plan.get("targetVersion") or "").strip():
         raise RuntimeError("Recovered desktop manifest does not match the install target version.")
-    if str(manifest.get("key_id") or "").strip() != str(plan.get("manifestKeyId") or "").strip():
+    expected_key_id = str(plan.get("manifestKeyId") or "").strip()
+    if expected_key_id and str(manifest.get("key_id") or "").strip() != expected_key_id:
         raise RuntimeError("Recovered desktop manifest does not match the expected signing key.")
     artifact = _as_dict(manifest.get("portable_artifact"))
     expected_hash = str(plan.get("expectedZipSha256") or "").strip().lower()

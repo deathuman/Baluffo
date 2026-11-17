@@ -523,18 +523,21 @@ New Windows packaged installs use `%APPDATA%\Baluffo\updater\post-install-succes
 
 ### Desktop update reports `rollback_failed` and refuses to retry
 
-A failed rollback is terminal on purpose: the failed install and the retained last-good snapshot are left untouched so a retry cannot overwrite them. The update panel reports `Update needs repair` and offers **Repair install** for the Windows portable build. That action closes Baluffo, waits for the launcher and its children to exit, runs the helper's `restore-snapshot` repair, and reopens the restored build. The panel then reports whether the repair completed or failed. If the action is unavailable, close Baluffo and choose one repair mode manually:
+A failed rollback is terminal on purpose: the failed install and the retained last-good snapshot are left untouched so a retry cannot overwrite them. The update panel reports `Update needs repair` and offers **Repair install** for the Windows portable build. That action closes Baluffo, waits for the launcher and its children to exit, runs the helper repair, and reopens the build. The helper restores the retained snapshot when it is still usable and otherwise re-extracts the failed release from its verified ZIP, keeping `ship\data`. The panel then reports whether the repair completed or failed. If the action is unavailable, close Baluffo and choose one repair mode manually:
 
 ```powershell
 # Put the retained last-good tree back and clear the terminal status.
 .\BaluffoUpdater.exe --repair-desktop-install --data-dir "$env:APPDATA\Baluffo" --install-root "<portable-folder>" --mode restore-snapshot
+
+# Rebuild the failed install from the signed release ZIP when the retained snapshot is gone.
+.\BaluffoUpdater.exe --repair-desktop-install --data-dir "$env:APPDATA\Baluffo" --install-root "<portable-folder>" --mode reextract-zip --expect-version <version>
 
 # Or accept a tree you already replaced (for example by re-extracting the released
 # portable ZIP over the install folder), then discard the old snapshot and clear the status.
 .\BaluffoUpdater.exe --repair-desktop-install --data-dir "$env:APPDATA\Baluffo" --install-root "<portable-folder>" --mode accept-install --expect-version <version> --discard-snapshot
 ```
 
-`BaluffoUpdater.exe` reports the result in a dialog; from a source checkout, run the same flags with `python -m src.ship.desktop_updater`. `<data-dir>` is the runtime data directory (`%APPDATA%\Baluffo` for a default Windows install, or `ship\data` for a source run), and `<portable-folder>` is the folder that holds `Baluffo.exe` and `ship\`. Both modes leave `ship\data` untouched. `restore-snapshot` verifies the snapshot's `ship\app\current.txt` and `Baluffo.exe` before deleting anything and removes the snapshot only after a successful restore. `accept-install` validates the current `Baluffo.exe` and `ship\app\current.txt`, and refuses while the old snapshot is still on disk unless `--discard-snapshot` is explicit. Do not clear `install-state.json` by hand: the terminal status is the only record that a good snapshot is being retained.
+`BaluffoUpdater.exe` reports the result in a dialog; from a source checkout, run the same flags with `python -m src.ship.desktop_updater`. `<data-dir>` is the runtime data directory (`%APPDATA%\Baluffo` for a default Windows install, or `ship\data` for a source run), and `<portable-folder>` is the folder that holds `Baluffo.exe` and `ship\`. All three modes leave `ship\data` untouched. `restore-snapshot` verifies the snapshot's `ship\app\current.txt` and `Baluffo.exe` before deleting anything and removes the snapshot only after a successful restore. `reextract-zip` re-verifies the release ZIP against the signed manifest digest, checks it contains `Baluffo.exe` and `ship\app\current.txt` before replacing anything, and refuses while a usable snapshot is still on disk. `accept-install` validates the current `Baluffo.exe` and `ship\app\current.txt`, and refuses while the old snapshot is still on disk unless `--discard-snapshot` is explicit. Do not clear `install-state.json` by hand: the terminal status is the only record that a good snapshot is being retained.
 
 ### Portable update from `v0.1.33` reports `install_handoff_unconfirmed`
 

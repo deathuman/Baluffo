@@ -424,7 +424,7 @@ export function createJobsDesktopUpdateController({
   async function repairInstall() {
     const confirmationOptions = {
       title: "Repair this install?",
-      description: "Baluffo will close, restore the previous build from the retained rollback snapshot, and reopen automatically. Your ship\\data is preserved.",
+      description: "Baluffo will close, repair the desktop install, and reopen automatically. Your ship data folder is preserved.",
       confirmLabel: "Repair and restart",
       cancelLabel: "Cancel",
     };

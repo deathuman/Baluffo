@@ -1,5 +1,7 @@
 """Explicit repair for a terminal desktop update rollback failure."""
 
+import shutil
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -118,6 +120,59 @@ def test_accept_install_requires_discarding_the_retained_snapshot() -> None:
         assert status["installStage"] == "idle"
         assert status["lastRepair"]["action"] == "accept-install"
         assert status["lastRepair"]["snapshotRemoved"] is True
+
+
+def test_repair_offer_uses_the_verified_release_zip_when_the_snapshot_is_missing() -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        paths, install_root, rollback_root = _terminal_install(tmp)
+        (install_root / "BaluffoUpdater.exe").write_text("helper", encoding="utf-8")
+        shutil.rmtree(rollback_root)
+        zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            archive.writestr("Baluffo.exe", "released")
+            archive.writestr("ship/app/current.txt", "1.4.0\n")
+        update_state.write_json_atomic(
+            paths.manifest_cache_path,
+            {
+                "manifest": {
+                    "version": "1.4.0",
+                    "key_id": "desktop-ed25519-test",
+                    "portable_artifact": {
+                        "url": f"https://example.invalid/{zip_path.name}",
+                        "sha256": du_shared.compute_sha256(zip_path),
+                    },
+                }
+            },
+        )
+        session_root = Path(tmp) / "session"
+        session_root.mkdir()
+        (session_root / "desktop-session.json").write_text(
+            '{"launcherPid": 4242, "launcherToken": "token-1"}',
+            encoding="utf-8",
+        )
+        service = update_service.DesktopUpdateService(
+            data_dir=paths.data_dir,
+            current_version_getter=lambda: "1.4.0",
+        )
+
+        with (
+            mock.patch.object(
+                update_service, "resolve_desktop_session_root", return_value=session_root
+            ),
+            mock.patch.object(
+                update_service,
+                "read_desktop_session_state",
+                return_value={"launcherPid": 4242, "launcherToken": "token-1"},
+            ),
+        ):
+            result = service.request_repair()
+
+        assert result["started"] is True
+        assert result["status"]["repairAction"] == "reextract-zip"
+        plan = update_state.read_json(paths.repair_plan_path, {})
+        assert plan["mode"] == "reextract-zip"
+        assert plan["expectedVersion"] == "1.4.0"
 
 
 def test_repair_refuses_when_no_terminal_failure_is_recorded() -> None:
