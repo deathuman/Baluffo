@@ -275,7 +275,7 @@ def _parse_int(raw: Any) -> int | None:
         return None
     try:
         return max(0, int(text))
-    except ValueError:
+    except (ValueError, OverflowError):
         return None
 
 

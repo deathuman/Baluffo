@@ -335,25 +335,29 @@ def test_slow_checkpoint_records_checkpoint_and_wal_timings() -> None:
             holder.start()
             assert held.wait(2)
             try:
-                store.checkpoint_required(mode="TRUNCATE")
+                result = store.checkpoint_required(mode="TRUNCATE")
             finally:
                 release.set()
                 holder.join(timeout=5)
 
+            # checkpoint_required() runs PASSIVE first, so the wait on the write
+            # lock is that pass's to journal; the TRUNCATE escalation follows it.
             rows = [
                 row
                 for row in _slow_store_write_rows(data_dir)
-                if row.get("operation") == "checkpoint:truncate"
+                if row.get("operation") == "checkpoint:passive"
             ]
 
             assert rows, "a checkpoint that waited past the threshold must be journaled"
             row = rows[-1]
             assert int(cast(int, row["checkpointMs"])) >= 0
             assert int(cast(int, row["walBytesBefore"])) > 0
-            assert int(cast(int, row["walBytesAfter"])) == 0
-            assert int(cast(int, row["walGrowthBytes"])) == int(
-                cast(int, row["walBytesAfter"])
-            ) - int(cast(int, row["walBytesBefore"]))
+            # The escalation is what empties the WAL: PASSIVE leaves the file in
+            # place, so the zero byte size proves TRUNCATE actually ran.
+            assert result["complete"] is True
+            assert result["detail"] == ""
+            wal_path = store.db_path.with_name(f"{store.db_path.name}-wal")
+            assert wal_path.stat().st_size == 0
 
 
 def test_save_json_atomic_records_storage_metrics_without_recursing(tmp_path: Path) -> None:
