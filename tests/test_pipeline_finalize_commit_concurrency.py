@@ -23,6 +23,12 @@ from src.shared.json_io import read_json
 from tests.helpers.jobs_rows import canonical_feed_row
 from tests.test_pipeline_finalize_terminal_harness import _run_finalize
 
+# Liveness bound for the worker thread, not a latency assertion: a loaded CI
+# runner can take several seconds to schedule the thread or finish the commit
+# writes, and the invariant here (the committed feed carries the newer
+# direct-live row) does not depend on either being fast.
+THREAD_LIFECYCLE_TIMEOUT_SECONDS = 30.0
+
 
 def test_finalize_pipeline_run_acquires_lock_for_authoritative_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -71,7 +77,7 @@ def test_concurrent_direct_live_update_survives_long_finalize_and_reaches_commit
 
     def blocking_quality_reports(_rows: list[dict[str, Any]]) -> tuple[Any, ...]:
         compute_started.set()
-        assert release_compute.wait(5.0)
+        assert release_compute.wait(THREAD_LIFECYCLE_TIMEOUT_SECONDS)
         return ({"location": "ok"}, {"sector": "ok"}, {"contamination": "ok"}, {"city": "ok"})
 
     result: dict[str, Any] = {}
@@ -92,7 +98,9 @@ def test_concurrent_direct_live_update_survives_long_finalize_and_reaches_commit
     worker = threading.Thread(target=run_finalize)
     worker.start()
     try:
-        assert compute_started.wait(2.0)
+        assert compute_started.wait(THREAD_LIFECYCLE_TIMEOUT_SECONDS), (
+            "finalize worker never reached the quality-report hook"
+        )
         updated_lifecycle = {
             "job-1": {
                 **initial_lifecycle["job-1"],
@@ -113,8 +121,9 @@ def test_concurrent_direct_live_update_survives_long_finalize_and_reaches_commit
         write_pipeline_rows_sidecar(paths.json_path, [concurrent_row])
     finally:
         release_compute.set()
-        worker.join(timeout=5.0)
+        worker.join(timeout=THREAD_LIFECYCLE_TIMEOUT_SECONDS)
 
+    assert not worker.is_alive(), "finalize worker did not finish within the lifecycle bound"
     assert errors == [], errors[0]
     assert "finalize" in result
     _report, calls, committed_paths, _progress_phase = result["finalize"]
