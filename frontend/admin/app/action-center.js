@@ -194,18 +194,71 @@ function quickCheckFailed(storage) {
   return true;
 }
 
-function walCheckpointCopy(storage) {
-  const wal = storage?.walMaintenance || {};
-  const walBytes = Number(wal.walBytes ?? storage?.walBytes ?? 0);
-  const databaseBytes = Number(wal.databaseBytes ?? storage?.databaseBytes ?? 0);
+function storageSizesCopy(walBytes, databaseBytes) {
   const sizes = [];
   if (Number.isFinite(walBytes) && walBytes > 0) sizes.push(`${formatBytes(walBytes)} WAL`);
   if (Number.isFinite(databaseBytes) && databaseBytes > 0) {
     sizes.push(`${formatBytes(databaseBytes)} database`);
   }
+  return sizes.join(" on ");
+}
+
+// One reading of the live files and the checkpoint record, shared by the signal
+// gate and its copy. W1: the record is a condition and only a live measurement ends
+// it. A null, blank or unreadable size is not evidence the WAL shrank, so it keeps
+// the warning: an alert fails toward speaking, never toward silence.
+function walGateState(storage) {
+  const wal = storage?.walMaintenance || {};
+  const readSize = value => {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "string" && value.trim() === "") return null;
+    const size = Number(value);
+    return Number.isFinite(size) && size >= 0 ? size : null;
+  };
+  const liveWal = readSize(storage?.walBytes);
+  const liveDatabase = readSize(storage?.databaseBytes);
+  const threshold = readSize(wal.checkpointThresholdBytes);
+  const status = String(wal.status || "").trim();
+  return {
+    status,
+    liveWal,
+    liveDatabase,
+    known: liveWal !== null || liveDatabase !== null,
+    outstanding: (status === "busy" || status === "failed")
+      && (liveWal === null || threshold === null || threshold <= 0 || liveWal >= threshold)
+  };
+}
+
+// W3: the record keeps the sizes observed before its attempt, so quoting them as
+// current made a resolved checkpoint read as a 1 GB WAL beside a 520 MB database.
+// The live files are the actionable numbers; the attempt's are history worth naming
+// only when they disagree.
+function walCheckpointCopy(storage) {
+  const wal = storage?.walMaintenance || {};
+  const { known: liveKnown, liveWal, liveDatabase } = walGateState(storage);
+  const attemptWal = Number(wal.walBytes ?? 0);
+  const attemptDatabase = Number(wal.databaseBytes ?? 0);
+  const current = storageSizesCopy(liveWal, liveDatabase);
+  const attempt = storageSizesCopy(attemptWal, attemptDatabase);
+  let sizes = attempt;
+  if (liveKnown) {
+    sizes = current;
+    if (attempt && (attemptWal !== liveWal || attemptDatabase !== liveDatabase)) {
+      sizes = current ? `${current}; the attempt saw ${attempt}` : `the attempt saw ${attempt}`;
+    }
+  }
   const failed = String(wal.status || "").trim() === "failed";
   const headline = failed ? "WAL checkpoint failed" : "WAL checkpoint could not finish";
-  return sizes.length ? `${headline} — ${sizes.join(" on ")}` : headline;
+  return sizes ? `${headline} — ${sizes}` : headline;
+}
+
+function attemptAgeNote(storage) {
+  const seconds = Number(storage?.walMaintenance?.attemptAgeS);
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
+  // `formatAge` rounds to whole minutes, which would render a 20 s old attempt as
+  // "0m ago". A fresh record must never read as no time at all.
+  if (seconds < 60) return " (just now)";
+  return ` (${formatAge(seconds / 3600)})`;
 }
 
 function evaluateStorageHealth(storageData) {
@@ -219,19 +272,24 @@ function evaluateStorageHealth(storageData) {
   // S1.2 makes a busy checkpoint a maintenance state, so the store reports
   // healthy: true while its WAL keeps growing. The warning must follow the
   // maintenance record, or the original 1 GB-WAL symptom goes silent.
-  const walStatus = String(storage?.walMaintenance?.status || "").trim();
-  const walNeedsAttention = walStatus === "busy" || walStatus === "failed";
-  if (!unhealthy && diagFailures === 0 && !walNeedsAttention) return null;
+  // W1: the record is a condition, not a verdict. It is rewritten only by a later
+  // attempt, so a WAL emptied by a VACUUM, a rebuild or a bulk-delete checkpoint
+  // left it reading `busy` forever. The live file decides whether it is still true;
+  // payloads without a live size or threshold cannot prove it ended, so they keep
+  // the record-based warning.
+  const { status: walStatus, outstanding: walOutstanding } = walGateState(storage);
+  if (!unhealthy && diagFailures === 0 && !walOutstanding) return null;
 
   const actions = ["review", "copy_diagnostics", "dismiss"];
   const at = storageReasonAt(storage);
   const failureMs = isoMs(at);
-  const when = failureMs ? ` on ${formatFailureTimestamp(failureMs)}` : "";
+  const ageNote = attemptAgeNote(storage);
+  const when = failureMs ? ` on ${formatFailureTimestamp(failureMs)}${ageNote}` : "";
   const deferredNote = storage.quickCheckDeferred === true
     ? "; integrity check deferred at this database size"
     : "";
   if (!unhealthy) {
-    if (diagFailures === 0 && walNeedsAttention) {
+    if (diagFailures === 0 && walOutstanding) {
       const dateNote = when || "; attempt date not recorded";
       return {
         id: "storage_health",

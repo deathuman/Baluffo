@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused ops health tests
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Callable
 from contextlib import nullcontext
@@ -378,15 +379,87 @@ def _human_bytes(value: Any) -> str:
     return f"{int(size)} B"
 
 
-def _storage_size_copy(storage: dict[str, Any], wal: dict[str, Any]) -> str:
-    wal_bytes = _safe_int(wal.get("walBytes") or storage.get("walBytes"), 0)
-    database_bytes = _safe_int(wal.get("databaseBytes") or storage.get("databaseBytes"), 0)
+def _optional_size(value: Any) -> int | None:
+    """A size the payload measured, or None when it carries no usable one.
+
+    `coerce_non_negative_int` maps null, `""` and `"n/a"` to 0, and 0 is also the
+    size of an empty file. Comparing those two would read "the WAL is empty" from a
+    field that never measured anything, which is exactly how the gate goes silent.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(number) or number < 0:
+        return None
+    return int(number)
+
+
+def _live_storage_sizes(storage: dict[str, Any]) -> tuple[int | None, int | None]:
+    """The files on disk, or (None, None) for a payload that does not carry them."""
+    return _optional_size(storage.get("walBytes")), _optional_size(storage.get("databaseBytes"))
+
+
+def _storage_sizes_copy(wal_bytes: int | None, database_bytes: int | None) -> str:
     parts: list[str] = []
-    if wal_bytes > 0:
+    if wal_bytes is not None and wal_bytes > 0:
         parts.append(f"{_human_bytes(wal_bytes)} WAL")
-    if database_bytes > 0:
+    if database_bytes is not None and database_bytes > 0:
         parts.append(f"{_human_bytes(database_bytes)} database")
     return " on ".join(parts)
+
+
+def _storage_size_copy(storage: dict[str, Any], wal: dict[str, Any]) -> str:
+    """Live sizes first, with the attempt's snapshot only when it differs.
+
+    The record stores the sizes observed *before* its attempt, so quoting them as
+    current made a resolved checkpoint read as a 1 GB WAL beside a 520 MB database
+    long after both files had fallen back. The live files are the actionable
+    numbers; the attempt's are history, and only worth naming when they disagree.
+    """
+    live_wal, live_database = _live_storage_sizes(storage)
+    attempt_wal = _optional_size(wal.get("walBytes"))
+    attempt_database = _optional_size(wal.get("databaseBytes"))
+    if live_wal is None and live_database is None:
+        # Older than 0.3.064: the record is the only size the payload carries.
+        return _storage_sizes_copy(attempt_wal, attempt_database)
+    current = _storage_sizes_copy(live_wal, live_database)
+    if (attempt_wal, attempt_database) == (live_wal, live_database):
+        return current
+    attempt = _storage_sizes_copy(attempt_wal, attempt_database)
+    if not attempt:
+        return current
+    return f"{current}; the attempt saw {attempt}" if current else f"the attempt saw {attempt}"
+
+
+def _wal_still_outstanding(storage: dict[str, Any], wal: dict[str, Any]) -> bool:
+    """Whether a busy/failed record still describes the live files.
+
+    W1: the record is a condition and only a live measurement can end it. An
+    unknown size or threshold is not evidence the WAL shrank, so it keeps the
+    warning; payloads older than 0.3.064 have neither, and the record still
+    decides. A stalled health read carries fresh sizes but no `walMaintenance`
+    (`storage_health._stalled_storage_payload`), so it never reaches this test and
+    cannot silence a live condition.
+    """
+    live_wal, _ = _live_storage_sizes(storage)
+    threshold = _optional_size(wal.get("checkpointThresholdBytes"))
+    if live_wal is None or threshold is None or threshold <= 0:
+        return True
+    return live_wal >= threshold
+
+
+def _human_age(seconds: Any) -> str:
+    total = max(0, _safe_int(seconds, 0))
+    if total < 60:
+        return f"{total} s"
+    if total < 3600:
+        return f"{total // 60} min"
+    if total < 86400:
+        return f"{total // 3600} h"
+    return f"{total // 86400} d"
 
 
 def storage_health_alert(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -398,6 +471,14 @@ def storage_health_alert(payload: dict[str, Any]) -> dict[str, Any] | None:
     failure is critical; a busy or errored checkpoint is a warning; and a store
     that S1.2 left healthy while its WAL could not be checkpointed is still a
     warning, because the disk risk is the point.
+
+    W1: that warning follows the live WAL, not the record.     `walMaintenance` is
+    rewritten only by a later attempt, so a WAL emptied by a VACUUM, a rebuild or a
+    bulk-delete checkpoint left the record reading `busy` forever and the panel
+    reported a 1 GB WAL that no longer existed. A busy record is a condition, and
+    the live file is what decides whether it is still true. An unmeasured size is
+    not evidence the condition ended: a null, blank, unparsable or negative size
+    keeps the warning, so the gate can only ever fail toward speaking.
     """
     storage = as_json_object(payload.get("storage"))
     if not storage:
@@ -405,7 +486,8 @@ def storage_health_alert(payload: dict[str, Any]) -> dict[str, Any] | None:
     unhealthy = storage.get("healthy") is False
     wal = as_json_object(storage.get("walMaintenance"))
     wal_status = str(wal.get("status") or "").strip()
-    if not unhealthy and wal_status not in {"busy", "failed"}:
+    wal_outstanding = wal_status in {"busy", "failed"} and _wal_still_outstanding(storage, wal)
+    if not unhealthy and not wal_outstanding:
         return None
 
     reason = as_json_object(storage.get("unhealthyReason"))
@@ -431,7 +513,7 @@ def storage_health_alert(payload: dict[str, Any]) -> dict[str, Any] | None:
             if detail
             else "SQLite integrity check failed"
         )
-    elif wal_reason or wal_status in {"busy", "failed"}:
+    elif wal_reason or wal_outstanding:
         severity = "warning"
         headline = (
             "WAL checkpoint failed" if wal_status == "failed" else "WAL checkpoint could not finish"
@@ -444,8 +526,10 @@ def storage_health_alert(payload: dict[str, Any]) -> dict[str, Any] | None:
         severity = "critical"
         label = _STORAGE_REASON_LABELS.get(code, "SQLite storage reported a problem")
         message = f"{label}: {reason_message}" if reason_message else label
+    attempt_age = _safe_int(wal.get("attemptAgeS"), 0)
     if at:
-        message += f"; attempt {at}"
+        when = f"{_human_age(attempt_age)} ago at {at}" if attempt_age > 0 else at
+        message += f"; attempt {when}"
     return {
         "id": "storage_unhealthy",
         "severity": severity,

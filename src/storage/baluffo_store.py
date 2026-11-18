@@ -115,6 +115,7 @@ DEFAULT_COMPACTION_BUDGET_S = 900.0
 DEFAULT_COMPACTION_FREE_SPACE_MARGIN_BYTES = 64 * 1024 * 1024
 SLOW_WRITE_STACK_LIMIT = 12
 MAINTENANCE_STATUS_DEFERRED = "deferred"
+MAINTENANCE_STATUS_OK = "ok"
 MAINTENANCE_STATUS_NOT_NEEDED = "not-needed"
 MAINTENANCE_STATUS_SKIPPED_BUSY = "skipped-busy"
 MAINTENANCE_STATUS_HELD_ACTIVE_TASK = "held-active-task"
@@ -155,6 +156,20 @@ class _Migration:
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _iso_age_seconds(value: Any) -> int | None:
+    """Seconds between a recorded timestamp and now; ``None`` when unreadable."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return max(0, int((datetime.now(UTC) - parsed).total_seconds()))
 
 
 def _is_busy_error(exc: sqlite3.OperationalError) -> bool:
@@ -1012,9 +1027,14 @@ class BaluffoStore:
         if not passive["complete"]:
             return {**passive, "detail": "passive-incomplete"}
         if checkpoint_mode == "PASSIVE":
-            return {**passive, "detail": ""}
+            completed = {**passive, "detail": ""}
+            self._record_completed_checkpoint(result=completed)
+            return completed
         escalated = self._checkpoint_pass(checkpoint_mode)
-        return {**escalated, "detail": "" if escalated["complete"] else "checkpoint-busy"}
+        completed = {**escalated, "detail": "" if escalated["complete"] else "checkpoint-busy"}
+        if escalated["complete"]:
+            self._record_completed_checkpoint(result=completed)
+        return completed
 
     def _checkpoint_pass(self, mode: str) -> dict[str, Any]:
         """Run one checkpoint mode with busy retries; busy never latches health."""
@@ -1155,8 +1175,12 @@ class BaluffoStore:
     def wal_maintenance_status(self) -> dict[str, Any]:
         with self._maintenance_lock:
             running = self._maintenance_thread is not None and self._maintenance_thread.is_alive()
+            status = dict(self._last_checkpoint)
+            # W3: a datable record is not an age. The panel says "12 h ago" from
+            # this rather than reparsing the timestamp on every poll.
+            status["attemptAgeS"] = _iso_age_seconds(status.get("attemptedAt"))
             return {
-                **self._last_checkpoint,
+                **status,
                 "running": running,
                 "deferred": self._maintenance_deferred,
                 "postServeRun": self._post_serve_maintenance_started,
@@ -1755,6 +1779,44 @@ class BaluffoStore:
         self._run_wal_maintenance(reason=reason, mode=mode)
         return True
 
+    def _record_completed_checkpoint(self, *, result: dict[str, Any], reason: str = "") -> None:
+        """Publish a checkpoint pass that completed, from whichever path ran it.
+
+        Only `_run_wal_maintenance` used to write `_last_checkpoint`, so a busy
+        record outlived any later checkpoint that completed elsewhere: the
+        bulk-delete and bulk-insert TRUNCATE, a backup, an install. The record then
+        read `busy` beside an empty WAL until the process restarted.
+        """
+        status = {
+            "status": MAINTENANCE_STATUS_OK,
+            "reason": str(reason or ""),
+            "attemptedAt": _now_iso(),
+            "durationMs": 0,
+            "error": "",
+            **self.file_sizes(),
+            **result,
+        }
+        with self._maintenance_lock:
+            self._last_checkpoint = status
+
+    def _record_wal_cleared(self, *, reason: str) -> None:
+        """Clear a busy checkpoint record when another path emptied the WAL.
+
+        `vacuum` runs its own `PRAGMA wal_checkpoint(TRUNCATE)` around VACUUM and
+        never goes through `checkpoint_required`, so it can leave a datable `busy`
+        record behind on a WAL that no longer exists.
+        """
+        # `mode` keeps the record the same shape as one a checkpoint attempt
+        # writes: the vacuum's own checkpoints are TRUNCATE.
+        self._record_completed_checkpoint(
+            reason=f"{reason or 'maintenance'}:wal-cleared",
+            result={
+                "status": MAINTENANCE_STATUS_NOT_NEEDED,
+                "mode": "TRUNCATE",
+                "detail": "wal-cleared",
+            },
+        )
+
     def _run_wal_maintenance(self, *, reason: str, mode: str) -> None:
         now = time.monotonic()
         with self._maintenance_lock:
@@ -1858,6 +1920,11 @@ class BaluffoStore:
                 self._mark_healthy()
                 after_bytes = self._path_size(self.db_path)
                 reclaimed = max(0, before_bytes - after_bytes)
+                # The VACUUM's own TRUNCATE checkpoints never reach
+                # checkpoint_required, so a record from before it would otherwise
+                # keep reading `busy` on a WAL this just emptied.
+                if self.file_sizes()["walBytes"] < self.wal_checkpoint_threshold_bytes:
+                    self._record_wal_cleared(reason=reason or "vacuum")
                 status = {
                     "status": "ok",
                     "method": "vacuum",

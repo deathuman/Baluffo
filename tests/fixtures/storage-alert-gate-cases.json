@@ -1,0 +1,78 @@
+[
+  {
+    "name": "unknown-live-size-keeps-the-record-warning",
+    "payload": {
+      "storage": {
+        "healthy": true,
+        "walMaintenance": { "status": "busy", "checkpointThresholdBytes": 67108864 }
+      }
+    },
+    "expect": { "alert": true, "severity": "warning" }
+  },
+  {
+    "name": "null-live-size-is-unknown-not-empty",
+    "payload": {
+      "storage": {
+        "healthy": true,
+        "walBytes": null,
+        "walMaintenance": { "status": "busy", "checkpointThresholdBytes": 67108864 }
+      }
+    },
+    "expect": { "alert": true, "severity": "warning" }
+  },
+  {
+    "name": "below-threshold-is-resolved",
+    "payload": {
+      "storage": {
+        "healthy": true,
+        "walBytes": 1048576,
+        "walMaintenance": { "status": "busy", "checkpointThresholdBytes": 67108864 }
+      }
+    },
+    "expect": { "alert": false }
+  },
+  {
+    "name": "at-threshold-is-outstanding",
+    "payload": {
+      "storage": {
+        "healthy": true,
+        "walBytes": 67108864,
+        "walMaintenance": { "status": "busy", "checkpointThresholdBytes": 67108864 }
+      }
+    },
+    "expect": { "alert": true, "severity": "warning" }
+  },
+  {
+    "name": "above-threshold-is-outstanding",
+    "payload": {
+      "storage": {
+        "healthy": true,
+        "walBytes": 104857600,
+        "walMaintenance": { "status": "busy", "checkpointThresholdBytes": 67108864 }
+      }
+    },
+    "expect": { "alert": true, "severity": "warning" }
+  },
+  {
+    "name": "unknown-threshold-keeps-the-record-warning",
+    "payload": { "storage": { "healthy": true, "walBytes": 0, "walMaintenance": { "status": "busy" } } },
+    "expect": { "alert": true, "severity": "warning" }
+  },
+  {
+    "name": "unhealthy-integrity-failure-is-critical",
+    "payload": {
+      "storage": {
+        "healthy": false,
+        "quickCheck": "database disk image is malformed",
+        "walBytes": 0,
+        "unhealthyReason": { "code": "integrity_check" }
+      }
+    },
+    "expect": { "alert": true, "severity": "critical" }
+  },
+  {
+    "name": "stalled-read-has-no-record",
+    "payload": { "storage": { "healthy": true, "healthStalled": true } },
+    "expect": { "alert": false }
+  }
+]

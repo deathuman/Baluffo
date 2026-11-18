@@ -136,3 +136,42 @@ def test_busy_operational_error_retry_increments_passive_busy_retries() -> None:
             assert sleeps == [0]
             status = store.wal_maintenance_status()
             assert status["passiveCheckpointBusyRetries"] == 1
+
+
+def test_a_completed_checkpoint_from_another_path_clears_a_busy_record() -> None:
+    # W2: only `_run_wal_maintenance` used to rewrite the record, so the bulk-delete
+    # and bulk-insert TRUNCATE could complete on the WAL a busy attempt left behind
+    # while the panel kept reading `busy`.
+    with workspace_tmpdir("baluffo-store-checkpoint-record-currency") as data_dir:
+        with BaluffoStore(data_dir, busy_retry_attempts=1) as store:
+            store._execute_checkpoint = lambda mode: cast(sqlite3.Row, (1, 8, 4))  # type: ignore[method-assign]
+            store._run_wal_maintenance(reason="test", mode="PASSIVE")
+            assert store.wal_maintenance_status()["status"] == "busy"
+
+            store._execute_checkpoint = lambda mode: cast(sqlite3.Row, (0, 8, 8))  # type: ignore[method-assign]
+            result = store.checkpoint_required(mode="TRUNCATE")
+
+            assert result["complete"] is True
+            status = store.wal_maintenance_status()
+            assert status["status"] == "ok"
+            assert 0 <= status["attemptAgeS"] <= 5
+            assert status["walBytes"] >= 0
+
+
+def test_vacuum_clears_a_busy_record_on_the_wal_it_emptied() -> None:
+    # `vacuum` runs its own TRUNCATE checkpoints and never calls
+    # `checkpoint_required`, so it could leave a datable `busy` record on a WAL it
+    # had just emptied — the live 0.3.064 shape.
+    with workspace_tmpdir("baluffo-store-vacuum-clears-busy") as data_dir:
+        with BaluffoStore(data_dir, busy_retry_attempts=1) as store:
+            store._execute_checkpoint = lambda mode: cast(sqlite3.Row, (1, -1, -1))  # type: ignore[method-assign]
+            store._run_wal_maintenance(reason="test", mode="PASSIVE")
+            assert store.wal_maintenance_status()["status"] == "busy"
+
+            store.vacuum(reason="test")
+
+            status = store.wal_maintenance_status()
+            assert status["status"] == "not-needed"
+            assert status["mode"] == "TRUNCATE"
+            assert status["detail"] == "wal-cleared"
+            assert "wal-cleared" in status["reason"]
