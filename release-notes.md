@@ -14,4 +14,5 @@
 
 ### Notes
 
+- Release preflight now runs `npm run test:frontend:packaged:jobs-feed-recovery`, which seeds a completed pipeline and a successful report with no feed, then requires the real packaged Jobs page to rebuild the feed instead of dead-ending on the missing-feed error.
 - This release changes how Admin reports storage maintenance and how the Jobs page recovers a missing feed. The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all stay as they are, and no saved job, note, or sync behaves differently.

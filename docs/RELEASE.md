@@ -471,6 +471,7 @@ Before any release:
    - `npm run test:frontend:packaged:active-task-close-rehearsal`
    - `npm run test:frontend:packaged:task-abort-schedule-rehearsal`
    - `npm run test:frontend:packaged:first-run`
+   - `npm run test:frontend:packaged:jobs-feed-recovery`
    - `npm run test:frontend:packaged:admin-active-run`
    - `npm run test:frontend:packaged:jobs-pipeline`
     - `npm run probe:desktop:startup:jobs:cold`
@@ -663,6 +664,7 @@ npm run test:frontend:packaged:desktop-lifecycle-rehearsal
 npm run test:frontend:packaged:active-task-close-rehearsal
 npm run test:frontend:packaged:task-abort-schedule-rehearsal
 npm run test:frontend:packaged:first-run
+npm run test:frontend:packaged:jobs-feed-recovery
 npm run test:frontend:packaged:admin-reclaim-startup
 npm run test:frontend:packaged:admin-active-run
 npm run test:frontend:packaged:jobs-pipeline
@@ -682,6 +684,7 @@ The `npm run test:frontend:packaged:update-rehearsal` lane uses a locally genera
 
 These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo.exe` artifact. Normal release and perf lanes reuse the same content-addressed portable build when its fingerprint is current; cold startup coverage gets a fresh runtime data/profile state rather than a rebuilt executable. Local portable builds also mirror the successful output to `_out\latest\build\portable\Baluffo.exe` so the familiar latest path does not remain stale after `npm run build:portable-exe`.
 The first-run packaged smoke is deterministic: it opens Jobs from a cold isolated runtime, lets the real Jobs UI start the bootstrap route with `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-heartbeat-success`, avoids live Google Sheets, keeps the backend active past a smoke-shortened UI timeout boundary with fresh task-live heartbeats, asserts the running report/task state, renders the promoted one-row feed, verifies no duplicate post-success bootstrap starts, and captures computed-style checked light/dark popup artifacts.
+The Jobs missing-feed recovery packaged smoke seeds a completed pipeline row and a successful fetch report with no feed at all, then requires the real Jobs page to start `/tasks/run-jobs-bootstrap`, keep the missing-feed error off screen, and render the promoted row from the rebuilt static feed. It is the regression gate for a past pipeline run making a lost feed unrepairable.
 The Jobs-page packaged smoke is now a terminal-success gate: it must launch the Jobs pipeline, observe visible running progress, and then reach a non-error terminal state. It uses a smoke-only stub-success pipeline mode so the lane stays deterministic and does not run the full real discovery/fetch/sync workload.
 The task-abort/scheduler packaged rehearsal drives the shipped bridge through `POST /tasks/run-jobs-bootstrap`, `POST /tasks/abort`, and `POST /tasks/jobs-pipeline-schedule`, then verifies canceled lifecycle evidence with `user_abort_requested` and one scheduled pipeline terminal success in smoke-only `stub-success` mode.
 The packaged sync rehearsal gate validates the shipped `github-app-sync-config.json` inside the artifact, fails if it is machine-derived, and then drives `/sync/test` against a local fake GitHub App endpoint so the release gate exercises packaged auth/read portability without hitting real GitHub.

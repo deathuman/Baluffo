@@ -302,6 +302,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Packaged active-task close rehearsal | `npm run test:frontend:packaged:active-task-close-rehearsal` |
 | Packaged task abort and scheduler rehearsal | `npm run test:frontend:packaged:task-abort-schedule-rehearsal` |
 | Packaged deterministic Jobs first-run gate | `npm run test:frontend:packaged:first-run` |
+| Packaged Jobs missing-feed recovery gate | `npm run test:frontend:packaged:jobs-feed-recovery` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
 | Admin startup packaged smoke gate | `npm run test:frontend:packaged:admin-startup` |
 | Admin automatic-reclaim startup rehearsal | `npm run test:frontend:packaged:admin-reclaim-startup` |
@@ -492,6 +493,20 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - light and dark first-run/local-auth popup screenshots are captured at desktop and mobile widths,
   - computed popup style assertions cover overlay opacity, panel bounds, light surfaces, readable text, controls, inputs, and selects.
 - The smoke writes screenshots and `first-run-style-report.json` under the packaged smoke output directory. These are artifacts, not checked-in pixel baselines.
+
+## Jobs Feed Recovery Packaged Smoke Contract
+
+- `npm run test:frontend:packaged:jobs-feed-recovery` is the packaged regression gate for the Jobs dead end where a completed full pipeline made a missing feed unrepairable.
+- The lane seeds the isolated runtime data dir with a successful `jobs-fetch-report.json` plus its summary sidecar and a completed `pipeline` row in the SQLite task-run ledger, and deliberately writes no `jobs-unified*` feed.
+- It launches the packaged runtime on `desktop-probe.html`, then opens `jobs.html` from the smoke script so the first Jobs page load belongs to the test rather than to startup probing.
+- It must prove all of the following in the real executable:
+  - the runtime starts with no servable `jobs-unified-light.json` or `jobs-unified.json`,
+  - the real Jobs UI posts `/tasks/run-jobs-bootstrap` with exactly `{ "source": "jobs_first_run" }`,
+  - the route answers `started: true` with a `jobs_bootstrap_*` run id and `coverageScope: "bootstrap_sheets"`, not `alreadyCompleted` with `full_pipeline_already_completed`,
+  - the page keeps reporting the recovery refresh and never renders `Local jobs feed is missing or unreadable` while the bootstrap runs,
+  - the bootstrap reaches a terminal non-error report with promoted rows,
+  - the promoted row renders in `#jobs-list` and the rebuilt feed is served as static JSON.
+- The lane uses `BALUFFO_PACKAGED_SMOKE_BOOTSTRAP_MODE=controlled-heartbeat-success`, so it exercises the real start, lifecycle and promotion path with a deterministic one-row fixture instead of live Google Sheets.
 
 ## Jobs Pipeline Smoke Contract
 

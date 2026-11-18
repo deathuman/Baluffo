@@ -479,6 +479,7 @@ def packaged_bootstrap_smoke_mode(node_smoke_script: Path) -> str:
     admin_active_run_script = deps.SMOKE_DIR / "packaged-desktop-smoke.admin-active-run.mjs"
     if resolved in {
         deps.FIRST_RUN_JOBS_NODE_SMOKE_SCRIPT.resolve(),
+        deps.JOBS_FEED_RECOVERY_NODE_SMOKE_SCRIPT.resolve(),
         deps.ACTIVE_TASK_CLOSE_NODE_SMOKE_SCRIPT.resolve(),
         deps.TASK_ABORT_SCHEDULE_NODE_SMOKE_SCRIPT.resolve(),
         admin_active_run_script.resolve(),

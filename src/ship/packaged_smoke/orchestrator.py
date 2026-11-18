@@ -19,6 +19,8 @@ from typing import Any
 from src.shared.coerce import as_dict as _as_dict
 from src.ship.startup_spawn_clock import build_spawn_clock
 from src.ship.startup_telemetry import JOBS_ROW_ARTIFACT_QUARANTINE_FAILED_EVENT
+from src.storage.baluffo_store import BaluffoStore
+from src.storage.task_runtime import TaskRuntimeStore
 
 root: Any | None = None
 _EXPECTED_PACKAGED_SMOKE_OPERATIONAL_EXCEPTIONS = (
@@ -36,6 +38,52 @@ def _root() -> Any:
     return root
 
 
+def _write_successful_jobs_fetch_report(
+    data_dir: Path,
+    *,
+    run_id: str,
+    finished_at: str,
+    output_count: int,
+) -> None:
+    """Write the report and sidecar a finished successful fetch leaves behind.
+
+    The launch success gate only trusts a sidecar whose runId and finishedAt match
+    the report, so the fixture publishes both halves: a report-only seed would make
+    the gate fall back to a full report parse, which the smoke fails as a sidecar
+    regression.
+    """
+    timestamp = str(finished_at or "")
+    report = {
+        "schemaVersion": 1,
+        "runId": run_id,
+        "status": "ok",
+        "startedAt": timestamp,
+        "finishedAt": timestamp,
+        "summary": {"status": "ok", "outputCount": int(output_count)},
+    }
+    (data_dir / "jobs-fetch-report.json").write_text(
+        f"{json.dumps(report, separators=(',', ':'))}\n",
+        encoding="utf-8",
+    )
+    summary_artifact = {
+        "ok": True,
+        "summaryView": True,
+        "detailLevel": "summary",
+        "runId": run_id,
+        "status": "ok",
+        "startedAt": timestamp,
+        "finishedAt": timestamp,
+        "summary": {"status": "ok", "outputCount": int(output_count)},
+        "taskProgress": {"active": False},
+        "sourceCount": 0,
+        "sourcesTruncated": False,
+    }
+    (data_dir / "jobs-fetch-report-summary.json").write_text(
+        json.dumps(summary_artifact, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+
 def _seed_jobs_pipeline_smoke_feed(data_dir: Path, *, finished_at: str) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     run_id = "packaged-smoke-seed-run"
@@ -48,39 +96,11 @@ def _seed_jobs_pipeline_smoke_feed(data_dir: Path, *, finished_at: str) -> None:
         "city": "",
         "source": "packaged_smoke",
     }
-    report = {
-        "schemaVersion": 1,
-        "runId": run_id,
-        "status": "ok",
-        "startedAt": str(finished_at or ""),
-        "finishedAt": str(finished_at or ""),
-        "summary": {"status": "ok", "outputCount": 1},
-    }
-    (data_dir / "jobs-fetch-report.json").write_text(
-        f"{json.dumps(report, separators=(',', ':'))}\n",
-        encoding="utf-8",
-    )
-    # The launch success gate trusts a finished-run sidecar whose runId and
-    # finishedAt match the report's bounded identity prefix. Seeding only the
-    # report would make this fixture itself look like a sidecar regression, so
-    # write the compact artifact the finalizer publishes, with the fields the
-    # gate reads (runId, finishedAt, summary.outputCount, taskProgress.active).
-    summary_artifact = {
-        "ok": True,
-        "summaryView": True,
-        "detailLevel": "summary",
-        "runId": run_id,
-        "status": "ok",
-        "startedAt": str(finished_at or ""),
-        "finishedAt": str(finished_at or ""),
-        "summary": {"status": "ok", "outputCount": 1},
-        "taskProgress": {"active": False},
-        "sourceCount": 0,
-        "sourcesTruncated": False,
-    }
-    (data_dir / "jobs-fetch-report-summary.json").write_text(
-        json.dumps(summary_artifact, separators=(",", ":")),
-        encoding="utf-8",
+    _write_successful_jobs_fetch_report(
+        data_dir,
+        run_id=run_id,
+        finished_at=finished_at,
+        output_count=1,
     )
     feed = f"{json.dumps([row], separators=(',', ':'))}\n"
     (data_dir / "jobs-unified-light.json").write_text(feed, encoding="utf-8")
@@ -97,6 +117,62 @@ def _seed_jobs_pipeline_smoke_feed_if_needed(
     if node_smoke_script != jobs_pipeline_script.resolve():
         return False
     _seed_jobs_pipeline_smoke_feed(data_dir, finished_at=finished_at)
+    return True
+
+
+JOBS_FEED_RECOVERY_SEED_RUN_ID = "packaged-smoke-pipeline-feed-lost"
+JOBS_FEED_RECOVERY_FEED_ARTIFACTS = (
+    "jobs-unified-light.json",
+    "jobs-unified-light.json.gz",
+    "jobs-unified.json",
+    "jobs-unified.json.gz",
+    "jobs-unified.csv",
+)
+
+
+def _seed_jobs_feed_recovery_smoke_state(data_dir: Path, *, finished_at: str) -> None:
+    """Leave a completed pipeline and a successful report, but no feed at all.
+
+    A quarantine or a failed fetch leaves exactly this state, and the admission
+    regression only appears while both survive: the bridge refused the rebuild as
+    already completed and the page dead-ended on the missing feed.
+    """
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for name in JOBS_FEED_RECOVERY_FEED_ARTIFACTS:
+        (data_dir / name).unlink(missing_ok=True)
+    _write_successful_jobs_fetch_report(
+        data_dir,
+        run_id=JOBS_FEED_RECOVERY_SEED_RUN_ID,
+        finished_at=finished_at,
+        output_count=1,
+    )
+    with BaluffoStore(data_dir) as store:
+        TaskRuntimeStore(store).upsert_task_run(
+            {
+                "runId": JOBS_FEED_RECOVERY_SEED_RUN_ID,
+                "taskType": "pipeline",
+                "status": "succeeded",
+                "startedAt": str(finished_at or ""),
+                "finishedAt": str(finished_at or ""),
+                "terminalReason": "completed",
+                "summary": {
+                    "status": "completed",
+                    "source": "packaged_jobs_feed_recovery_seed",
+                },
+            }
+        )
+
+
+def _seed_jobs_feed_recovery_smoke_state_if_needed(
+    *,
+    node_smoke_script: Path,
+    jobs_feed_recovery_script: Path,
+    data_dir: Path,
+    finished_at: str,
+) -> bool:
+    if node_smoke_script != jobs_feed_recovery_script.resolve():
+        return False
+    _seed_jobs_feed_recovery_smoke_state(data_dir, finished_at=finished_at)
     return True
 
 
@@ -749,6 +825,12 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     seeded_jobs_feed = _seed_jobs_pipeline_smoke_feed_if_needed(
         node_smoke_script=node_smoke_script,
         jobs_pipeline_script=deps.JOBS_PIPELINE_NODE_SMOKE_SCRIPT,
+        data_dir=runtime_data_dir,
+        finished_at=started_at,
+    )
+    _seed_jobs_feed_recovery_smoke_state_if_needed(
+        node_smoke_script=node_smoke_script,
+        jobs_feed_recovery_script=deps.JOBS_FEED_RECOVERY_NODE_SMOKE_SCRIPT,
         data_dir=runtime_data_dir,
         finished_at=started_at,
     )
