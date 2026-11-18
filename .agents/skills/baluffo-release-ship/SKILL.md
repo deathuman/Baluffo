@@ -33,7 +33,7 @@ Use this skill to run Baluffo release work without rediscovering the release pat
    - Never move, delete, or recreate release tags without explicit user approval.
    - Treat local release preflight as necessary but not sufficient for GitHub secret-backed packaged sync generation.
    - After pushing a tag, watch all tag-triggered workflows that publish release artifacts or images: `build-portable-exe`, `Build Container`, and `build-linux`.
-   - Verify the release is published, not draft, not prerelease, with portable ZIP, ship ZIP, desktop update manifest, and Linux AppImage when that workflow publishes it.
+   - Verify the release is published, not draft, not prerelease, with portable ZIP, ship ZIP, desktop update manifest, and Linux AppImage when that workflow publishes it. Also confirm no stale draft release duplicates the tag; `docs/RELEASE.md` step 5 gives the `gh api` listing when no GitHub token is set.
    - After pushing a container release to `main`, watch the normal main checks plus `Build Container`; verify the GHCR tag, multi-arch digest/platforms, and packaged `/sync/status` readiness from the published image. For Umbrel installs, update through the private app store and verify the proxied app on port `8877`.
    - If a live deployment smoke exposes a blocker, bump to the next patch version instead of reusing the failed image identity, keep existing tags untouched, and document the intermediate failed patch in the closeout.
    - Remember that default-branch and tagged pushes can trigger container image publication; account for GHCR tag side effects when a single app version is shared, even for docs-only release-process commits.
@@ -43,7 +43,7 @@ Use this skill to run Baluffo release work without rediscovering the release pat
 5. Close out continuity.
    - Update release docs only when behavior, commands, contracts, or workflows changed.
    - Write or update Basic Memory with release version, commit, workflow run, assets, validation commands, and durable gotchas.
-   - If Basic Memory wrote a Git-backed note, curate, commit, and push the BaluffoMemory repo unless the user explicitly keeps memory local or unrelated memory drift blocks a safe push.
+   - Always commit and push the curated BaluffoMemory repo before declaring closeout, committing unrelated uncommitted notes as a curated backlog rather than skipping; stop only for ambiguous, secret-bearing, or non-note files. Require `python scripts/ai_env_check.py` to report `memory_vault` OK; a failed push is pending with the exact retry command, not closeout.
    - Final response must name the version, commit, tag/release URL or GHCR digest if published, validation run results, live smoke status when applicable, and any residual risk.
    - When the user asked to ship to `main`, include final remote run ids or check statuses in the closeout.
 
@@ -65,7 +65,7 @@ Use this lane when one version is intended to become both the public desktop rel
    - Push only that tag, then watch `build-portable-exe`, `Build Container`, and `build-linux` to completion with bounded polling.
 
 4. Verify published artifacts.
-   - Check the GitHub release is latest, published, not draft, and not prerelease.
+   - Check the GitHub release is latest, published, not draft, and not prerelease, and that no stale draft release duplicates the tag.
    - Confirm release notes are the matching changelog section.
    - Confirm the portable ZIP, ship ZIP, desktop update manifest, and AppImage assets are present.
    - Download and inspect the desktop update manifest fields and compare portable artifact size/hash with the release asset.
@@ -74,7 +74,7 @@ Use this lane when one version is intended to become both the public desktop rel
 5. Recheck the deployment and memory.
    - When a host deployment is in scope, reconfirm `/app/ready`, `/ops/health`, `/tasks/run-jobs-pipeline-status`, `/ops/task-state?view=summary`, and `/sync/status?view=summary` on it.
    - Write a durable Basic Memory closeout with commit, tag, release URL, workflow IDs, assets, manifest evidence, GHCR digest/platforms, deployment status, and residual risks.
-   - Push curated BaluffoMemory notes at closeout when the memory repo has no unrelated or ambiguous drift.
+   - Commit and push the BaluffoMemory closeout as Workflow step 5 requires, and require the same `ai_env_check` `memory_vault` OK before closeout.
 
 ## Container Patch Lane
 

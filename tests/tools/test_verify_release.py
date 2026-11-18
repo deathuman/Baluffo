@@ -186,12 +186,22 @@ class _FakeGitHub:
         commit: str = _COMMIT,
         draft: bool = False,
         prerelease: bool = False,
+        drafts: list[dict[str, Any]] | None = None,
+        can_read_drafts: bool = True,
     ) -> None:
         self.manifests = manifests
         self.assets = assets
         self.commit = commit
         self.draft = draft
         self.prerelease = prerelease
+        self.drafts = drafts or []
+        self._can_read_drafts = can_read_drafts
+
+    def can_read_drafts(self) -> bool:
+        return self._can_read_drafts
+
+    def releases(self) -> list[dict[str, Any]]:
+        return [self.release(_TAG), *self.drafts]
 
     def release(self, tag: str) -> dict[str, Any]:
         return {
@@ -245,6 +255,8 @@ def _run(
     local_tag_commit: str | None = _COMMIT,
     draft: bool = False,
     commit: str = _COMMIT,
+    drafts: list[dict[str, Any]] | None = None,
+    can_read_drafts: bool = True,
 ) -> Any:
     payloads = dict(_PAYLOADS)
     resolved_manifests = manifests or _manifests(payloads)
@@ -259,6 +271,8 @@ def _run(
             assets=resolved_assets,
             draft=draft,
             commit=commit,
+            drafts=drafts,
+            can_read_drafts=can_read_drafts,
         ),
         registry=_FakeRegistry(**(image or _image())),
         public_keys=public_keys or _PUBLIC_KEYS,
@@ -280,6 +294,18 @@ def test_a_complete_release_passes() -> None:
 def test_a_draft_release_fails() -> None:
     report = _run(draft=True)
     assert "release published" in _failed_labels(report)
+    assert "no duplicate draft release" not in _failed_labels(report)
+
+
+def test_a_stale_draft_at_the_release_tag_fails() -> None:
+    report = _run(drafts=[{"id": 1, "tag_name": _TAG, "draft": True, "name": "duplicate"}])
+    assert "no duplicate draft release" in _failed_labels(report)
+
+
+def test_the_draft_check_says_when_drafts_are_invisible() -> None:
+    report = _run(can_read_drafts=False)
+    assert "draft releases not inspected" in report.render()
+    assert "no duplicate draft release" not in {check.label for check in report.checks}
 
 
 def test_classification_helpers_cover_remotes_and_tags() -> None:

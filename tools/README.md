@@ -395,11 +395,12 @@ invalid input, a live-data refusal, or ambiguous target rows. A feed under `data
 
 ### Release verification
 `tools/verify_release.py` runs the public closeout checks for one tag in one command: the GitHub
-release is published rather than draft or prerelease; every asset the contract requires is
-uploaded; both platform update manifests verify against the committed Ed25519 public key and
-declare the uploaded asset's digest and size; and GHCR's `v<version>` tag is a multi-arch index
-whose `linux/amd64` and `linux/arm64` configs both name the tagged commit. It reads registry
-metadata instead of pulling the image, so it needs neither Docker nor the `gh` CLI.
+release is published rather than draft or prerelease; no stale draft release duplicates its
+tag; every asset the contract requires is uploaded; both platform update manifests verify
+against the committed Ed25519 public key and declare the uploaded asset's digest and size; and
+GHCR's `v<version>` tag is a multi-arch index whose `linux/amd64` and `linux/arm64` configs both
+name the tagged commit. It reads registry metadata instead of pulling the image, so it needs
+neither Docker nor the `gh` CLI.
 
 ```bash
 python tools/verify_release.py                 # the version in src/app_version.py
@@ -408,7 +409,8 @@ python tools/verify_release.py --tag v0.3.027  # an older release
 
 Exit 0 means every check passed, 1 means a release defect, and 2 means the tool could not look
 for one. Set `GITHUB_TOKEN` or `GH_TOKEN` to lift the unauthenticated GitHub API rate limit;
-nothing is written to disk and no token is printed.
+the token also makes draft releases visible, so the duplicate-draft check is skipped with a note
+without one. Nothing is written to disk and no token is printed.
 
 ### `mcp/`
 Repo AI tooling guidance plus a deprecated local MCP fallback for editor-assisted workflows.

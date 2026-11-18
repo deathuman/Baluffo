@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Verify a published Baluffo release end to end, in one command.
 
-`docs/RELEASE.md`'s public closeout asks four questions after the tag workflows finish, and
-each was answered by hand: is the GitHub release published rather than a draft; is every asset
-the update manifests name uploaded with the digest and size the manifest declares; do both
-platform manifests verify against the committed Ed25519 public key; and does GHCR serve a
-multi-arch index built from the tagged commit. All four are mechanical, so they live here:
+`docs/RELEASE.md`'s public closeout asks five questions after the tag workflows finish, and
+each was answered by hand: is the GitHub release published rather than a draft, and does a stale
+draft duplicate its tag; is every asset the update manifests name uploaded with the digest and
+size the manifest declares; do both platform manifests verify against the committed Ed25519
+public key; and does GHCR serve a multi-arch index built from the tagged commit. All five are
+mechanical, so they live here:
 
     python tools/verify_release.py              # the current src/app_version.py version
     python tools/verify_release.py --tag v0.3.027
@@ -231,6 +232,22 @@ class GitHubClient:
         if payload is None:
             raise ReleaseNotFound(f"{self.repo} has no release at {tag}")
         return payload
+
+    def can_read_drafts(self) -> bool:
+        """Draft releases are only listed for authenticated requests."""
+        return bool(self.token)
+
+    def releases(self) -> list[dict[str, Any]]:
+        """Every release, newest first, so a stale draft at an old tag is still found."""
+        collected: list[dict[str, Any]] = []
+        for page in range(1, 101):
+            payload = self._json(f"/repos/{self.repo}/releases?per_page=100&page={page}")
+            if not payload:
+                break
+            collected += payload
+            if len(payload) < 100:
+                break
+        return collected
 
     def tag_ref(self, tag: str) -> dict[str, Any] | None:
         return self._json(f"/repos/{self.repo}/git/ref/tags/{tag}")
@@ -526,6 +543,20 @@ def _check_image(
             )
 
 
+def _check_draft_releases(report: Report, *, github: Any, tag: str) -> None:
+    """A second draft at the shipped tag duplicates the release and hides from anonymous reads."""
+    duplicates = [
+        release
+        for release in github.releases()
+        if release.get("draft") and release.get("tag_name") == tag
+    ]
+    report.add(
+        "no duplicate draft release",
+        not duplicates,
+        f"{len(duplicates)} draft(s) at {tag}" if duplicates else f"no draft at {tag}",
+    )
+
+
 def verify_release(
     *,
     tag: str,
@@ -544,6 +575,14 @@ def verify_release(
         not release.get("draft") and not release.get("prerelease"),
         f"{tag} at {release.get('published_at')}",
     )
+    if not release.get("draft"):
+        if github.can_read_drafts():
+            _check_draft_releases(report, github=github, tag=tag)
+        else:
+            report.note(
+                "draft releases not inspected: drafts are hidden from anonymous GitHub API "
+                "requests; set GITHUB_TOKEN or GH_TOKEN to enable the stale-draft check"
+            )
 
     assets = {
         str(asset.get("name")): asset
