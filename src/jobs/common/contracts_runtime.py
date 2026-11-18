@@ -320,6 +320,7 @@ def _normalize_browser_forensics(value: Any) -> dict[str, Any]:
         "reason": clean_text(shm_src.get("reason"))[:200],
     }
     stderr_src = as_json_object(src.get("browserStderr"))
+    driver_src = as_json_object(stderr_src.get("driver"))
     stderr = {
         "available": bool(stderr_src.get("available")),
         "source": clean_text(stderr_src.get("source"))[:64],
@@ -327,6 +328,12 @@ def _normalize_browser_forensics(value: Any) -> dict[str, Any]:
         "bytes": _clamped_int(stderr_src.get("bytes"), 0, 0),
         "truncated": bool(stderr_src.get("truncated")),
         "tail": clean_text(stderr_src.get("tail"))[:_BROWSER_STDERR_TAIL_LIMIT],
+        "driver": {
+            "active": bool(driver_src.get("active")),
+            "reason": clean_text(driver_src.get("reason"))[:200],
+            "module": clean_text(driver_src.get("module"))[:128],
+            "playwrightVersion": clean_text(driver_src.get("playwrightVersion"))[:32],
+        },
     }
     disconnect_src = as_json_object(src.get("disconnect"))
     disconnect = {

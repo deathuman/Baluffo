@@ -500,6 +500,10 @@ function evaluateFailedSources(healthData) {
   };
 }
 
+// A `new_context`/`new_page` failure arrives as `context`; spell it out rather than
+// rendering "blocked at context". Every other stage reads as itself.
+const BROWSER_STAGE_LABELS = Object.freeze({ context: "context creation" });
+
 function evaluateBrowserFallbackHealth(healthData) {
   if (!healthData) return null;
   const kpis = healthData.kpis || {};
@@ -536,9 +540,10 @@ function evaluateBrowserFallbackHealth(healthData) {
       ? "; browser environment blocked"
       : "";
   const demandCopy = browserFallbackDemandCopy(kpis.browserFallbackDemand);
+  const stageLabel = BROWSER_STAGE_LABELS[stage] || stage;
   const headline = environmentBlocked
-    ? `Browser environment blocked at ${stage}`
-    : `Probe failed at ${stage}`;
+    ? `Browser environment blocked at ${stageLabel}`
+    : `Probe failed at ${stageLabel}`;
   return {
     id: "browser_fallback_health",
     severity: "warning",

@@ -195,8 +195,11 @@ def test_driver_stderr_hook_redirects_playwright_driver_and_enables_browser_logs
     original_env = transport.get_driver_env
     sink = forensics.BrowserStderrSink()
     try:
-        with forensics.capture_browser_stderr_for_driver(sink) as active:
-            assert active is True
+        with forensics.capture_browser_stderr_for_driver(sink) as driver:
+            assert driver["active"] is True
+            assert driver["reason"] == ""
+            assert driver["module"] in forensics.DRIVER_TRANSPORT_MODULES
+            assert driver["playwrightVersion"]  # read from the installed distribution
             assert transport._get_stderr_fileno() == sink.fileno()
             debug = transport.get_driver_env()["DEBUG"]
             assert "pw:browser" in debug or "*" in debug
@@ -273,3 +276,40 @@ def test_forensics_enabled_defaults_on_and_respects_kill_switch() -> None:
     assert forensics.browser_forensics_enabled({"BALUFFO_BROWSER_FORENSICS": "0"}) is False
     assert forensics.browser_forensics_enabled({"BALUFFO_BROWSER_FORENSICS": "off"}) is False
     assert forensics.browser_forensics_enabled({"BALUFFO_BROWSER_FORENSICS": "1"}) is True
+
+
+def test_driver_transport_resolves_the_second_module_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Playwright has shipped this module under both names. Probing only
+    # `playwright._impl.transport` silently dropped the raw-stderr sink in the
+    # container, leaving an empty log file as the only evidence of a death.
+    fake = SimpleNamespace(_get_stderr_fileno=lambda: 1, get_driver_env=lambda: {})
+    real_import = forensics.importlib.import_module
+
+    def fake_import(name: str, package: str | None = None) -> object:
+        if name == forensics.DRIVER_TRANSPORT_MODULES[0]:
+            raise ImportError(name)
+        if name == forensics.DRIVER_TRANSPORT_MODULES[1]:
+            return fake
+        return real_import(name, package)
+
+    monkeypatch.setattr(forensics.importlib, "import_module", fake_import)
+
+    module, name = forensics.resolve_driver_transport()
+
+    assert module is fake
+    assert name == forensics.DRIVER_TRANSPORT_MODULES[1]
+
+
+def test_driver_hook_fallback_records_why_the_sink_did_not_engage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(forensics, "resolve_driver_transport", lambda: (None, ""))
+    sink = forensics.BrowserStderrSink()
+    try:
+        with forensics.capture_browser_stderr_for_driver(sink) as driver:
+            assert driver["active"] is False
+            assert driver["reason"] == "driver-hook-unavailable"
+            assert driver["module"] == ""
+            assert isinstance(driver["playwrightVersion"], str)
+    finally:
+        sink.close()

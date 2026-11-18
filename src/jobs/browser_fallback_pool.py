@@ -153,6 +153,48 @@ def browser_pool_recycle_acquisitions(env: dict[str, str] | None = None) -> int:
         return _BROWSER_POOL_RECYCLE_DEFAULT
 
 
+class BrowserStageError(RuntimeError):
+    """A browser failure tagged with the step that raised it.
+
+    A ``new_context()``/``new_page()`` failure used to surface as ``navigation``,
+    so a browser that died before any page existed read as a page that failed to
+    load. The tag keeps the original exception (and its type) for the report.
+    """
+
+    def __init__(self, stage: str, error: BaseException) -> None:
+        super().__init__(str(error).strip() or type(error).__name__)
+        self.stage = stage
+        self.original = error
+
+
+def _stage_error(exc: BaseException) -> tuple[str, BaseException]:
+    """Split a stage-tagged failure into its stage and the original exception."""
+    if isinstance(exc, BrowserStageError):
+        return exc.stage, exc.original
+    return "navigation", exc
+
+
+async def _open_page(browser: Any) -> tuple[Any, Any]:
+    """A fresh browser context and page, tagged ``context`` when either fails.
+
+    ``new_context()``/``new_page()`` fail before a page exists, so they are not
+    navigation failures; the caller owns both handles and closes them.
+    """
+    try:
+        context = await browser.new_context()
+    except BaseException as exc:
+        raise BrowserStageError("context", exc) from exc
+    try:
+        page = await context.new_page()
+    except BaseException as exc:
+        try:
+            await context.close()
+        except Exception:
+            pass
+        raise BrowserStageError("context", exc) from exc
+    return context, page
+
+
 class BrowserFallbackPool:
     """Lazy single-browser pool; fresh BrowserContext per fetch call."""
 
@@ -184,6 +226,7 @@ class BrowserFallbackPool:
         self._forensics_enabled = browser_forensics_enabled()
         self._browser_stderr_path = ""
         self._browser_stderr_sink: BrowserStderrSink | None = None
+        self._browser_stderr_driver: dict[str, Any] = {}
         self._probe_active = False
         self._closing_browser = False
         self._disconnect_lock = threading.Lock()
@@ -384,9 +427,12 @@ class BrowserFallbackPool:
             self._browser_stderr_sink = sink
         if sink is not None:
             raw_stderr = False
-            with capture_browser_stderr_for_driver(sink) as active:
+            with capture_browser_stderr_for_driver(sink) as driver_state:
                 self._playwright = await async_playwright().start()
-                raw_stderr = bool(active)
+                raw_stderr = bool(driver_state.get("active"))
+            # Keep whether the sink engaged, why not, and which module/version was
+            # probed: an empty Chromium log file must say why it is empty.
+            self._browser_stderr_driver = dict(driver_state)
             if raw_stderr:
                 sink.detach_writer()
                 args.extend(browser_raw_stderr_chromium_args())
@@ -481,12 +527,18 @@ class BrowserFallbackPool:
     def _browser_stderr_snapshot(self) -> dict[str, Any]:
         """Prefer the live raw-stderr ring; keep the log-file fallback for old pools/tests."""
         sink = self._browser_stderr_sink
+        snapshot: dict[str, Any] = {}
         if sink is not None:
             try:
-                return sink.snapshot()
+                snapshot = sink.snapshot()
             except Exception:
-                pass
-        return read_browser_stderr(self._browser_stderr_path)
+                snapshot = {}
+        if not snapshot:
+            snapshot = read_browser_stderr(self._browser_stderr_path)
+        driver = dict(self._browser_stderr_driver)
+        if driver:
+            snapshot["driver"] = driver
+        return snapshot
 
     def _close_browser_stderr_sink(self) -> None:
         sink = self._browser_stderr_sink
@@ -641,7 +693,7 @@ class BrowserFallbackPool:
         with self._diagnostics_lock:
             self._last_failure_stage = stage
             self._last_failure_at = stamp
-            if stage == "launch":
+            if stage in {"launch", "context"}:
                 self._last_launch_error = message
                 self._last_launch_error_type = error_type
             elif stage == "navigation":
@@ -649,12 +701,13 @@ class BrowserFallbackPool:
                 self._last_navigation_error_type = error_type
         self.metrics.set("last_failure_stage", stage)
         self.metrics.set("last_failure_at", stamp)
-        if stage == "launch":
+        if stage in {"launch", "context"}:
             self.metrics.set("last_launch_error", message)
             self.metrics.set("last_launch_error_type", error_type)
         elif stage == "navigation":
             self.metrics.set("last_navigation_error", message)
             self.metrics.set("last_navigation_error_type", error_type)
+        if stage in {"navigation", "context"}:
             # A TargetClosedError at new_page may arrive before the disconnected
             # callback. Record the same signal here so the health result is not
             # empty just because Playwright delivered the exception first.
@@ -678,9 +731,8 @@ class BrowserFallbackPool:
         browser = self._browser
         if browser is None:
             raise RuntimeError("browser is not started")
-        context = await browser.new_context()
+        context, page = await _open_page(browser)
         try:
-            page = await context.new_page()
             try:
                 await page.goto(
                     BROWSER_HEALTH_PROBE_URL,
@@ -767,14 +819,15 @@ class BrowserFallbackPool:
                 )
                 future.result(timeout=effective_timeout_s + 5)
             except BaseException as exc:
-                self._record_failure("navigation", exc)
-                if self._browser_death_marker(exc):
+                stage, error = _stage_error(exc)
+                self._record_failure(stage, error)
+                if self._browser_death_marker(error):
                     self._mark_unavailable()
                 return self._health_result(
                     ok=False,
-                    stage="navigation",
+                    stage=stage,
                     started=started,
-                    exc=exc,
+                    exc=error,
                     environment_before=environment_before,
                 )
             return self._health_result(
@@ -835,9 +888,8 @@ class BrowserFallbackPool:
         parser, and a board that changes platform keeps working.
         """
         captured: list[tuple[str, str]] = []
-        context = await self._browser.new_context()
+        context, page = await _open_page(self._browser)
         try:
-            page = await context.new_page()
             listener = lambda response: self._capture_json_response(response, captured)
             page.on("response", listener)
             try:
@@ -914,8 +966,9 @@ class BrowserFallbackPool:
                 html, captured = future.result(timeout=max(1, int(timeout_s)) + 30)
                 break
             except BaseException as exc:
+                stage, error = _stage_error(exc)
                 if (
-                    self._browser_death_marker(exc)
+                    self._browser_death_marker(error)
                     and self._relaunches_on_death < _BROWSER_POOL_RELAUNCH_LIMIT
                 ):
                     # A new_context/new_page/goto failure on a closed browser is a
@@ -935,15 +988,15 @@ class BrowserFallbackPool:
                     if probe_health is not None and not probe_health.get("ok"):
                         return "", self._probe_failure_error(probe_health), []
                     continue
-                if self._browser_death_marker(exc):
+                if self._browser_death_marker(error):
                     # Relaunch budget spent: idle the lane for the breaker's cooldown
                     # instead of launching Chromium once per remaining source.
                     with self._start_lock:
                         self._unavailable_until_monotonic = (
                             time.monotonic() + _BROWSER_POOL_UNAVAILABLE_COOLDOWN_S
                         )
-                self._record_failure("navigation", exc)
-                return "", normalize_browser_fallback_error(str(exc)), []
+                self._record_failure(stage, error)
+                return "", normalize_browser_fallback_error(str(error)), []
         self.metrics.incr("pool_acquisitions")
         self._note_acquisition_success()
         if not html:

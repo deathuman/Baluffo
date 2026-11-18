@@ -324,3 +324,40 @@ test("stale_fetch and failed_sources are mutually exclusive in the live signal s
   const fresh = await at("1h", [], 0.5);
   assert.deepEqual(fresh, ["failed_sources"], "failed sources require a recent successful fetch");
 });
+
+test("a context-stage browser failure names context creation, not navigation", async () => {
+  // B2: Chromium dying at new_page used to be reported as a navigation failure, so a
+  // browser that never produced a page read as a page that failed to load.
+  const { refs, controller } = createFixture({
+    getBridge: async path => {
+      if (path === "/ops/fetch-kpis?view=summary") {
+        return {
+          alerts: [],
+          kpis: {
+            lastSuccessfulFetchAge: "1h",
+            failedSourceRatioLatest: 0,
+            browserFallbackHealth: {
+              ok: false,
+              stage: "context",
+              errorType: "TargetClosedError",
+              error: "BrowserContext.new_page: Target page, context or browser has been closed"
+            },
+            browserFallbackEnvironmentBlocked: true,
+            browserFallbackEnvironmentBlockedSources: 239,
+            sourceOutcomeSummary: { browserFallbackRecommendedSources: 61 }
+          }
+        };
+      }
+      if (path === "/sync/status?view=summary") return cleanSyncPayload();
+      if (path === "/ops/storage-health") return cleanStoragePayload();
+      return null;
+    }
+  });
+
+  await controller.pollActionCenter({ includeStorage: true });
+
+  const html = refs.actionCenterItemsEl.innerHTML;
+  assert.match(html, /Browser environment blocked at context creation/);
+  assert.doesNotMatch(html, /blocked at navigation/);
+  assert.match(html, /239 sources environment-blocked/);
+});

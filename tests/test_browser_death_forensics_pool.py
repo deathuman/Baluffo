@@ -277,3 +277,50 @@ def test_runtime_payload_normalizes_browser_health_forensics() -> None:
     assert forensics["shm"]["freePercent"] == 100
     assert len(forensics["browserStderr"]["tail"]) == 8192
     assert forensics["disconnect"]["observed"] is True
+
+
+def test_health_report_says_why_the_raw_stderr_sink_fell_back() -> None:
+    # An empty Chromium log file must carry the reason it is the source, which module
+    # was probed, and which Playwright build was running.
+    pool = BrowserFallbackPool()
+    pool._forensics_enabled = True
+    pool._browser_stderr_driver = {
+        "active": False,
+        "reason": "driver-hook-unavailable",
+        "module": "playwright._impl.transport",
+        "playwrightVersion": "1.58.0",
+    }
+    try:
+        snapshot = pool._browser_stderr_snapshot()
+    finally:
+        pool.close()
+
+    assert snapshot["source"] == "chromium_log_file"
+    assert snapshot["driver"]["active"] is False
+    assert snapshot["driver"]["reason"] == "driver-hook-unavailable"
+    assert snapshot["driver"]["module"] == "playwright._impl.transport"
+    assert snapshot["driver"]["playwrightVersion"] == "1.58.0"
+
+
+def test_death_forensics_runs_for_context_and_navigation_but_not_launch(monkeypatch) -> None:
+    # `context` is the live container's death: a TargetClosedError at new_page. It has
+    # a browser to inspect, so it must take the death snapshot navigation takes; a
+    # launch failure has no browser and still must not.
+    pool = BrowserFallbackPool()
+    calls: list[str] = []
+    monkeypatch.setattr(pool, "_remember_death_forensics", lambda: calls.append("death"))
+    try:
+        pool._record_failure("launch", RuntimeError("browser has been closed"))
+        assert calls == []
+        pool._record_failure("context", RuntimeError("browser has been closed"))
+        assert calls == ["death"]
+        assert pool.metrics.snapshot().get("last_navigation_error", "") == ""
+        pool._record_failure("navigation", RuntimeError("browser has been closed"))
+        snapshot = pool.metrics.snapshot()
+    finally:
+        pool.close()
+
+    assert calls == ["death", "death"]
+    assert snapshot["last_failure_stage"] == "navigation"
+    assert snapshot["last_launch_error"] == "browser has been closed"
+    assert snapshot["last_navigation_error"] == "browser has been closed"

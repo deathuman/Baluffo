@@ -541,6 +541,12 @@ def storage_health_alert(payload: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+# A `new_context`/`new_page` failure is reported as `context`; the operator-facing
+# sentence spells it out rather than saying "blocked at context". Every other stage
+# reads as itself.
+_BROWSER_STAGE_LABELS = {"context": "context creation"}
+
+
 def browser_fallback_health_alert(
     value: Any,
     *,
@@ -567,6 +573,7 @@ def browser_fallback_health_alert(
     stage = str(health.get("stage") or "").strip()
     if not stage:
         stage = "preflight" if environment_blocked else "unknown"
+    stage_label = _BROWSER_STAGE_LABELS.get(stage, stage)
     error_type = str(health.get("errorType") or "").strip()
     error = " ".join(
         str(health.get(key) or "") for key in ("error", "lastLaunchError", "lastNavigationError")
@@ -574,11 +581,11 @@ def browser_fallback_health_alert(
     error = " ".join(error.split())[:240]
 
     if environment_blocked:
-        message = f"Browser fallback environment blocked at {stage}"
+        message = f"Browser fallback environment blocked at {stage_label}"
         if blocked_sources:
             message += f" for {blocked_sources} source{'s' if blocked_sources != 1 else ''}"
     else:
-        message = f"Browser fallback probe failed at {stage}"
+        message = f"Browser fallback probe failed at {stage_label}"
     if error_type:
         message += f" ({error_type})"
     if error:

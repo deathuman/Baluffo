@@ -1714,6 +1714,7 @@ than failing the health probe.
 | `shm.sizeBytes` / `freeBytes` / `usedBytes` / `freePercent` | `number` | `/dev/shm` capacity and availability at the after snapshot. |
 | `browserStderr.source` | `string` | `chromium_stderr` for the pipe-backed raw-stderr sink; `chromium_log_file` only when the Playwright driver hook is unavailable. |
 | `browserStderr.tail` | `string` | At most 8 KiB of the latest raw browser stderr tail, truncated when more was emitted. |
+| `browserStderr.driver.active` / `reason` / `module` / `playwrightVersion` | `boolean` / `string` | Whether the pipe-backed driver hook engaged; when it did not, `reason` is `driver-hook-unavailable` and `module` names the transport module probed (`playwright._impl.transport` or `playwright._impl._transport`), with the installed Playwright version. An empty `chromium_log_file` tail is attributable with these fields. |
 | `disconnect.observed` / `duringProbe` / `intentional` | `boolean` | Whether Chromium emitted `disconnected`, whether the probe was active, and whether the close was intentional. |
 | `disconnect.at` / `count` | `string` / `number` | First disconnect timestamp and count for the current browser. |
 

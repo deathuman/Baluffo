@@ -337,3 +337,42 @@ def test_failed_health_probe_keeps_the_browser_cooldown(monkeypatch: pytest.Monk
     assert health["ok"] is False
     assert not breaker.is_available()
     assert breaker.disabled_until_at == cooldown
+
+
+def test_new_page_failure_is_attributed_to_context_not_navigation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """B2: a browser that dies at new_page is not a page that failed to load."""
+
+    class _ClosedContextBrowser:
+        async def new_context(self) -> Any:
+            raise RuntimeError(
+                "BrowserContext.new_page: Target page, context or browser has been closed"
+            )
+
+    def run_inline(coro: Any, _loop: Any) -> _CompletedFuture:
+        pool_mod.asyncio.run(coro)
+        return _CompletedFuture()
+
+    monkeypatch.setattr(pool_mod.asyncio, "run_coroutine_threadsafe", run_inline)
+    pool = BrowserFallbackPool()
+    pool._ensure_started = lambda: None  # type: ignore[method-assign]
+    pool._loop = _FakeLoop()  # type: ignore[assignment]
+    pool._browser = _ClosedContextBrowser()
+    try:
+        health = pool.health_probe(timeout_s=1)
+        with pytest.raises(pool_mod.BrowserStageError) as caught:
+            pool_mod.asyncio.run(
+                pool._fetch_captured("https://board.example/careers", 1, settle_ms=0)
+            )
+    finally:
+        pool.close()
+
+    assert caught.value.stage == "context"
+    assert isinstance(caught.value.original, RuntimeError)
+    assert health["ok"] is False
+    assert health["stage"] == "context"
+    assert health["errorType"] == "RuntimeError"
+    assert health["lastFailureStage"] == "context"
+    assert "Target page" in health["lastLaunchError"]
+    assert health["lastNavigationError"] == ""

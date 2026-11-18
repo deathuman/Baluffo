@@ -129,3 +129,22 @@ def test_browser_health_alert_turns_a_blocked_count_into_a_warning() -> None:
 
 def test_browser_health_alert_ignores_a_healthy_probe() -> None:
     assert ops_health.browser_fallback_health_alert({"ok": True, "stage": "ready"}) is None
+
+
+def test_browser_health_alert_spells_out_the_context_creation_stage() -> None:
+    # A new_context/new_page death is a `context` stage; the operator-facing sentence
+    # must not read "blocked at context".
+    alert = ops_health.browser_fallback_health_alert(
+        {
+            "ok": False,
+            "stage": "context",
+            "errorType": "TargetClosedError",
+            "error": "BrowserContext.new_page: Target page, context or browser has been closed",
+        },
+        environment_blocked=True,
+        environment_blocked_sources=239,
+    )
+
+    assert alert is not None
+    assert "environment blocked at context creation" in alert["message"]
+    assert "for 239 sources" in alert["message"]

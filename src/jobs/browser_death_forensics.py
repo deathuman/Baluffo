@@ -23,6 +23,7 @@ import tempfile
 import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,58 @@ MAX_BROWSER_STDERR_BYTES = 8192
 MAX_BROWSER_STDERR_TAIL_CHARS = 8192
 MAX_CGROUP_PATH_CHARS = 512
 _CGROUP_EVENT_KEYS = ("low", "high", "max", "oom", "oom_kill", "failcnt")
+# Playwright has shipped the driver transport under both names. Probing only one
+# silently dropped the raw-stderr sink in the container, which left a zero-byte
+# Chromium log file as the only evidence for a browser death.
+DRIVER_TRANSPORT_MODULES = (
+    "playwright._impl.transport",
+    "playwright._impl._transport",
+)
 _DRIVER_HOOK_LOCK = threading.Lock()
+
+
+def playwright_version() -> str:
+    """The installed Playwright version, bounded; ``""`` when unknown.
+
+    ``playwright`` does not export ``__version__`` in every build (the pinned
+    container's has none), so read the installed distribution instead.
+    """
+    try:
+        return metadata.version("playwright").strip()[:32]
+    except (metadata.PackageNotFoundError, ValueError):
+        return ""
+
+
+def resolve_driver_transport() -> tuple[Any | None, str]:
+    """Find the module owning the driver's stderr hook, under either known name.
+
+    Returns the module and the name it was imported under, or ``None`` and the name
+    that imported without the hooks (``""`` when none imported).
+    """
+    for name in DRIVER_TRANSPORT_MODULES:
+        try:
+            module = importlib.import_module(name)
+        except ImportError:
+            continue
+        if callable(getattr(module, "_get_stderr_fileno", None)) and callable(
+            getattr(module, "get_driver_env", None)
+        ):
+            return module, name
+        # Importable but without the hooks: report which name was tried.
+        return None, name
+    return None, ""
+
+
+def driver_stderr_state(
+    *, active: bool, reason: str = "", module: str = "", playwright_version: str = ""
+) -> dict[str, Any]:
+    """One bounded record of whether the driver hook engaged, and why not."""
+    return {
+        "active": bool(active),
+        "reason": str(reason or "")[:200],
+        "module": str(module or "")[:128],
+        "playwrightVersion": str(playwright_version or "")[:32],
+    }
 
 
 def browser_forensics_enabled(env: Mapping[str, str] | None = None) -> bool:
@@ -175,26 +227,33 @@ class BrowserStderrSink:
 
 
 @contextmanager
-def capture_browser_stderr_for_driver(sink: BrowserStderrSink) -> Iterator[bool]:
+def capture_browser_stderr_for_driver(sink: BrowserStderrSink) -> Iterator[dict[str, Any]]:
     """Point Playwright's driver stderr at ``sink`` and enable browser stderr logs.
 
     ``PipeTransport.connect`` resolves both helpers from its module at call time, so this
     patch is limited to the driver spawn. The driver inherits the sink's write fd and keeps
     forwarding browser stderr there after the context exits. If a future Playwright version
     changes those internals, the pool falls back to the old ``--log-file`` sink.
+
+    Yields the bounded driver state (``active``, ``reason``, ``module``,
+    ``playwrightVersion``) so the health report can say why the sink fell back instead
+    of presenting an empty log file as the whole story.
     """
+    version = playwright_version()
     # importlib keeps this off mypy's attribute lookup: the lockfile's Playwright
     # stubs do not declare the transport submodule, while newer local builds do.
-    try:
-        _transport: Any = importlib.import_module("playwright._impl.transport")
-    except ImportError:
-        yield False
+    _transport, module_name = resolve_driver_transport()
+    if _transport is None:
+        yield driver_stderr_state(
+            active=False,
+            reason="driver-hook-unavailable",
+            module=module_name,
+            playwright_version=version,
+        )
         return
-    original_fd = getattr(_transport, "_get_stderr_fileno", None)
-    original_env = getattr(_transport, "get_driver_env", None)
-    if not callable(original_fd) or not callable(original_env):
-        yield False
-        return
+    # The resolver only returns a module that carries both hooks.
+    original_fd = _transport._get_stderr_fileno
+    original_env = _transport.get_driver_env
 
     def _sink_fileno() -> int:
         return sink.fileno()
@@ -212,7 +271,7 @@ def capture_browser_stderr_for_driver(sink: BrowserStderrSink) -> Iterator[bool]
         _transport._get_stderr_fileno = _sink_fileno
         _transport.get_driver_env = _driver_env
         try:
-            yield True
+            yield driver_stderr_state(active=True, module=module_name, playwright_version=version)
         finally:
             _transport._get_stderr_fileno = original_fd
             _transport.get_driver_env = original_env
@@ -545,6 +604,7 @@ def build_browser_forensics(
 __all__ = [
     "BROWSER_FORENSICS_ENV",
     "BROWSER_STDERR_SOURCE",
+    "DRIVER_TRANSPORT_MODULES",
     "MAX_BROWSER_STDERR_BYTES",
     "BrowserStderrSink",
     "build_browser_forensics",
@@ -556,6 +616,8 @@ __all__ = [
     "capture_cgroup_memory",
     "capture_shm",
     "cleanup_browser_stderr_file",
+    "playwright_version",
     "prepare_browser_stderr_file",
     "read_browser_stderr",
+    "resolve_driver_transport",
 ]
