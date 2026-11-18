@@ -126,6 +126,12 @@ def _write_successful_runtime_feed_shell(data_dir: Path) -> None:
     )
 
 
+def _write_servable_runtime_feed(data_dir: Path) -> None:
+    _write_successful_runtime_feed_shell(data_dir)
+    write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"job-1"}]')
+    write_atomic_if_changed(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]')
+
+
 def test_jobs_bootstrap_start_forces_isolated_targeted_fetch() -> None:
     with workspace_tmpdir("task-launch-bootstrap-start") as data_dir:
         api = _task_launch_api(data_dir)
@@ -329,9 +335,10 @@ def test_jobs_bootstrap_failure_report_survives_lifecycle_failure_write_error() 
         assert "unexpectedly seeded" in report["summary"]["error"]
 
 
-def test_jobs_bootstrap_rejects_after_full_pipeline_success() -> None:
+def test_jobs_bootstrap_rejects_after_full_pipeline_success_while_feed_is_servable() -> None:
     with workspace_tmpdir("task-launch-bootstrap-reject") as data_dir:
         api = _task_launch_api(data_dir)
+        _write_servable_runtime_feed(data_dir)
         called = False
 
         def run_background_script(*_args: Any, **_kwargs: Any) -> int:
@@ -363,9 +370,7 @@ def test_jobs_bootstrap_rejects_after_full_pipeline_success() -> None:
 def test_jobs_bootstrap_rejects_when_runtime_feed_artifacts_are_loadable() -> None:
     with workspace_tmpdir("task-launch-bootstrap-runtime-feed-valid") as data_dir:
         api = _task_launch_api(data_dir)
-        _write_successful_runtime_feed_shell(data_dir)
-        write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"job-1"}]')
-        write_atomic_if_changed(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]')
+        _write_servable_runtime_feed(data_dir)
         called = False
 
         def run_background_script(*_args: Any, **_kwargs: Any) -> int:
@@ -390,9 +395,7 @@ def test_jobs_bootstrap_first_run_force_does_not_bypass_successful_runtime_feed_
     with workspace_tmpdir("task-launch-bootstrap-runtime-feed-first-run-force") as data_dir:
         api = _task_launch_api(data_dir)
         api._start_bootstrap_lifecycle_watch = lambda **_kwargs: None  # type: ignore[method-assign]  # noqa: SLF001
-        _write_successful_runtime_feed_shell(data_dir)
-        write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"job-1"}]')
-        write_atomic_if_changed(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]')
+        _write_servable_runtime_feed(data_dir)
         called = False
 
         def run_background_script(*_args: Any, **_kwargs: Any) -> int:
@@ -418,9 +421,7 @@ def test_jobs_bootstrap_internal_force_can_bypass_successful_runtime_feed_guard(
     with workspace_tmpdir("task-launch-bootstrap-runtime-feed-internal-force") as data_dir:
         api = _task_launch_api(data_dir)
         api._start_bootstrap_lifecycle_watch = lambda **_kwargs: None  # type: ignore[method-assign]  # noqa: SLF001
-        _write_successful_runtime_feed_shell(data_dir)
-        write_atomic_if_changed(data_dir / "jobs-unified.json", '[{"id":"job-1"}]')
-        write_atomic_if_changed(data_dir / "jobs-unified-light.json", '[{"id":"job-1"}]')
+        _write_servable_runtime_feed(data_dir)
         called = False
 
         def run_background_script(*_args: Any, **_kwargs: Any) -> int:

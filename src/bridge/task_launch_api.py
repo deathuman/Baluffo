@@ -302,7 +302,13 @@ class TaskLaunchApi(
             self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
         )
         with lock_context:
-            if self._has_successful_full_pipeline(list(get_lifecycle_run_history_rows() or [])):
+            # A past pipeline row records what ran, not what is on disk now. It may
+            # only block admission while the feed it produced is still servable;
+            # otherwise a missing feed could never be repaired.
+            runtime_feed_available = self._has_successful_runtime_feed()
+            if runtime_feed_available and self._has_successful_full_pipeline(
+                list(get_lifecycle_run_history_rows() or [])
+            ):
                 return {
                     "started": False,
                     "task": "jobs_bootstrap",
@@ -312,9 +318,7 @@ class TaskLaunchApi(
                     "alreadyCompleted": True,
                     "error": "full_pipeline_already_completed",
                 }
-            if (
-                not force_bootstrap or user_first_run_bootstrap
-            ) and self._has_successful_runtime_feed():
+            if (not force_bootstrap or user_first_run_bootstrap) and runtime_feed_available:
                 return {
                     "started": False,
                     "task": "jobs_bootstrap",

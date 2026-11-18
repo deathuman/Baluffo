@@ -108,7 +108,7 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | GET | `/fetcher/log` | Fetcher log (supports `?offset=`, or `?view=tail&limitChars=`) |
 | GET | `/ops/fetch-report` | Last fetch report |
 | GET | `/ops/fetcher-metrics?windowRuns=` | Fetcher performance metrics |
-| POST | `/tasks/run-jobs-bootstrap` | First-run/retry sheet-limited bootstrap fetch. Returns `{started, runId, task: "jobs_bootstrap", taskType: "fetch", preset: "bootstrap_sheets", coverageScope: "bootstrap_sheets"}` and no-ops/rejects after an existing runtime feed or full pipeline success |
+| POST | `/tasks/run-jobs-bootstrap` | First-run/retry sheet-limited bootstrap fetch. Returns `{started, runId, task: "jobs_bootstrap", taskType: "fetch", preset: "bootstrap_sheets", coverageScope: "bootstrap_sheets"}`. It does not replace a runtime feed the app can serve, including after a successful full pipeline, but rebuilds a missing or unreadable feed. |
 | POST | `/tasks/run-fetcher` | Run fetcher with presets (`{preset: "default"|"incremental"|"retry_failed"|"force_full"|"uncapped", ...}`) |
 | POST | `/tasks/run-jobs-pipeline` | Run jobs pipeline task |
 | POST | `/tasks/job-availability-check` | Start a bounded background direct-link check by exact `availabilityId` |
