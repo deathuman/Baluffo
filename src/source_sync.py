@@ -528,6 +528,8 @@ def push_sources_snapshot(
     *,
     dry_run: bool = False,
     progress_callback: Callable[..., None] | None = None,
+    known_remote_sha: str = "",
+    known_local_revision: str = "",
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
     return _source_sync_snapshot.push_sources_snapshot(
@@ -536,5 +538,7 @@ def push_sources_snapshot(
         local_state,
         dry_run=dry_run,
         progress_callback=progress_callback,
+        known_remote_sha=known_remote_sha,
+        known_local_revision=known_local_revision,
         opener=opener,
     )

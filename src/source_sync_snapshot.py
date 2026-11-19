@@ -233,6 +233,16 @@ def merge_registry_state(
     remote = normalize_snapshot(module, remote_snapshot)
     tombstones = module.load_tombstones()
     generated_at = str(remote.get("generatedAt") or "")
+    local_rejected_rows = _canonicalize_snapshot_rows(
+        list(local_state.get("rejected") or []),
+        bucket="rejected",
+        generated_at=generated_at,
+    )
+    # A tombstone removes a rejected row from the persisted rejected bucket, but
+    # its identity must still block the same row from returning via a pull.
+    local_rejected_ids = {
+        source_identity(row) for row in local_rejected_rows if isinstance(row, dict)
+    }
     local = {
         "active": module.filter_tombstoned_rows(
             _canonicalize_snapshot_rows(
@@ -246,17 +256,11 @@ def merge_registry_state(
             ),
             tombstones,
         ),
-        "rejected": module.filter_tombstoned_rows(
-            _canonicalize_snapshot_rows(
-                list(local_state.get("rejected") or []),
-                bucket="rejected",
-                generated_at=generated_at,
-            ),
-            tombstones,
-        ),
+        "rejected": module.filter_tombstoned_rows(local_rejected_rows, tombstones),
     }
-    local_rejected_ids = {
-        source_identity(row) for row in local["rejected"] if isinstance(row, dict)
+    remote_rows = {
+        bucket: module.filter_tombstoned_rows(list(remote.get(bucket) or []), tombstones)
+        for bucket in ("active", "pending")
     }
     merged: dict[str, list[dict[str, Any]]] = {
         "active": [],
@@ -268,7 +272,7 @@ def merge_registry_state(
         for row in local[bucket]:
             candidates[source_identity(row)] = dict(row)
     for bucket in ("active", "pending"):
-        for row in remote[bucket]:
+        for row in remote_rows[bucket]:
             row_id = source_identity(row)
             if row_id in local_rejected_ids:
                 continue
@@ -397,6 +401,8 @@ def push_sources_snapshot(
     *,
     dry_run: bool = False,
     progress_callback: Callable[..., None] | None = None,
+    known_remote_sha: str = "",
+    known_local_revision: str = "",
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     # Lazy import: the coordinator holds no module-level leaf import, so it is
@@ -409,5 +415,7 @@ def push_sources_snapshot(
         local_state,
         dry_run=dry_run,
         progress_callback=progress_callback,
+        known_remote_sha=known_remote_sha,
+        known_local_revision=known_local_revision,
         opener=opener,
     )

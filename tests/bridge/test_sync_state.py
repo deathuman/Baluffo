@@ -16,6 +16,8 @@ def test_sync_state_persists_runtime_status_fields() -> None:
         assert before["lastPullRemoteSha"] == ""
         assert before["lastPullRemoteGeneratedAt"] == ""
         assert before["lastPullSnapshotFormat"] == ""
+        assert before["lastPushRemoteSha"] == ""
+        assert before["lastPushLocalRevision"] == ""
         assert before["lastDiscoverySyncFinishedAt"] == ""
         assert before["counters"]["totalPushes"] == 0
         assert before["counters"]["totalPulls"] == 0
@@ -46,6 +48,13 @@ def test_sync_state_persists_runtime_status_fields() -> None:
         assert str(payload.get("lastAction") or "") == "pull"
         assert str(payload.get("lastResult") or "") == "ok"
         assert int((payload.get("counters") or {}).get("totalPulls") or 0) == 0
+
+        state.save_sync_runtime_state(
+            {"lastPushRemoteSha": "push-sha", "lastPushLocalRevision": "revision-1"}
+        )
+        persisted = state.load_sync_runtime_state()
+        assert persisted["lastPushRemoteSha"] == "push-sha"
+        assert persisted["lastPushLocalRevision"] == "revision-1"
 
 
 def test_sync_state_resets_counters_on_date_boundary() -> None:

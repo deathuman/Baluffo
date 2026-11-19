@@ -84,7 +84,7 @@ def test_deferred_work_runs_after_admission_and_in_submission_order() -> None:
     def work(label: str, *, last: bool = False):
         def run() -> None:
             order.append(label)
-            barrier_states.append(budget.is_open())
+            barrier_states.append(bool(budget.snapshot()["barrierOpen"]))
             if last:
                 done.set()
 
@@ -181,10 +181,10 @@ def test_module_budget_is_reconfigured_per_process() -> None:
         startup_work_budget.start_startup_work_budget()
 
         assert startup_work_budget.note_accepted_requests(1) is False
-        assert startup_work_budget.open_first_paint("test-open") is True
+        assert startup_work_budget.wait_for_first_paint(timeout_s=0.0) == "budget-expired"
         assert startup_work_budget.startup_work_budget_snapshot()["barrierOpen"] is True
         assert [event for event, _ in metrics] == ["desktop_bridge_first_paint_barrier_opened"]
-        assert (metrics[0][1] or {})["reason"] == "test-open"
+        assert (metrics[0][1] or {})["reason"] == "wait-timeout"
     finally:
         startup_work_budget.reset_startup_work_budget()
 

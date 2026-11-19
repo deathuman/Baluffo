@@ -265,7 +265,7 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.sync_config_status = lambda: {"ready": True}
     api.test_sync_config = lambda: {"ok": True}
     api.sync_pull_sources = lambda: {"pulled": True, "sources": []}
-    api.sync_push_sources = lambda: {"pushed": True, "sources": []}
+    api.sync_push_sources = lambda **_: {"pushed": True, "sources": []}
     api.load_alert_state = lambda: {"acked": {}}
     api.save_alert_state = lambda s: None
     api.now_iso = lambda: "2024-01-01T00:00:00Z"

@@ -193,6 +193,7 @@ def _read_sharded_remote_snapshot(
     result["committedManifest"] = dict(sharded_snapshot.get("manifest") or {})
     result["shardCount"] = int(sharded_snapshot.get("shardCount") or 0)
     result["shardsReadBytes"] = int(sharded_snapshot.get("shardsReadBytes") or 0)
+    result["shardReadDurationMs"] = int(sharded_snapshot.get("shardReadDurationMs") or 0)
     result["totalShardBytes"] = int(sharded_snapshot.get("totalShardBytes") or 0)
     result["manifestSizeBytes"] = int(sharded_snapshot.get("manifestSizeBytes") or 0)
     return result

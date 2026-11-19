@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import src.source_sync_shard as shard_mod
+from tests.helpers.git_data_sync_module import GitDataSyncModule
 from tests.helpers.report_state import simple_config
 
 _config = simple_config
@@ -129,17 +130,10 @@ def test_push_changed_shard_records_expected_verify_failure() -> None:
     assert result["remoteRequests"][-1]["ok"] is False
 
 
-def test_push_sharded_snapshot_records_expected_manifest_failure(
+def test_push_sharded_snapshot_records_expected_commit_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    shard = _shard()
-    module = _FakeSyncModule(
-        [
-            (200, {"content": {"sha": "shard-sha"}}),
-            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
-            RuntimeError("manifest down"),
-        ]
-    )
+    module = GitDataSyncModule()
     original_remote_timing_row = shard_mod._remote_timing_row  # noqa: SLF001
     timing_rows: list[dict[str, Any]] = []
 
@@ -148,9 +142,13 @@ def test_push_sharded_snapshot_records_expected_manifest_failure(
         timing_rows.append(row)
         return row
 
-    monkeypatch.setattr(shard_mod, "_remote_timing_row", record_remote_timing_row)
+    def fail_commit(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("commit down")
 
-    with pytest.raises(RuntimeError, match="manifest down"):
+    monkeypatch.setattr(shard_mod, "_remote_timing_row", record_remote_timing_row)
+    monkeypatch.setattr(shard_mod, "create_git_commit", fail_commit)
+
+    with pytest.raises(RuntimeError, match="commit down"):
         shard_mod.push_sharded_snapshot(
             module,
             _config(),
@@ -165,5 +163,7 @@ def test_push_sharded_snapshot_records_expected_manifest_failure(
             opener=lambda *_a, **_kw: None,
         )
 
-    assert timing_rows[-1]["operation"] == "pushManifest"
+    assert timing_rows[-1]["operation"] == "createCommit"
     assert timing_rows[-1]["ok"] is False
+    assert module.commits == []
+    assert module.head_commit == "parent-commit"

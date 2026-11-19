@@ -35,7 +35,6 @@ def test_no_op_push_skips_write_when_content_unchanged(source_sync_test_root, mo
                 fp=None,
             ),
             FakeResponse(200, {"sha": "s1", "content": encoded}),
-            FakeResponse(201, {"content": {"sha": "manifest-sha"}}),
         ]
     )
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
@@ -48,7 +47,7 @@ def test_no_op_push_skips_write_when_content_unchanged(source_sync_test_root, mo
     assert result["pushed"] is True
     assert result["skipped"] is False
     assert result["skipReason"] == ""
-    assert result["remoteSha"] == "manifest-sha"
+    assert result["remoteSha"] == opener.manifest_sha
     assert result["snapshot"]["generatedAt"] == "2026-04-09T21:05:07.978053+00:00"
     assert result["counters"]["totalPushes"] == 1
     assert result["counters"]["noOpSkips"] == 0
@@ -139,7 +138,6 @@ def test_content_hash_stable_excluding_volatile_fields(source_sync_test_root, mo
                 fp=None,
             ),
             FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
-            FakeResponse(201, {"content": {"sha": "s2"}}),
         ]
     )
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
@@ -150,7 +148,7 @@ def test_content_hash_stable_excluding_volatile_fields(source_sync_test_root, mo
     finally:
         sync.build_app_jwt = original_build_jwt
     assert result["pushed"]
-    assert result["remoteSha"] == "s2"
+    assert result["remoteSha"] == opener.manifest_sha
     assert result["skipReason"] == ""
     assert result["snapshotFormat"] == "sharded-v3"
 
@@ -176,7 +174,6 @@ def test_idempotent_put_retry_re_reads_sha_on_transient_failure(source_sync_test
                 fp=None,
             ),
             FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
-            URLError("transient socket close"),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
                 code=404,
@@ -185,9 +182,9 @@ def test_idempotent_put_retry_re_reads_sha_on_transient_failure(source_sync_test
                 fp=None,
             ),
             FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
-            FakeResponse(201, {"content": {"sha": "s2"}}),
         ]
     )
+    opener.fail_next_blob = URLError("transient socket close")
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     local = {"active": [], "pending": [], "rejected": []}
     original_build_jwt = sync.build_app_jwt
@@ -197,7 +194,7 @@ def test_idempotent_put_retry_re_reads_sha_on_transient_failure(source_sync_test
     finally:
         sync.build_app_jwt = original_build_jwt
     assert result["pushed"] is True
-    assert result["remoteSha"] == "s2"
+    assert result["remoteSha"] == opener.manifest_sha
     assert result["snapshotFormat"] == "sharded-v3"
 
 
@@ -211,7 +208,6 @@ def test_put_retry_detects_concurrent_write_as_conflict(source_sync_test_root):
         "rejected": [],
     }
     remote_encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
-    conflict_payload = {"message": "Update is not a fast-forward"}
     concurrent_payload = {
         "schemaVersion": 2,
         "generatedAt": "2026-03-09T11:00:00+00:00",
@@ -233,7 +229,6 @@ def test_put_retry_detects_concurrent_write_as_conflict(source_sync_test_root):
                 fp=None,
             ),
             FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
-            FakeResponse(409, conflict_payload),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
                 code=404,
@@ -242,9 +237,9 @@ def test_put_retry_detects_concurrent_write_as_conflict(source_sync_test_root):
                 fp=None,
             ),
             FakeResponse(200, {"sha": "s3", "content": concurrent_encoded}),
-            FakeResponse(201, {"content": {"sha": "s4"}}),
         ]
     )
+    opener.fail_next_ref_status = 409
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     local = {
         "active": [{"adapter": "static", "listing_url": "https://mine.example/jobs"}],
@@ -258,7 +253,7 @@ def test_put_retry_detects_concurrent_write_as_conflict(source_sync_test_root):
     finally:
         sync.build_app_jwt = original_build_jwt
     assert result["pushed"] is True
-    assert result["remoteSha"] == "s4"
+    assert result["remoteSha"] == opener.manifest_sha
 
 
 class _ModuleSleepRecorder:
@@ -342,7 +337,6 @@ def test_idempotent_put_retry_re_reads_sha_on_github_500(source_sync_test_root):
                 fp=None,
             ),
             FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
-            FakeResponse(500, {"message": "Internal Server Error"}),
             HTTPError(
                 url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync/manifest.json?ref=main",
                 code=404,
@@ -351,9 +345,9 @@ def test_idempotent_put_retry_re_reads_sha_on_github_500(source_sync_test_root):
                 fp=None,
             ),
             FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
-            FakeResponse(201, {"content": {"sha": "s2"}}),
         ]
     )
+    opener.fail_next_blob_status = 500
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     local = {"active": [], "pending": [], "rejected": []}
     original_build_jwt = sync.build_app_jwt
@@ -363,5 +357,5 @@ def test_idempotent_put_retry_re_reads_sha_on_github_500(source_sync_test_root):
     finally:
         sync.build_app_jwt = original_build_jwt
     assert result["pushed"] is True
-    assert result["remoteSha"] == "s2"
+    assert result["remoteSha"] == opener.manifest_sha
     assert result["snapshotFormat"] == "sharded-v3"

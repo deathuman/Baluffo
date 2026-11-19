@@ -97,9 +97,6 @@ class StartupWorkBudget:
         with self._lock:
             return self._started_at is not None
 
-    def is_open(self) -> bool:
-        return self._barrier.is_set()
-
     def note_accepted(self, accepted_count: int) -> bool:
         """Feed the cumulative accepted-request count; True when it opened the barrier."""
         now = self._clock()
@@ -119,16 +116,6 @@ class StartupWorkBudget:
             # that outlives it must not keep heavy work out forever.
             if not opened and now - float(self._started_at) >= self._budget_s:
                 opened = self._open_locked("budget-expired", now)
-        if opened:
-            self._emit_opened()
-        return bool(opened)
-
-    def open(self, reason: str) -> bool:
-        """Open the barrier explicitly (tests, or a page-reported first paint)."""
-        with self._lock:
-            if self._barrier.is_set():
-                return False
-            opened = self._open_locked(str(reason or "explicit"), self._clock())
         if opened:
             self._emit_opened()
         return bool(opened)
@@ -274,6 +261,11 @@ def start_startup_work_budget() -> None:
     _BUDGET.start()
 
 
+def is_started() -> bool:
+    """True once a listener armed the budget; a direct call has no barrier."""
+    return _BUDGET.is_started()
+
+
 def note_accepted_requests(accepted_count: int) -> bool:
     return _BUDGET.note_accepted(accepted_count)
 
@@ -284,10 +276,6 @@ def wait_for_first_paint(timeout_s: float | None = None) -> str:
 
 def submit_startup_work(label: str, work: Callable[[], Any]) -> bool:
     return _BUDGET.submit(label, work)
-
-
-def open_first_paint(reason: str = "explicit") -> bool:
-    return _BUDGET.open(reason)
 
 
 def startup_work_budget_snapshot() -> dict[str, Any]:

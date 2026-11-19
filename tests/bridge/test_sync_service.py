@@ -20,6 +20,7 @@ class _FakeSourceSync:
     def __init__(self) -> None:
         self.pull_calls: int = 0
         self.push_calls: int = 0
+        self.push_kwargs: dict[str, Any] = {}
         self.remote_reads: int = 0
         self.last_known_remote_sha: str = ""
         self.push_result_extra: dict[str, Any] = {}
@@ -86,8 +87,10 @@ class _FakeSourceSync:
         state: dict[str, Any],
         *,
         progress_callback: Any | None = None,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         self.push_calls += 1
+        self.push_kwargs = dict(kwargs)
         self.progress_callback = progress_callback
         if progress_callback is not None:
             for payload in self.push_progress_payloads:
@@ -179,6 +182,7 @@ def test_sync_service_pull_delegates_and_persists() -> None:
             ACTIVE_SYNC_RUNS.clear()
             ACTIVE_SYNC_THREADS.clear()
         source_sync = _FakeSourceSync()
+        source_sync.pull_result_extra = {"shardReadDurationMs": 1250}
         history = _RunHistory()
         lifecycle = _TaskLifecycle()
         ops_lock = threading.RLock()
@@ -254,6 +258,7 @@ def test_sync_service_pull_delegates_and_persists() -> None:
         assert status["runtime"]["lastPullSnapshotFormat"] == "sharded-v3"
         assert status["timing"]["action"] == "pull"
         assert status["timingHistory"][-1]["action"] == "pull"
+        assert status["timingHistory"][-1]["shardReadDurationMs"] == 1250
 
         source_sync.pull_result_extra = {
             "changed": False,
@@ -470,6 +475,90 @@ def test_sync_service_push_forwards_remote_progress_callback() -> None:
         assert remote_progress["mode"] == "determinate"
         assert remote_progress["ratio"] == 0.5
         assert remote_progress["counts"]["verifiedShardCount"] == 1
+
+
+def test_sync_service_push_forwards_dry_run_preview_without_status_write() -> None:
+    with workspace_tmpdir("sync-service") as data_dir:
+        with SYNC_STATE_LOCK:
+            ACTIVE_SYNC_RUNS.clear()
+            ACTIVE_SYNC_THREADS.clear()
+        source_sync = _FakeSourceSync()
+        source_sync.push_result_extra = {
+            "pushed": False,
+            "skipped": True,
+            "skipReason": "dryRun",
+            "dryRun": True,
+            "wouldChange": True,
+            "remoteReadSkipped": True,
+        }
+
+        svc = SyncService(
+            data_dir=data_dir,
+            source_sync=source_sync,
+            bridge_log=lambda level, message, **fields: None,
+            load_state=lambda: _EMPTY_REGISTRY_STATE,
+            persist_state=lambda state: state,
+            summarize_state=lambda state: {
+                "activeCount": len(state["active"]),
+                "pendingCount": len(state["pending"]),
+                "rejectedCount": len(state["rejected"]),
+            },
+            ops_state_lock=threading.RLock(),
+            get_security_defaults=lambda: {"github_app_enabled_default": True},
+        )
+
+        svc.update_saved_sync_settings({"enabled": True})
+        result = svc.sync_push_sources(dry_run=True)
+
+        assert result["ok"] is True
+        assert result["dryRun"] is True
+        assert result["wouldChange"] is True
+        assert result["pushed"] is False
+        assert result["remoteReadSkipped"] is True
+        assert result["timing"]["action"] == "preview"
+        assert result["timing"]["wouldChange"] is True
+        assert source_sync.push_kwargs["dry_run"] is True
+        runtime = svc._sync_state.load_sync_runtime_state()
+        assert runtime["lastPushAt"] == ""
+        assert runtime["lastPushRemoteSha"] == ""
+        assert runtime["lastPushLocalRevision"] == ""
+
+
+def test_sync_service_push_persists_manifest_sha_and_local_revision() -> None:
+    with workspace_tmpdir("sync-service") as data_dir:
+        with SYNC_STATE_LOCK:
+            ACTIVE_SYNC_RUNS.clear()
+            ACTIVE_SYNC_THREADS.clear()
+        source_sync = _FakeSourceSync()
+        source_sync.push_result_extra = {"localRevision": "revision-1"}
+
+        svc = SyncService(
+            data_dir=data_dir,
+            source_sync=source_sync,
+            bridge_log=lambda level, message, **fields: None,
+            load_state=lambda: _EMPTY_REGISTRY_STATE,
+            persist_state=lambda state: state,
+            summarize_state=lambda state: {
+                "activeCount": len(state["active"]),
+                "pendingCount": len(state["pending"]),
+                "rejectedCount": len(state["rejected"]),
+            },
+            ops_state_lock=threading.RLock(),
+            get_security_defaults=lambda: {"github_app_enabled_default": True},
+        )
+
+        svc.update_saved_sync_settings({"enabled": True})
+        result = svc.sync_push_sources()
+
+        assert result["pushed"] is True
+        runtime = svc._sync_state.load_sync_runtime_state()
+        assert runtime["lastPushRemoteSha"] == "abc"
+        assert runtime["lastPushLocalRevision"] == "revision-1"
+
+        svc.sync_push_sources()
+        assert source_sync.push_kwargs["known_remote_sha"] == "abc"
+        assert source_sync.push_kwargs["known_local_revision"] == "revision-1"
+        assert source_sync.push_kwargs["dry_run"] is False
 
 
 def test_sync_service_start_task_runs_and_finishes() -> None:

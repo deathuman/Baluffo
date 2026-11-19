@@ -1,46 +1,12 @@
-import threading
-
-from src.source_sync_shard import build_sharded_snapshot_bundle, push_sharded_snapshot
+from src.source_sync_shard import (
+    build_sharded_snapshot_bundle,
+    git_blob_sha1,
+    push_sharded_snapshot,
+)
+from tests.helpers.git_data_sync_module import GitDataSyncModule
 from tests.helpers.report_state import simple_config
 
 _config = simple_config
-
-
-class _ConcurrentSyncModule:
-    def __init__(self) -> None:
-        self.calls: list[dict] = []
-        self._lock = threading.Lock()
-        self._content_by_url: dict[str, str] = {}
-        self.max_in_flight = 0
-        self._in_flight = 0
-
-    def _github_api_base(self) -> str:
-        return "https://api.github.test"
-
-    def validate_sync_config(self, config) -> None:  # noqa: ANN001
-        assert config.repo == "owner/repo"
-
-    def _request_json(self, **kwargs) -> tuple[int, dict, dict]:
-        with self._lock:
-            self._in_flight += 1
-            self.max_in_flight = max(self.max_in_flight, self._in_flight)
-            self._in_flight -= 1
-        with self._lock:
-            self.calls.append(dict(kwargs))
-        method = str(kwargs.get("method") or "").upper()
-        url = str(kwargs.get("url") or "")
-        content_key = url.split("?", 1)[0]
-        if method == "PUT" and "/manifest.json" not in url:
-            payload = kwargs.get("payload") or {}
-            self._content_by_url[content_key] = str(payload.get("content") or "")
-            return 200, {"content": {"sha": f"sha-{len(self.calls)}"}}, {}
-        if method == "GET" and "/shards/" in url:
-            return 200, {"content": self._content_by_url.get(content_key, "")}, {}
-        if method == "PUT" and url.endswith("baluffo/source-sync/manifest.json"):
-            return 200, {"content": {"sha": "manifest-sha"}}, {}
-        if method == "GET":
-            return 404, {"message": "Not Found"}, {}
-        raise AssertionError(f"unexpected request: {method} {url}")
 
 
 def _snapshot_with_many_sources(count: int) -> dict:
@@ -61,10 +27,10 @@ def _snapshot_with_many_sources(count: int) -> dict:
     }
 
 
-def test_push_sharded_snapshot_serializes_branch_mutating_shard_writes() -> None:
+def test_push_sharded_snapshot_creates_blobs_serially_and_commits_once() -> None:
     snapshot = _snapshot_with_many_sources(32)
     bundle = build_sharded_snapshot_bundle(snapshot, max_shard_size=1_000)
-    module = _ConcurrentSyncModule()
+    module = GitDataSyncModule()
 
     result = push_sharded_snapshot(
         module,
@@ -78,12 +44,16 @@ def test_push_sharded_snapshot_serializes_branch_mutating_shard_writes() -> None
     changed_count = int(result["metrics"]["changedShardCount"])
     assert result["pushed"] is True
     assert changed_count > 4
+    # Blob creation never advances the branch, but the push still writes one
+    # blob at a time so the single-writer contract is unchanged.
     assert module.max_in_flight == 1
     assert result["shardResult"]["workerCount"] == 1
     assert result["shardResult"]["parallelWallMs"] >= 0
+    assert len(module.commits) == 1
     assert result["remoteTiming"]["methodCounts"] == {
-        "PUT": changed_count + 1,
-        "GET": changed_count + 1,
+        "GET": 3,
+        "POST": changed_count + 3,
+        "PATCH": 1,
     }
     assert (
         result["remoteTiming"]["stageWallMs"]["pushChangedShards"]
@@ -93,10 +63,10 @@ def test_push_sharded_snapshot_serializes_branch_mutating_shard_writes() -> None
     assert result["remoteTiming"]["stageWallMs"]["pruneShards"] >= 0
 
 
-def test_push_sharded_snapshot_commits_manifest_after_shard_verification() -> None:
+def test_push_sharded_snapshot_exposes_shards_and_manifest_in_the_same_tree() -> None:
     snapshot = _snapshot_with_many_sources(16)
     bundle = build_sharded_snapshot_bundle(snapshot, max_shard_size=1_000)
-    module = _ConcurrentSyncModule()
+    module = GitDataSyncModule()
 
     result = push_sharded_snapshot(
         module,
@@ -107,16 +77,9 @@ def test_push_sharded_snapshot_commits_manifest_after_shard_verification() -> No
         opener=lambda *_a, **_kw: None,
     )
 
-    manifest_index = next(
-        index
-        for index, call in enumerate(module.calls)
-        if call["method"] == "PUT" and call["url"].endswith("baluffo/source-sync/manifest.json")
-    )
-    shard_verify_indices = [
-        index
-        for index, call in enumerate(module.calls)
-        if call["method"] == "GET" and "/shards/" in call["url"]
-    ]
     assert result["pushed"] is True
-    assert shard_verify_indices
-    assert max(shard_verify_indices) < manifest_index
+    tree = module.branch_tree()
+    assert module.manifest_path in tree
+    for shard in bundle["changedShards"]:
+        assert tree[shard.path] == git_blob_sha1(shard.payload_bytes)
+    assert module.head_commit == module.commits[0]["sha"]

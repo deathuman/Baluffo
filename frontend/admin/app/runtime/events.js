@@ -70,6 +70,7 @@ export function bindAdminRuntimeEvents({
     [refs.adminAddManualSourceBtnEl, () => registryController.addManualSource()],
     [refs.adminSyncTestBtnEl, () => syncController.testSyncConfig()],
     [refs.adminSyncPullBtnEl, () => syncController.pullSourcesSync()],
+    [refs.adminSyncPreviewPushBtnEl, syncController.previewPushSources],
     [refs.adminSyncPushBtnEl, () => syncController.pushSourcesSync()]
   ].forEach(([el, handler]) => bindAsyncClick(el, handler));
 

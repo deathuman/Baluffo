@@ -1,5 +1,7 @@
 """Packaged desktop rehearsal tests for sync."""
 
+from src.ship.packaged_smoke import rehearsal_sync
+
 from ._rehearsal_shared import (
     Path,
     Request,
@@ -177,6 +179,34 @@ def test_run_packaged_smoke_can_run_sync_rehearsal_mode() -> None:
         rehearsal_mock.assert_called_once()
         saved = json.loads(report_path.read_text(encoding="utf-8"))
         assert saved["ok"] is True
+
+
+def test_post_packaged_sync_action_requests_inline_for_pull_and_push() -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class _Deps:
+        @staticmethod
+        def post_json(
+            url: str, body: dict[str, object], *, timeout_s: float
+        ) -> tuple[int, dict[str, object]]:
+            calls.append((url, body))
+            return 200, {"ok": True}
+
+    for action in ("test", "push", "pull"):
+        result = rehearsal_sync._post_packaged_sync_action(  # noqa: SLF001
+            _Deps(),
+            bridge_port=12345,
+            action=action,
+            runtime_timeout_s=5.0,
+            failure_message="packaged sync action failed",
+        )
+        assert result == {"ok": True}
+
+    assert calls == [
+        ("http://127.0.0.1:12345/sync/test", {}),
+        ("http://127.0.0.1:12345/sync/push", {"inline": True}),
+        ("http://127.0.0.1:12345/sync/pull", {"inline": True}),
+    ]
 
 
 def test_run_packaged_sync_rehearsal_captures_performance_profile() -> None:

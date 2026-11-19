@@ -1,19 +1,25 @@
-import base64
+import json
 from typing import Any
 
 import pytest
 
 from src.source_sync_shard import (
+    SourceSyncShardError,
     build_sharded_snapshot_bundle,
+    git_blob_sha1,
+    manifest_payload_bytes,
     push_manifest,
     push_sharded_snapshot,
 )
+from tests.helpers.git_data_sync_module import GitDataSyncModule
 from tests.helpers.report_state import simple_config
 
 _config = simple_config
 
 
 class _FakeSyncModule:
+    """FIFO response module for the legacy Contents `push_manifest` path."""
+
     def __init__(self, responses: list[tuple[int, Any]]):
         self.responses = list(responses)
         self.calls: list[dict] = []
@@ -61,21 +67,28 @@ def _snapshot() -> dict:
     }
 
 
-def _encoded_bytes(payload: bytes) -> str:
-    return base64.b64encode(payload).decode("ascii")
+def _snapshot_with_many_sources(count: int) -> dict:
+    return {
+        "schemaVersion": 2,
+        "generatedAt": "2026-05-12T10:00:00+00:00",
+        "source": {"name": "admin_bridge"},
+        "active": [
+            {
+                "id": f"static:listing_url:https://studio-{idx}.example/jobs",
+                "adapter": "static",
+                "listing_url": f"https://studio-{idx}.example/jobs",
+                "name": f"Studio {idx}",
+            }
+            for idx in range(count)
+        ],
+        "pending": [],
+    }
 
 
-def test_push_sharded_snapshot_pushes_shards_before_manifest() -> None:
+def test_push_sharded_snapshot_commits_shards_and_manifest_in_one_commit() -> None:
     bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
     shard = bundle["changedShards"][0]
-    module = _FakeSyncModule(
-        [
-            (200, {"content": {"sha": "shard-sha"}}),
-            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
-            (200, {"content": {"sha": "manifest-sha"}}),
-            (404, {"message": "Not Found"}),
-        ]
-    )
+    module = GitDataSyncModule()
 
     result = push_sharded_snapshot(
         module,
@@ -86,36 +99,52 @@ def test_push_sharded_snapshot_pushes_shards_before_manifest() -> None:
     )
 
     assert result["pushed"] is True
-    assert result["remoteSha"] == "manifest-sha"
+    assert len(module.commits) == 1
+    commit = module.commits[0]
+    assert result["commitSha"] == commit["sha"]
+    assert commit["parents"] == ["parent-commit"]
+    assert module.head_commit == commit["sha"]
+    tree = module.branch_tree()
+    assert tree[shard.path] == git_blob_sha1(shard.payload_bytes)
+    assert tree[module.manifest_path] == git_blob_sha1(manifest_payload_bytes(bundle["manifest"]))
+    assert result["remoteSha"] == tree[module.manifest_path]
     assert result["metrics"]["changedShardCount"] == 1
-    assert len(module.calls) == 4
-    assert "/shards/" in module.calls[0]["url"]
-    assert module.calls[0]["method"] == "PUT"
-    assert module.calls[1]["method"] == "GET"
-    assert module.calls[2]["url"].endswith("baluffo/source-sync/manifest.json")
-    assert module.calls[3]["method"] == "GET"
-    assert result["remoteTiming"]["requestCount"] == 4
-    assert result["remoteTiming"]["methodCounts"] == {"PUT": 2, "GET": 2}
-    assert result["remoteTiming"]["operationTotalsMs"].keys() >= {
-        "pushShard",
-        "verifyShard",
-        "pushManifest",
-        "pruneShards",
-    }
-    assert result["remoteTiming"]["slowestRequests"][0]["path"]
+    # One atomic commit: no manifest PUT, exactly one ref update.
+    assert [call["method"] for call in module.calls].count("PATCH") == 1
+    assert not [call for call in module.calls if call["method"] == "PUT"]
+    assert result["shardResult"]["verifiedShards"] == [
+        {"path": shard.path, "sha256": shard.sha256, "rowCount": shard.row_count}
+    ]
+    assert result["remoteTiming"]["methodCounts"] == {"GET": 3, "POST": 4, "PATCH": 1}
+
+
+def test_push_sharded_snapshot_request_budget_is_one_commit_plus_blobs() -> None:
+    snapshot = _snapshot_with_many_sources(32)
+    bundle = build_sharded_snapshot_bundle(snapshot, max_shard_size=1_000)
+    module = GitDataSyncModule()
+
+    result = push_sharded_snapshot(
+        module,
+        _config(),
+        snapshot,
+        max_shard_size=1_000,
+        bundle=bundle,
+        opener=lambda *_a, **_kw: None,
+    )
+
+    changed_count = int(result["metrics"]["changedShardCount"])
+    assert changed_count >= 16
+    # The serial Contents protocol cost 2N + 2 requests. The atomic commit
+    # costs one blob per changed file plus a fixed seven-call generation.
+    # (GC's own listing and manifest-history reads are summarized by its single
+    # pruneShards timing row, not counted individually here.)
+    assert result["remoteTiming"]["requestCount"] == changed_count + 7
+    assert "PUT" not in result["remoteTiming"]["methodCounts"]
+    assert len(module.commits) == 1
 
 
 def test_push_sharded_snapshot_emits_remote_write_progress() -> None:
-    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
-    shard = bundle["changedShards"][0]
-    module = _FakeSyncModule(
-        [
-            (200, {"content": {"sha": "shard-sha"}}),
-            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
-            (200, {"content": {"sha": "manifest-sha"}}),
-            (404, {"message": "Not Found"}),
-        ]
-    )
+    module = GitDataSyncModule()
     progress: list[dict] = []
 
     result = push_sharded_snapshot(
@@ -146,16 +175,7 @@ def test_push_sharded_snapshot_emits_remote_write_progress() -> None:
 
 
 def test_push_sharded_snapshot_ignores_progress_callback_failure() -> None:
-    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
-    shard = bundle["changedShards"][0]
-    module = _FakeSyncModule(
-        [
-            (200, {"content": {"sha": "shard-sha"}}),
-            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
-            (200, {"content": {"sha": "manifest-sha"}}),
-            (404, {"message": "Not Found"}),
-        ]
-    )
+    module = GitDataSyncModule()
 
     def fail_progress(**_kwargs) -> None:
         raise RuntimeError("progress sink unavailable")
@@ -170,166 +190,72 @@ def test_push_sharded_snapshot_ignores_progress_callback_failure() -> None:
     )
 
     assert result["pushed"] is True
-    assert result["remoteSha"] == "manifest-sha"
+    assert len(module.commits) == 1
 
 
-def test_push_sharded_snapshot_updates_manifest_with_committed_sha() -> None:
-    snapshot = _snapshot()
-    committed = build_sharded_snapshot_bundle(
-        {**snapshot, "active": []},
-        max_shard_size=10_000,
-    )
-    bundle = build_sharded_snapshot_bundle(
-        snapshot,
-        max_shard_size=10_000,
-        committed_manifest=committed["manifest"],
-    )
-    shard = bundle["changedShards"][0]
-    module = _FakeSyncModule(
-        [
-            (200, {"content": {"sha": "shard-sha"}}),
-            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
-            (200, {"content": {"sha": "manifest-sha"}}),
-            (404, {"message": "Not Found"}),
-        ]
-    )
-
-    result = push_sharded_snapshot(
-        module,
-        _config(),
-        snapshot,
-        max_shard_size=10_000,
-        committed_manifest=committed["manifest"],
-        committed_manifest_sha="old-manifest-sha",
-        opener=lambda *_a, **_kw: None,
-    )
-
-    assert result["remoteSha"] == "manifest-sha"
-    manifest_call = module.calls[-2]
-    assert manifest_call["url"].endswith("baluffo/source-sync/manifest.json")
-    assert manifest_call["payload"]["sha"] == "old-manifest-sha"
-
-
-def test_push_sharded_snapshot_prunes_unreferenced_shards_after_manifest() -> None:
-    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
-    shard = bundle["changedShards"][0]
-    old_path = "baluffo/source-sync/shards/active/old/oldsha.json.gz"
-    module = _FakeSyncModule(
-        [
-            (200, {"content": {"sha": "shard-sha"}}),
-            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
-            (200, {"content": {"sha": "manifest-sha"}}),
-            (
-                200,
-                [
-                    {"type": "file", "path": old_path, "sha": "old-remote-sha"},
-                    {"type": "file", "path": shard.path, "sha": "current-remote-sha"},
-                ],
-            ),
-            (200, {"content": None}),
-        ]
-    )
-
-    result = push_sharded_snapshot(
-        module,
-        _config(),
-        _snapshot(),
-        max_shard_size=10_000,
-        opener=lambda *_a, **_kw: None,
-    )
-
-    assert result["pushed"] is True
-    assert result["gc"]["deletedCount"] == 1
-    assert result["gc"]["deletedPaths"] == [old_path]
-    assert result["warnings"] == []
-    assert [call["method"] for call in module.calls] == ["PUT", "GET", "PUT", "GET", "DELETE"]
-    delete_call = module.calls[-1]
-    assert delete_call["url"].endswith(old_path)
-    assert delete_call["payload"]["sha"] == "old-remote-sha"
-    assert delete_call["payload"]["branch"] == "main"
-
-
-def test_push_sharded_snapshot_ignores_remote_gc_entries_without_paths() -> None:
-    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
-    shard = bundle["changedShards"][0]
-    module = _FakeSyncModule(
-        [
-            (200, {"content": {"sha": "shard-sha"}}),
-            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
-            (200, {"content": {"sha": "manifest-sha"}}),
-            (
-                200,
-                [
-                    {"type": "file", "path": "", "sha": "missing-path-sha"},
-                    {"type": "file", "sha": "missing-path-key-sha"},
-                    {"type": "file", "path": shard.path, "sha": "current-remote-sha"},
-                ],
-            ),
-        ]
-    )
-
-    result = push_sharded_snapshot(
-        module,
-        _config(),
-        _snapshot(),
-        max_shard_size=10_000,
-        opener=lambda *_a, **_kw: None,
-    )
-
-    assert result["pushed"] is True
-    assert result["gc"]["deletedCount"] == 0
-    assert result["warnings"] == []
-    assert [call["method"] for call in module.calls] == ["PUT", "GET", "PUT", "GET"]
-
-
-def test_push_sharded_snapshot_reports_gc_failure_without_rollback() -> None:
-    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
-    shard = bundle["changedShards"][0]
-    old_path = "baluffo/source-sync/shards/active/old/oldsha.json.gz"
-    module = _FakeSyncModule(
-        [
-            (200, {"content": {"sha": "shard-sha"}}),
-            (200, {"content": _encoded_bytes(shard.payload_bytes)}),
-            (200, {"content": {"sha": "manifest-sha"}}),
-            (200, [{"type": "file", "path": old_path, "sha": "old-remote-sha"}]),
-            (500, {"message": "delete denied"}),
-        ]
-    )
-
-    result = push_sharded_snapshot(
-        module,
-        _config(),
-        _snapshot(),
-        max_shard_size=10_000,
-        opener=lambda *_a, **_kw: None,
-    )
-
-    assert result["pushed"] is True
-    assert result["remoteSha"] == "manifest-sha"
-    assert result["gc"]["deletedCount"] == 0
-    assert result["warnings"] == ["delete denied"]
-
-
-def test_push_manifest_maps_conflict_to_sync_operation_error() -> None:
-    module = _ConflictSyncModule([(409, {"message": "manifest moved"})])
+def test_push_sharded_snapshot_rejects_stale_committed_manifest_before_writing() -> None:
+    module = GitDataSyncModule()
 
     with pytest.raises(module.SyncOperationError) as ctx:
-        push_manifest(
+        push_sharded_snapshot(
             module,
             _config(),
-            build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)["manifest"],
-            sha="oldsha",
+            _snapshot(),
+            max_shard_size=10_000,
+            committed_manifest_sha="manifest-sha-from-preflight-read",
             opener=lambda *_a, **_kw: None,
         )
 
     assert ctx.value.code == "remote_conflict"
-    assert module.runtime_state == ("remote_conflict", "manifest moved")
+    assert module.runtime_state is not None
+    assert module.runtime_state[0] == "remote_conflict"
+    assert module.commits == []
+    assert module.head_commit == "parent-commit"
+    assert not [call for call in module.calls if call["method"] in {"POST", "PATCH"}]
+
+
+def test_push_sharded_snapshot_maps_ref_conflict_without_moving_branch() -> None:
+    module = GitDataSyncModule()
+    module.conflict_on_ref_update = True
+
+    with pytest.raises(module.SyncOperationError) as ctx:
+        push_sharded_snapshot(
+            module,
+            _config(),
+            _snapshot(),
+            max_shard_size=10_000,
+            opener=lambda *_a, **_kw: None,
+        )
+
+    assert ctx.value.code == "remote_conflict"
+    assert module.runtime_state is not None
+    assert module.runtime_state[0] == "remote_conflict"
+    assert module.head_commit == "parent-commit"
+    assert module.manifest_path not in module.branch_tree()
+
+
+def test_push_sharded_snapshot_rejects_remote_blob_sha_mismatch_without_commit() -> None:
+    module = GitDataSyncModule()
+    module.forced_blob_sha = "0" * 40
+
+    with pytest.raises(RuntimeError, match="stored source-sync blob with sha"):
+        push_sharded_snapshot(
+            module,
+            _config(),
+            _snapshot(),
+            max_shard_size=10_000,
+            opener=lambda *_a, **_kw: None,
+        )
+
+    assert module.commits == []
+    assert module.head_commit == "parent-commit"
+    assert module.manifest_path not in module.branch_tree()
 
 
 def test_push_sharded_snapshot_noops_when_committed_manifest_matches() -> None:
     snapshot = _snapshot()
     bundle = build_sharded_snapshot_bundle(snapshot, max_shard_size=10_000)
-    module = _FakeSyncModule([])
+    module = GitDataSyncModule()
     progress: list[dict] = []
 
     result = push_sharded_snapshot(
@@ -348,3 +274,100 @@ def test_push_sharded_snapshot_noops_when_committed_manifest_matches() -> None:
     assert result["metrics"]["changedShardCount"] == 0
     assert module.calls == []
     assert progress == []
+
+
+def test_push_sharded_snapshot_prunes_unreferenced_shards_after_commit() -> None:
+    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
+    shard = bundle["changedShards"][0]
+    old_path = "baluffo/source-sync/shards/active/old/oldsha.json.gz"
+    module = GitDataSyncModule()
+    module.contents_listing = [
+        {"type": "file", "path": old_path, "sha": "old-remote-sha"},
+        {"type": "file", "path": shard.path, "sha": "current-remote-sha"},
+    ]
+
+    result = push_sharded_snapshot(
+        module,
+        _config(),
+        _snapshot(),
+        max_shard_size=10_000,
+        opener=lambda *_a, **_kw: None,
+    )
+
+    assert result["pushed"] is True
+    assert result["gc"]["deletedCount"] == 1
+    assert result["gc"]["deletedPaths"] == [old_path]
+    assert result["warnings"] == []
+    assert module.deleted_paths == [old_path]
+    assert module.head_commit == module.commits[0]["sha"]
+
+
+def test_push_sharded_snapshot_ignores_remote_gc_entries_without_paths() -> None:
+    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
+    shard = bundle["changedShards"][0]
+    module = GitDataSyncModule()
+    module.contents_listing = [
+        {"type": "file", "path": "", "sha": "missing-path-sha"},
+        {"type": "file", "sha": "missing-path-key-sha"},
+        {"type": "file", "path": shard.path, "sha": "current-remote-sha"},
+    ]
+
+    result = push_sharded_snapshot(
+        module,
+        _config(),
+        _snapshot(),
+        max_shard_size=10_000,
+        opener=lambda *_a, **_kw: None,
+    )
+
+    assert result["pushed"] is True
+    assert result["gc"]["deletedCount"] == 0
+    assert result["warnings"] == []
+    assert module.deleted_paths == []
+
+
+def test_push_sharded_snapshot_reports_gc_failure_without_rollback() -> None:
+    old_path = "baluffo/source-sync/shards/active/old/oldsha.json.gz"
+    module = GitDataSyncModule()
+    module.contents_listing = [{"type": "file", "path": old_path, "sha": "old-remote-sha"}]
+    module.delete_status = 500
+
+    result = push_sharded_snapshot(
+        module,
+        _config(),
+        _snapshot(),
+        max_shard_size=10_000,
+        opener=lambda *_a, **_kw: None,
+    )
+
+    assert result["pushed"] is True
+    assert result["gc"]["deletedCount"] == 0
+    assert result["warnings"] == ["delete denied"]
+    assert module.head_commit == module.commits[0]["sha"]
+
+
+def test_push_manifest_maps_conflict_to_sync_operation_error() -> None:
+    module = _ConflictSyncModule([(409, {"message": "manifest moved"})])
+
+    with pytest.raises(module.SyncOperationError) as ctx:
+        push_manifest(
+            module,
+            _config(),
+            build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)["manifest"],
+            sha="oldsha",
+            opener=lambda *_a, **_kw: None,
+        )
+
+    assert ctx.value.code == "remote_conflict"
+    assert module.runtime_state == ("remote_conflict", "manifest moved")
+
+
+def test_manifest_payload_bytes_matches_the_contents_wire_format() -> None:
+    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
+
+    encoded = manifest_payload_bytes(bundle["manifest"])
+
+    assert json.loads(encoded.decode("utf-8")) == bundle["manifest"]
+    assert encoded == manifest_payload_bytes(bundle["manifest"])
+    with pytest.raises(SourceSyncShardError, match="uncommitted"):
+        manifest_payload_bytes({**bundle["manifest"], "phase": "proposed"})

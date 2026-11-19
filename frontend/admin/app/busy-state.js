@@ -100,6 +100,7 @@ export function syncAdminBusyUi({
   setButtonBusy(refs.adminRefreshReportBtnEl, Boolean(busyState.fetcherReportLoad), "Loading Report...");
   setButtonBusy(refs.adminSyncTestBtnEl, syncBusy || lockBusy, "Testing...");
   setButtonBusy(refs.adminSyncPullBtnEl, syncBusy || lockBusy, "Pull Running...");
+  setButtonBusy(refs.adminSyncPreviewPushBtnEl, syncBusy || lockBusy, "Previewing...");
   setButtonBusy(refs.adminSyncPushBtnEl, syncBusy || lockBusy, "Push Running...");
   [refs.adminSyncEnabledEl].forEach(el => {
     if (!el) return;

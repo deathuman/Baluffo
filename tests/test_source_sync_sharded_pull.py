@@ -1,6 +1,7 @@
 import base64
 import json
 
+import src.source_sync_shard as shard_mod
 from src import source_sync as sync
 from src.source_sync_shard import build_sharded_snapshot_bundle
 from tests.source_sync_helpers import source_sync_test_root  # noqa: F401
@@ -88,7 +89,7 @@ def test_pull_and_merge_sources_merges_distinct_sources_by_identity_after_v2_fal
     assert opener.calls[2]["url"].endswith("baluffo/source-sync.json?ref=main")
 
 
-def test_pull_and_merge_sources_prefers_committed_v3_shards(source_sync_test_root):
+def test_pull_and_merge_sources_prefers_committed_v3_shards(source_sync_test_root, monkeypatch):
     source_sync_test_root.write_packaged_config()
     remote_snapshot = {
         "schemaVersion": 2,
@@ -127,6 +128,15 @@ def test_pull_and_merge_sources_prefers_committed_v3_shards(source_sync_test_roo
             ],
         ]
     )
+
+    class _Clock:
+        def __init__(self) -> None:
+            self._ticks = iter((10.0, 10.75))
+
+        def perf_counter(self) -> float:
+            return next(self._ticks)
+
+    monkeypatch.setattr(shard_mod, "time", _Clock())
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
     original_build_jwt = sync.build_app_jwt
     try:
@@ -143,6 +153,7 @@ def test_pull_and_merge_sources_prefers_committed_v3_shards(source_sync_test_roo
 
     assert result["remoteSha"] == "manifest-sha"
     assert result["remoteGeneratedAt"] == remote_snapshot["generatedAt"]
+    assert result["shardReadDurationMs"] == 750
     assert len(result["mergedState"]["active"]) == 2
     assert len(result["mergedState"]["pending"]) == 1
     assert opener.calls[1]["url"].endswith("baluffo/source-sync/manifest.json?ref=main")

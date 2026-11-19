@@ -46,6 +46,7 @@ const ADMIN_BUSY_REFS = {
   adminRejectSourcesBtnEl: '[data-ui="admin-reject-sources-btn"]',
   adminSyncTestBtnEl: '[data-ui="admin-sync-test-btn"]',
   adminSyncPullBtnEl: '[data-ui="admin-sync-pull-btn"]',
+  adminSyncPreviewPushBtnEl: '[data-ui="admin-sync-preview-push-btn"]',
   adminSyncPushBtnEl: '[data-ui="admin-sync-push-btn"]',
   adminSyncEnabledEl: '[data-ui="admin-sync-enabled"]',
   adminManualSourceUrlEl: '[data-ui="admin-manual-source-url"]',

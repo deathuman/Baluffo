@@ -200,7 +200,6 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
                 hdrs={},
                 fp=None,
             ),
-            FakeResponse(201, {"content": {"sha": "newsha"}}),
         ]
     )
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
@@ -296,7 +295,6 @@ def test_default_snapshot_limit_allows_large_runtime_snapshot(source_sync_test_r
                 hdrs={},
                 fp=None,
             ),
-            FakeResponse(201, {"content": {"sha": "newsha"}}),
         ]
     )
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)

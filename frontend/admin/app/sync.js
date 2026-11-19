@@ -55,6 +55,14 @@ export function createAdminSyncController({
     syncStatusRevision += 1;
   }
 
+  async function requestSync(path, payload) {
+    try {
+      return await postBridge(path, payload);
+    } catch (err) {
+      return { ok: false, error: getErrorMessage(err) };
+    }
+  }
+
   function setLiveSyncRunning(value) {
     const nextValue = Boolean(value);
     const currentValue = Boolean(
@@ -226,16 +234,9 @@ export function createAdminSyncController({
     const payload = collectSyncConfigPayload();
     state.syncConfigDirty = true;
     try {
-      let result;
-      try {
-        result = await postBridge("/sync/config", payload);
-      } catch (err) {
-        showToast(`Could not save sync settings: ${getErrorMessage(err)}`, "error");
-        return;
-      }
+      const result = await requestSync("/sync/config", payload);
       invalidateSyncStatusReads();
-      const postOk = result?.ok !== false;
-      if (!postOk) {
+      if (result?.ok === false) {
         showToast(`Could not save sync settings: ${String(result?.error || "unknown error")}`, "error");
         return;
       }
@@ -256,13 +257,7 @@ export function createAdminSyncController({
   async function testSyncConfig() {
     if (!beginSyncMutation()) return;
     try {
-      let result;
-      try {
-        result = await postBridge("/sync/test", {});
-      } catch (err) {
-        showToast(`Sync test failed: ${getErrorMessage(err)}`, "error");
-        return;
-      }
+      const result = await requestSync("/sync/test", {});
       if (!result?.ok) {
         showToast(`Sync test failed: ${String(result?.error || "unknown error")}`, "error");
         return;
@@ -287,13 +282,7 @@ export function createAdminSyncController({
   async function pullSourcesSync() {
     if (!beginSyncMutation()) return;
     try {
-      let result;
-      try {
-        result = await postBridge("/tasks/run-sync-pull", {});
-      } catch (err) {
-        showToast(`Sources sync pull failed: ${getErrorMessage(err)}`, "error");
-        return;
-      }
+      const result = await requestSync("/tasks/run-sync-pull", {});
       if (!result?.started) {
         showToast(`Sources sync pull failed: ${String(result?.error || "unknown error")}`, "error");
         return;
@@ -311,16 +300,27 @@ export function createAdminSyncController({
     }
   }
 
+  async function previewPushSources() {
+    if (!beginSyncMutation()) return;
+    try {
+      const result = await requestSync("/sync/push", { dryRun: true });
+      if (result?.ok === false) {
+        showToast(`Sources sync preview failed: ${result?.error || "unknown error"}`, "error");
+        return;
+      }
+      showToast(
+        `Push preview: ${result?.wouldChange ? "changes would be written" : "nothing to push"} (${result?.counts?.active || 0} active, ${result?.counts?.pending || 0} pending).`,
+        "success"
+      );
+    } finally {
+      endSyncMutation();
+    }
+  }
+
   async function pushSourcesSync() {
     if (!beginSyncMutation()) return;
     try {
-      let result;
-      try {
-        result = await postBridge("/tasks/run-sync-push", {});
-      } catch (err) {
-        showToast(`Sources sync push failed: ${getErrorMessage(err)}`, "error");
-        return;
-      }
+      const result = await requestSync("/tasks/run-sync-push", {});
       if (!result?.started) {
         showToast(`Sources sync push failed: ${String(result?.error || "unknown error")}`, "error");
         return;
@@ -346,6 +346,7 @@ export function createAdminSyncController({
     saveSyncConfig,
     testSyncConfig,
     pullSourcesSync,
+    previewPushSources,
     pushSourcesSync
   };
 }

@@ -128,6 +128,11 @@ def _default_update_status_payload() -> JsonObject:
     }
 
 
+def _not_started_sync_push(*, dry_run: bool = False) -> JsonObject:
+    _ = dry_run
+    return _not_started_result()
+
+
 def _not_started_noarg() -> JsonObject:
     return _not_started_result()
 
@@ -484,7 +489,7 @@ class BridgeApi:
     refresh_sync_config: Callable[[], Any] = _noop_desktop_local_data_store
     test_sync_config: Callable[[], JsonObject] = _not_started_noarg
     sync_pull_sources: Callable[[], JsonObject] = _not_started_noarg
-    sync_push_sources: Callable[[], JsonObject] = _not_started_noarg
+    sync_push_sources: Callable[..., JsonObject] = _not_started_sync_push
     update_saved_sync_settings: Callable[[JsonObject], JsonObject] = _identity_payload
     sync_config_status: Callable[[], JsonObject] = _disabled_sync_config_status
     set_sync_status: Callable[..., None] = _noop

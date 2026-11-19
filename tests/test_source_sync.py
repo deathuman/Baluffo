@@ -9,63 +9,11 @@ import pytest
 
 from src import source_sync as sync
 from src import source_sync_crypto
+from src.bridge.registry_tombstones import add_tombstone
 from src.shared import github_https, tls_https
 from tests.source_sync_helpers import source_sync_test_root  # noqa: F401
-
-
-class _FakeResponse:
-    def __init__(self, status: int, payload: dict, headers: dict | None = None):
-        self._status = int(status)
-        self._payload = dict(payload)
-        self.headers = dict(headers or {})
-
-    def getcode(self):
-        return self._status
-
-    def read(self):
-        return json.dumps(self._payload).encode("utf-8")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-
-class _Recorder:
-    def __init__(self, responses):
-        self.responses = list(responses)
-        self.calls = []
-        self._uploaded_shards: dict[str, str] = {}
-
-    def __call__(self, req, timeout=20):  # noqa: ANN001
-        url = req.full_url
-        method = req.get_method()
-        body = req.data.decode("utf-8") if isinstance(req.data, bytes) else ""
-        self.calls.append(
-            {
-                "url": url,
-                "method": method,
-                "headers": dict(req.header_items()),
-                "body": body,
-                "timeout": timeout,
-            }
-        )
-        if method == "GET" and url.split("?ref=", 1)[0].endswith("/source-sync/shards"):
-            return _FakeResponse(404, {"message": "Not Found"})
-        if "/source-sync/shards/" in url:
-            key = url.split("?ref=", 1)[0]
-            if method == "PUT":
-                self._uploaded_shards[key] = str(json.loads(body).get("content") or "")
-                return _FakeResponse(201, {"content": {"sha": "shard-sha"}})
-            if method == "GET" and key in self._uploaded_shards:
-                return _FakeResponse(200, {"content": self._uploaded_shards[key]})
-        if not self.responses:
-            raise AssertionError("No fake responses left")
-        item = self.responses.pop(0)
-        if isinstance(item, Exception):
-            raise item
-        return item
+from tests.source_sync_http_fakes import FakeResponse as _FakeResponse
+from tests.source_sync_http_fakes import Recorder as _Recorder
 
 
 def _write_packaged_sync_config(path, *, repo: str = "owner/repo") -> None:
@@ -577,6 +525,58 @@ def test_read_remote_snapshot_uses_github_api_base_override(source_sync_test_roo
     )
 
 
+def test_merge_registry_state_does_not_revive_tombstoned_rejected_row(monkeypatch):
+    retired_url = "https://retired.example/jobs"
+    retired = {
+        "id": f"static:listing_url:{retired_url}",
+        "adapter": "static",
+        "listing_url": retired_url,
+        "name": "Retired Source",
+    }
+    local = {"active": [], "pending": [], "rejected": [retired]}
+    remote = {
+        "schemaVersion": 2,
+        "generatedAt": "2026-11-19T00:00:00+00:00",
+        "active": [
+            {**retired, "registryState": "active"},
+            {
+                **retired,
+                "id": f"static:listing_url:{retired_url}#variant",
+                "registryState": "active",
+            },
+            {
+                "id": "static:listing_url:https://live.example/jobs",
+                "adapter": "static",
+                "listing_url": "https://live.example/jobs",
+                "name": "Live Source",
+                "registryState": "active",
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+    tombstones = add_tombstone(
+        retired,
+        deleted_at="2026-11-18T00:00:00+00:00",
+        deleted_by="test",
+        reason="retired",
+        bucket="rejected",
+        tombstones={},
+    )
+    monkeypatch.setattr(sync, "load_tombstones", lambda: tombstones)
+
+    merged = sync.merge_registry_state(local, remote)
+
+    assert [row["id"] for row in merged["active"]] == [
+        "static:listing_url:https://live.example/jobs"
+    ]
+    assert merged["pending"] == []
+    assert all(
+        "retired.example" not in str(row.get("listing_url") or "")
+        for row in merged["active"] + merged["pending"]
+    )
+
+
 def test_merge_registry_state_keeps_newer_local_legacy_row():
     local = {
         "active": [
@@ -629,7 +629,6 @@ def test_push_sources_snapshot_serializes_expected_payload(source_sync_test_root
                 hdrs={},
                 fp=None,
             ),
-            _FakeResponse(201, {"content": {"sha": "newsha"}}),
         ]
     )
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
@@ -645,7 +644,8 @@ def test_push_sources_snapshot_serializes_expected_payload(source_sync_test_root
     finally:
         sync.build_app_jwt = original_build_jwt
     assert result["pushed"]
-    assert result["remoteSha"] == "newsha"
+    assert result["remoteSha"] == opener.manifest_sha
+    assert opener.branch_tree()[opener.manifest_path] == result["remoteSha"]
     assert result["snapshotFormat"] == "sharded-v3"
     assert not any(
         call["method"] == "PUT" and call["url"].endswith("baluffo/source-sync.json")
@@ -688,7 +688,6 @@ def test_push_sources_snapshot_preserves_remote_active_and_pending(source_sync_t
                 fp=None,
             ),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
-            _FakeResponse(201, {"content": {"sha": "newsha"}}),
         ]
     )
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
@@ -756,7 +755,6 @@ def test_push_sources_snapshot_allows_local_rejected_to_remove_remote_source(sou
                 fp=None,
             ),
             _FakeResponse(200, {"sha": "s1", "content": encoded}),
-            _FakeResponse(201, {"content": {"sha": "newsha"}}),
         ]
     )
     cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)

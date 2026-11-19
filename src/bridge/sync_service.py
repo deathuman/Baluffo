@@ -566,6 +566,7 @@ class SyncService:
                 "pulled": True,
                 "skipped": bool(result.get("skipped")),
                 "skipReason": str(result.get("skipReason") or ""),
+                "shardReadDurationMs": int(result.get("shardReadDurationMs") or 0),
                 **_sync_shard_fields(result),
             }
         )
@@ -601,9 +602,16 @@ class SyncService:
         }
 
     def sync_push_sources(
-        self, *, progress_callback: Callable[..., None] | None = None
+        self,
+        *,
+        progress_callback: Callable[..., None] | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Push local sources snapshot to remote.
+
+        Args:
+            progress_callback: Optional live-task progress sink.
+            dry_run: Preview the push without writing anything to the remote.
 
         Returns:
             Dict with push results
@@ -614,12 +622,16 @@ class SyncService:
 
         timing = SyncTimingRecorder()
         emit_progress = progress_callback or (lambda **_kwargs: None)
+        action = "preview" if dry_run else "push"
+        runtime_state = self._sync_state.load_sync_runtime_state()
+        known_remote_sha = str(runtime_state.get("lastPushRemoteSha") or "")
+        known_local_revision = str(runtime_state.get("lastPushLocalRevision") or "")
         emit_progress(
             phase_key="prepare",
-            phase_label="Preparing sync push",
-            counts={"action": "push"},
+            phase_label="Preparing sync preview" if dry_run else "Preparing sync push",
+            counts={"action": action},
             event_level="info",
-            message="Preparing sync push.",
+            message="Preparing sync preview." if dry_run else "Preparing sync push.",
         )
         with timing.record_stage("loadLocalRegistry"):
             state = self._load_state()
@@ -627,7 +639,7 @@ class SyncService:
             phase_key="snapshot_build",
             phase_label="Building local snapshot",
             counts={
-                "action": "push",
+                "action": action,
                 "activeCount": len(state.get("active") or []),
                 "pendingCount": len(state.get("pending") or []),
                 "rejectedCount": len(state.get("rejected") or []),
@@ -637,17 +649,22 @@ class SyncService:
         )
         emit_progress(
             phase_key="remote_write",
-            phase_label="Writing remote snapshot",
-            counts={"action": "push"},
+            phase_label="Comparing remote snapshot" if dry_run else "Writing remote snapshot",
+            counts={"action": action},
             event_level="muted",
-            message="Writing remote snapshot.",
+            message="Comparing local and remote snapshots."
+            if dry_run
+            else "Writing remote snapshot.",
         )
         with timing.record_stage("pushRemote"):
             result = run_profiled(
                 self._source_sync.push_sources_snapshot,
                 self._sync_config,
                 state,
-                profile_name="sync_push_remote",
+                dry_run=dry_run,
+                known_remote_sha=known_remote_sha,
+                known_local_revision=known_local_revision,
+                profile_name="sync_push_preview" if dry_run else "sync_push_remote",
                 progress_callback=emit_progress,
             )
         snapshot = as_json_object(result.get("snapshot"))
@@ -667,21 +684,91 @@ class SyncService:
                 maxSnapshotSizeBytes=max_snapshot_size_bytes,
             )
 
-        self.set_sync_status(
-            action="push",
-            result="ok",
-            pushed=pushed,
-            error="",
-        )
-        counters = as_json_object(result.get("counters"))
-        if counters:
-            self._sync_state.save_sync_runtime_state({"counters": counters})
         with timing.record_stage("summarizeSnapshot"):
             counts = {
                 "active": len(snapshot.get("active") or []),
                 "pending": len(snapshot.get("pending") or []),
                 "rejected": len(state.get("rejected") or []),
             }
+        if dry_run:
+            preview_record = timing.finish(
+                {
+                    "action": "preview",
+                    "ok": True,
+                    "changed": bool(result.get("wouldChange")),
+                    "remoteFound": bool(result.get("remotePreviouslyExisted")),
+                    "pushed": False,
+                    "pulled": False,
+                    "noOp": not bool(result.get("wouldChange")),
+                    "wouldChange": bool(result.get("wouldChange")),
+                    "skipReason": str(result.get("skipReason") or ""),
+                    "remoteReadSkipped": bool(result.get("remoteReadSkipped")),
+                    "sizeBytes": size_bytes,
+                    "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+                    "sizeWarning": size_warning,
+                    **shard_fields,
+                    "warnings": warnings,
+                    "detailTiming": detail_timing,
+                    "remoteTiming": remote_timing,
+                }
+            )
+            emit_progress(
+                phase_key="finalize",
+                phase_label="Finalizing preview",
+                counts={
+                    "action": "preview",
+                    "activeCount": counts["active"],
+                    "pendingCount": counts["pending"],
+                    "rejectedCount": counts["rejected"],
+                    "wouldChange": bool(result.get("wouldChange")),
+                },
+                event_level="success",
+                message="Push preview found changes to write."
+                if bool(result.get("wouldChange"))
+                else "Push preview found nothing to push.",
+            )
+            return {
+                "ok": True,
+                "dryRun": True,
+                "wouldChange": bool(result.get("wouldChange")),
+                "remoteSha": str(result.get("remoteSha") or ""),
+                "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
+                "pushed": False,
+                "skipped": bool(result.get("skipped", True)),
+                "skipReason": str(result.get("skipReason") or ""),
+                "remoteReadSkipped": bool(result.get("remoteReadSkipped")),
+                "sizeBytes": size_bytes,
+                "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+                "sizeWarning": size_warning,
+                **shard_fields,
+                "warnings": warnings,
+                "counts": counts,
+                "timing": preview_record,
+                "remoteTiming": remote_timing,
+            }
+
+        self.set_sync_status(
+            action="push",
+            result="ok",
+            pushed=pushed,
+            error="",
+        )
+        local_revision = str(result.get("localRevision") or "")
+        remote_sha = str(result.get("remoteSha") or "")
+        if (
+            local_revision
+            and remote_sha
+            and (remote_sha != known_remote_sha or local_revision != known_local_revision)
+        ):
+            self._sync_state.save_sync_runtime_state(
+                {
+                    "lastPushRemoteSha": remote_sha,
+                    "lastPushLocalRevision": local_revision,
+                }
+            )
+        counters = as_json_object(result.get("counters"))
+        if counters:
+            self._sync_state.save_sync_runtime_state({"counters": counters})
         timing_record = timing.finish(
             {
                 "action": "push",
@@ -691,6 +778,8 @@ class SyncService:
                 "pushed": pushed,
                 "pulled": False,
                 "noOp": not pushed,
+                "skipReason": str(result.get("skipReason") or ""),
+                "remoteReadSkipped": bool(result.get("remoteReadSkipped")),
                 "sizeBytes": size_bytes,
                 "maxSnapshotSizeBytes": max_snapshot_size_bytes,
                 "sizeWarning": size_warning,
@@ -721,6 +810,9 @@ class SyncService:
             "remoteSha": str(result.get("remoteSha") or ""),
             "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
             "pushed": pushed,
+            "skipped": bool(result.get("skipped")),
+            "skipReason": str(result.get("skipReason") or ""),
+            "remoteReadSkipped": bool(result.get("remoteReadSkipped")),
             "sizeBytes": size_bytes,
             "maxSnapshotSizeBytes": max_snapshot_size_bytes,
             "sizeWarning": size_warning,

@@ -1,6 +1,6 @@
 """Source-sync shard remote transport: GitHub Contents reads, writes, verification, and timing.
 
-AI boundary owns: source-sync shard and manifest HTTP transport, payload decoding, sha256 verification, and remote request timing rows.
+AI boundary owns: source-sync shard and manifest HTTP transport, Git Data API blob/tree/commit/ref writes, payload decoding, sha256 verification, and remote request timing rows.
 AI boundary implement in: this leaf for remote IO semantics; shard payload construction stays in source_sync_shard_model, manifest semantics in source_sync_shard_manifest, and pruning in source_sync_shard_gc.
 AI boundary search before contracts: source sync facade, shard tests, and remote timing contracts.
 AI boundary verify: `python -m pytest tests/test_source_sync_shard_io.py tests/test_source_sync_sharded_push.py -q`.
@@ -146,6 +146,20 @@ def read_manifest(
     }
 
 
+def manifest_payload_bytes(manifest: dict[str, Any]) -> bytes:
+    """Serialize a trusted manifest exactly as it is committed to the remote."""
+    trusted = trusted_committed_manifest(manifest)
+    if trusted is None:
+        raise SourceSyncShardError("refusing to push an uncommitted source-sync manifest")
+    return json.dumps(trusted, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+def git_blob_sha1(payload: bytes) -> str:
+    """Return the git blob object id GitHub assigns to ``payload``."""
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return hashlib.sha1(header + payload).hexdigest()  # git object ids are SHA-1 by definition
+
+
 def push_manifest(
     module: Any,
     config: Any,
@@ -159,9 +173,7 @@ def push_manifest(
     trusted = trusted_committed_manifest(manifest)
     if trusted is None:
         raise SourceSyncShardError("refusing to push an uncommitted source-sync manifest")
-    encoded = base64.b64encode(
-        json.dumps(trusted, ensure_ascii=False, indent=2).encode("utf-8")
-    ).decode("ascii")
+    encoded = base64.b64encode(manifest_payload_bytes(trusted)).decode("ascii")
     payload: dict[str, Any] = {
         "message": str(message or "Update Baluffo source sync manifest"),
         "content": encoded,
@@ -372,11 +384,261 @@ def _validate_shard_payload(payload: Any, entry: dict[str, Any]) -> dict[str, An
     }
 
 
-def _content_api_url(module: Any, config: Any, path: str, *, with_ref: bool) -> str:
+def _content_api_url(module: Any, config: Any, path: str, *, with_ref: bool, ref: str = "") -> str:
     repo_token = quote(config.repo, safe="/")
     path_token = quote(path, safe="/")
     base = f"{module._github_api_base()}/repos/{repo_token}/contents/{path_token}"
     if with_ref:
-        ref_token = quote(config.branch, safe="")
+        ref_token = quote(str(ref or config.branch), safe="")
         return f"{base}?ref={ref_token}"
     return base
+
+
+def _repo_api_url(module: Any, config: Any, suffix: str) -> str:
+    repo_token = quote(config.repo, safe="/")
+    return f"{module._github_api_base()}/repos/{repo_token}/{suffix.lstrip('/')}"
+
+
+def _git_api_url(module: Any, config: Any, suffix: str) -> str:
+    return _repo_api_url(module, config, f"git/{suffix.lstrip('/')}")
+
+
+def _git_json_request(
+    module: Any,
+    config: Any,
+    *,
+    method: str,
+    url: str,
+    opener: Callable[..., Any],
+    payload: dict[str, Any] | None = None,
+) -> tuple[int, dict[str, Any]]:
+    status, body, _headers = module._request_json(
+        method=method,
+        url=url,
+        config=config,
+        timeout_s=config.timeout_s,
+        payload=payload,
+        opener=opener,
+    )
+    return status, body if isinstance(body, dict) else {}
+
+
+def _git_failure(method: str, url: str, status: int, body: dict[str, Any]) -> RuntimeError:
+    detail = str(body.get("message") or "").strip()
+    message = f"GitHub {method} {url} failed with HTTP {status}"
+    if detail:
+        message = f"{message}: {detail}"
+    return RuntimeError(message)
+
+
+def read_branch_commit(
+    module: Any,
+    config: Any,
+    *,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    """Read the commit a branch currently points at, plus its root tree."""
+    module.validate_sync_config(config)
+    branch_token = quote(config.branch, safe="/")
+    url = _repo_api_url(module, config, f"commits/{branch_token}")
+    status, body = _git_json_request(module, config, method="GET", url=url, opener=opener)
+    if status >= 400:
+        raise _git_failure("GET", url, status, body)
+    commit_sha = str(body.get("sha") or "").strip()
+    raw_commit = body.get("commit")
+    commit_row: dict[str, Any] = raw_commit if isinstance(raw_commit, dict) else {}
+    raw_tree = commit_row.get("tree")
+    tree_row: dict[str, Any] = raw_tree if isinstance(raw_tree, dict) else {}
+    tree_sha = str(tree_row.get("sha") or "").strip()
+    if not commit_sha or not tree_sha:
+        raise RuntimeError(
+            f"GitHub branch {config.branch} does not expose a commit tree for source sync"
+        )
+    return {"commitSha": commit_sha, "treeSha": tree_sha}
+
+
+def read_git_tree(
+    module: Any,
+    config: Any,
+    ref: str,
+    *,
+    recursive: bool = True,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    """Read a git tree by sha or ref, optionally flattened recursively."""
+    module.validate_sync_config(config)
+    ref_token = quote(str(ref or "").strip(), safe="/")
+    if not ref_token:
+        raise SourceSyncShardError("source-sync git tree ref must not be empty")
+    suffix = f"trees/{ref_token}"
+    if recursive:
+        suffix = f"{suffix}?recursive=1"
+    status, body = _git_json_request(
+        module, config, method="GET", url=_git_api_url(module, config, suffix), opener=opener
+    )
+    if status >= 400:
+        raise _git_failure("GET", _git_api_url(module, config, suffix), status, body)
+    tree_sha = str(body.get("sha") or "").strip()
+    if not tree_sha:
+        raise RuntimeError(f"GitHub git tree {ref} is missing a sha")
+    entries: list[dict[str, Any]] = []
+    for entry in body.get("tree") or []:
+        if not isinstance(entry, dict):
+            continue
+        path = str(entry.get("path") or "").replace("\\", "/").strip()
+        if not path:
+            continue
+        entries.append(
+            {
+                "path": path,
+                "mode": str(entry.get("mode") or ""),
+                "type": str(entry.get("type") or ""),
+                "sha": str(entry.get("sha") or "").strip().lower(),
+                "sizeBytes": int(entry.get("size") or 0),
+            }
+        )
+    return {
+        "treeSha": tree_sha,
+        "entries": entries,
+        "truncated": bool(body.get("truncated")),
+    }
+
+
+def create_git_blob(
+    module: Any,
+    config: Any,
+    payload: bytes,
+    *,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    """Create a git blob and verify GitHub stored the exact payload bytes."""
+    module.validate_sync_config(config)
+    expected_sha = git_blob_sha1(payload)
+    url = _git_api_url(module, config, "blobs")
+    status, body = _git_json_request(
+        module,
+        config,
+        method="POST",
+        url=url,
+        opener=opener,
+        payload={
+            "content": base64.b64encode(payload).decode("ascii"),
+            "encoding": "base64",
+        },
+    )
+    if status >= 400:
+        raise _git_failure("POST", url, status, body)
+    blob_sha = str(body.get("sha") or "").strip().lower()
+    if blob_sha != expected_sha:
+        raise RuntimeError(
+            "GitHub stored source-sync blob with sha "
+            f"{blob_sha or '<empty>'}, expected {expected_sha}"
+        )
+    return {"sha": blob_sha, "sizeBytes": len(payload)}
+
+
+def create_git_tree(
+    module: Any,
+    config: Any,
+    *,
+    base_tree: str,
+    entries: list[dict[str, Any]],
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    """Create a tree that adds ``entries`` on top of ``base_tree``."""
+    module.validate_sync_config(config)
+    if not entries:
+        raise SourceSyncShardError("source-sync git tree needs at least one entry")
+    url = _git_api_url(module, config, "trees")
+    payload: dict[str, Any] = {"tree": list(entries)}
+    if base_tree:
+        payload["base_tree"] = str(base_tree)
+    status, body = _git_json_request(
+        module, config, method="POST", url=url, opener=opener, payload=payload
+    )
+    if status >= 400:
+        raise _git_failure("POST", url, status, body)
+    tree_sha = str(body.get("sha") or "").strip()
+    if not tree_sha:
+        raise RuntimeError("GitHub created a source-sync tree without a sha")
+    return {"treeSha": tree_sha}
+
+
+def create_git_commit(
+    module: Any,
+    config: Any,
+    *,
+    tree_sha: str,
+    parent_sha: str,
+    message: str,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    """Create a commit for ``tree_sha`` on top of exactly one parent."""
+    module.validate_sync_config(config)
+    if not parent_sha:
+        raise SourceSyncShardError("refusing to create a source-sync commit without a parent")
+    url = _git_api_url(module, config, "commits")
+    status, body = _git_json_request(
+        module,
+        config,
+        method="POST",
+        url=url,
+        opener=opener,
+        payload={
+            "message": str(message or "Update Baluffo source sync generation"),
+            "tree": str(tree_sha or ""),
+            "parents": [str(parent_sha)],
+        },
+    )
+    if status >= 400:
+        raise _git_failure("POST", url, status, body)
+    commit_sha = str(body.get("sha") or "").strip()
+    if not commit_sha:
+        raise RuntimeError("GitHub created a source-sync commit without a sha")
+    return {"commitSha": commit_sha, "treeSha": str(tree_sha or "")}
+
+
+def update_branch_ref(
+    module: Any,
+    config: Any,
+    *,
+    commit_sha: str,
+    opener: Callable[..., Any],
+) -> dict[str, Any]:
+    """Fast-forward the branch ref to ``commit_sha``.
+
+    ``force`` stays false so a concurrent writer that committed after this
+    generation read the branch makes the update fail instead of being lost.
+    """
+    module.validate_sync_config(config)
+    branch_token = quote(config.branch, safe="/")
+    url = _git_api_url(module, config, f"refs/heads/{branch_token}")
+    status, body = _git_json_request(
+        module,
+        config,
+        method="PATCH",
+        url=url,
+        opener=opener,
+        payload={"sha": str(commit_sha or ""), "force": False},
+    )
+    if status >= 400:
+        detail = str(body.get("message") or "").strip()
+        if status in {409, 422}:
+            conflict_message = detail or f"GitHub PATCH {url} failed with HTTP {status}"
+            conflict_code = getattr(module, "RUNTIME_STATE_REMOTE_CONFLICT", "remote_conflict")
+            if hasattr(module, "_set_runtime_state"):
+                module._set_runtime_state(conflict_code, conflict_message)
+            if hasattr(module, "SyncOperationError"):
+                raise module.SyncOperationError(conflict_code, conflict_message)
+            raise RuntimeError(conflict_message)
+        raise _git_failure("PATCH", url, status, body)
+    raw_object = body.get("object")
+    object_row: dict[str, Any] = raw_object if isinstance(raw_object, dict) else {}
+    updated_sha = str(object_row.get("sha") or "").strip()
+    if updated_sha and updated_sha != str(commit_sha or ""):
+        raise RuntimeError(
+            f"GitHub branch {config.branch} points at {updated_sha} after the source-sync push"
+        )
+    if hasattr(module, "_clear_runtime_state") and hasattr(module, "RUNTIME_STATE_REMOTE_CONFLICT"):
+        module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
+    return {"commitSha": updated_sha or str(commit_sha or "")}

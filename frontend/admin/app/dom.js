@@ -79,6 +79,7 @@ const ADMIN_REF_DEFINITIONS = Object.freeze({
   bridgeReconnectRetryBtnEl: { token: "bridgeReconnectRetryBtn" },
   adminShowZeroJobsToggleEl: { token: "showZeroJobsToggle" },
   adminSyncPullBtnEl: { token: "syncPullBtn" },
+  adminSyncPreviewPushBtnEl: { token: "syncPreviewPushBtn" },
   adminSyncPushBtnEl: { token: "syncPushBtn" },
   adminSyncTestBtnEl: { token: "syncTestBtn" },
   adminSyncStatusEl: { token: "syncStatus" },

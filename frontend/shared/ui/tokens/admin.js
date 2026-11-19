@@ -84,6 +84,7 @@ export const ADMIN_TOKENS = Object.freeze({
   bridgeReconnectRetryBtn: "admin-bridge-reconnect-retry-btn",
   showZeroJobsToggle: "admin-show-zero-jobs-toggle",
   syncPullBtn: "admin-sync-pull-btn",
+  syncPreviewPushBtn: "admin-sync-preview-push-btn",
   syncPushBtn: "admin-sync-push-btn",
   syncTestBtn: "admin-sync-test-btn",
   syncStatus: "admin-sync-status",

@@ -158,7 +158,7 @@ class _AdminPostRouteApi(Protocol):
 
     def sync_pull_sources(self) -> dict[str, Any]: ...
 
-    def sync_push_sources(self) -> dict[str, Any]: ...
+    def sync_push_sources(self, *, dry_run: bool = False) -> dict[str, Any]: ...
 
     def test_sync_config(self) -> dict[str, Any]: ...
 
@@ -557,6 +557,66 @@ def _storage_reclaim_start_refusal(
             "storageReclaimHold": hold,
         },
         status=409,
+    )
+    return True
+
+
+def _handle_sync_post(
+    handler: BridgeResponseWriter,
+    *,
+    api: _AdminPostRouteApi,
+    path: str,
+    data: dict[str, Any],
+) -> bool:
+    sync_action = path.removeprefix("/sync/")
+    dry_run = sync_action == "push" and bool(data.get("dryRun"))
+    # Pull and push are async-first: the default body starts the tracked sync
+    # task instead of holding the request thread for the transfer. The push
+    # preview must stay synchronous; scripted callers ask for inline.
+    if not dry_run and not bool(data.get("inline")):
+
+        def _start_sync() -> None:
+            result = api.start_sync_task(
+                sync_action, reason=f"manual_{sync_action}", automatic=False
+            )
+            handler.send_json(result, status=200 if bool(result.get("started")) else 409)
+
+        run_route_boundary(
+            handler,
+            _start_sync,
+            error_status=500,
+            error_payload=lambda exc: {
+                "started": False,
+                "task": "source_sync",
+                "action": sync_action,
+                "error": str(exc),
+            },
+        )
+        return True
+
+    def _run_sync_action() -> dict[str, Any]:
+        if sync_action == "pull":
+            return api.sync_pull_sources()
+        return api.sync_push_sources(dry_run=dry_run)
+
+    def _error(exc: Exception) -> dict[str, Any]:
+        api.set_sync_status(
+            action="" if dry_run else sync_action,
+            result="error",
+            error=str(exc),
+            pulled=False,
+            pushed=False,
+        )
+        payload = {"ok": False, "error": str(exc), "config": api.sync_config_status()}
+        if dry_run:
+            payload["dryRun"] = True
+        return payload
+
+    send_json_boundary(
+        handler,
+        _run_sync_action,
+        error_status=500,
+        error_payload=_error,
     )
     return True
 
@@ -976,25 +1036,6 @@ def handle_post(
         return True
 
     if path in {"/sync/pull", "/sync/push"}:
-        sync_action = path.removeprefix("/sync/")
-
-        def _error(exc: Exception) -> dict[str, Any]:
-            if sync_action == "pull":
-                api.set_sync_status(
-                    action=sync_action, result="error", error=str(exc), pulled=False
-                )
-            else:
-                api.set_sync_status(
-                    action=sync_action, result="error", error=str(exc), pushed=False
-                )
-            return {"ok": False, "error": str(exc), "config": api.sync_config_status()}
-
-        send_json_boundary(
-            handler,
-            api.sync_pull_sources if sync_action == "pull" else api.sync_push_sources,
-            error_status=500,
-            error_payload=_error,
-        )
-        return True
+        return _handle_sync_post(handler, api=api, path=path, data=data)
 
     return False

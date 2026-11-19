@@ -135,8 +135,8 @@ When `sourceRegistry=sqlite`, the registry GET routes and POST mutations read an
 | GET | `/sync/status?view=summary` | Lightweight sync config/runtime summary for Admin startup and Action Center. It avoids full sync history/timing hydration |
 | POST | `/sync/config` | Update sync settings |
 | POST | `/sync/test` | Test sync configuration |
-| POST | `/sync/pull` | Pull sources (sync) |
-| POST | `/sync/push` | Push sources (sync) |
+| POST | `/sync/pull` | Pull sources (sync). Async-first: the default body starts the tracked pull task and returns `{started, task, action}` (409 when a sync task is already running). Optional body `{"inline": true}` runs the pull inline and returns its result |
+| POST | `/sync/push` | Push sources (sync). Async-first: the default body starts the tracked push task and returns `{started, task, action}` (409 when a sync task is already running). Optional body `{"inline": true}` runs the push inline and returns its result. Optional body `{"dryRun": true}` returns a read-only preview (`wouldChange`, `counts`, shard fields) without writing; Admin exposes it as Preview Push |
 
 `/sync/status` includes additive sync timing diagnostics: latest `timing`, bounded `timingHistory`, `stageTotalsMs`, and sorted `stageTop` rows for pull/push operations. Completed sync task summaries also carry the operation `timing` payload for Ops/run-history diagnostics.
 | POST | `/tasks/run-sync-pull` | Async pull with task tracking |

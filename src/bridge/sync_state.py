@@ -49,6 +49,8 @@ SYNC_STATUS: dict[str, Any] = {
     "lastPullRemoteSha": "",
     "lastPullRemoteGeneratedAt": "",
     "lastPullSnapshotFormat": "",
+    "lastPushRemoteSha": "",
+    "lastPushLocalRevision": "",
 }
 
 SYNC_COUNTER_KEYS = (
@@ -143,6 +145,8 @@ class SyncState:
             "lastPullRemoteSha": str(raw.get("lastPullRemoteSha") or ""),
             "lastPullRemoteGeneratedAt": str(raw.get("lastPullRemoteGeneratedAt") or ""),
             "lastPullSnapshotFormat": str(raw.get("lastPullSnapshotFormat") or ""),
+            "lastPushRemoteSha": str(raw.get("lastPushRemoteSha") or ""),
+            "lastPushLocalRevision": str(raw.get("lastPushLocalRevision") or ""),
             "lastDiscoverySyncFinishedAt": str(raw.get("lastDiscoverySyncFinishedAt") or ""),
             "counters": _normalize_sync_counters(raw.get("counters")),
         }
@@ -167,6 +171,8 @@ class SyncState:
             "lastPullRemoteSha",
             "lastPullRemoteGeneratedAt",
             "lastPullSnapshotFormat",
+            "lastPushRemoteSha",
+            "lastPushLocalRevision",
             "lastDiscoverySyncFinishedAt",
             "counters",
         }

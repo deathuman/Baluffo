@@ -80,7 +80,7 @@ Bridge phase events emitted on the desktop-shipped path:
 | `desktop_bridge_started_hooks_started` / `_finished` | `bridge/server/httpd.py` | Post-bind startup work bracket; `_finished` carries `elapsedMs`. |
 | `desktop_bridge_first_paint_barrier_opened` | `bridge/startup_work_budget.py` | The first-paint work budget was satisfied, so heavy startup work may begin. Carries `reason` (`request-quiet`, `budget-expired`, or `wait-timeout`), `waitedMs` since bind, `acceptedRequests`, and the configured `quietMs`/`budgetMs`. |
 | `desktop_bridge_startup_work_admitted` | `admin_entrypoint_runtime.finish_bridge_startup_hooks` | The post-bind startup chain was released by the budget; carries `admission` and the barrier's `reason`/`waitedMs`. A `reason` of `wait-timeout` means the budget, not the page, admitted it. |
-| `desktop_bridge_deferred_startup_work_started` / `_finished` | `bridge/startup_work_budget.py` | One queued background item; `label` names it (currently `availability_overdue_catchup`), `_finished` carries `durationMs`, `ok`, and `error`. |
+| `desktop_bridge_deferred_startup_work_started` / `_finished` | `bridge/startup_work_budget.py` | One queued background item; `label` names it (`availability_overdue_catchup`, `startup_sync_pull`), `_finished` carries `durationMs`, `ok`, and `error`. |
 | `desktop_bridge_startup_step_started` / `_finished` | `admin_task_runtime.on_bridge_started` | One row per startup step, with `step` and (on finish) `durationMs`. A step that never returns leaves its `_started` row as the tail. The first step, `compaction_hold_seed`, also carries `seededFromActiveTask`, `held`, `holdChanged`, `activeTaskCount`, `activeTaskTypes`, and `activeRunIds` on its `_finished` row. |
 | `desktop_bridge_storage_maintenance_resumed` / `_resume_failed` | `admin_entrypoint_runtime.finish_bridge_startup_hooks` | SQLite maintenance released after the post-bind startup work; carries `stores` and `scheduled`, or `error` when the release failed. "Released" is not "rebuilt": a released VACUUM is still held while a task row is active (`held-active-task`, released by the last task's terminal transition) and then waits for a quiet write path, reporting `skipped-busy` until one arrives (see [`storage-contract.md`](storage-contract.md#maintenance-scheduling-rules)). The held state itself is reported as `storageMaintenanceDeferred` on `desktop_bridge_configured` and as `deferred` in `/ops/storage-health`. |
 
@@ -99,8 +99,12 @@ The whole chain is expected in the low hundreds of milliseconds; a step that
 reports seconds is a stall, not normal work. `startup_sync_schedule` used to be
 the outlier at 12–14 s: the sync run's lifecycle transition mirrored the bounded
 `taskRuns` projection into SQLite one commit per row (~90 ms each on a mature
-runtime database). It now mirrors in a single transaction, so the same step
-measures ~0.2 s — see
+runtime database). It now mirrors in a single transaction, and the step itself
+only queues the pull behind the first-paint budget: its `_finished` row carries
+`queued` and `deferredLabel`, and the pull starts later as a
+`desktop_bridge_deferred_startup_work_started` row labelled `startup_sync_pull`.
+That keeps the task start's lifecycle write and the pull's registry merge out of
+the bridge's readiness window. The step measures ~0.2 s — see
 [`storage-contract.md`](storage-contract.md#migration-safety). Note that page
 first render never waits on this chain: the jobs page paints from the startup
 snapshot as soon as the site serves it, and the bridge steps run on their own

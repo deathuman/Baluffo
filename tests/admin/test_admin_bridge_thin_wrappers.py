@@ -2,6 +2,7 @@
 
 import json
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -11,6 +12,15 @@ import pytest
 from src import admin_bridge
 from src.bridge import admin_entrypoint_runtime, admin_task_runtime, startup_work_budget
 from src.bridge.server import runtime_state
+
+
+@pytest.fixture(autouse=True)
+def _isolated_startup_work_budget() -> Iterator[None]:
+    # The budget is a process singleton; a listener bound by an earlier test
+    # would otherwise make these direct startup calls look like a served bridge.
+    startup_work_budget.reset_startup_work_budget()
+    yield
+    startup_work_budget.reset_startup_work_budget()
 
 
 def test_parse_iso_handles_supported_and_invalid_inputs() -> None:

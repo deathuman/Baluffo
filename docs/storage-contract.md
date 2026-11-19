@@ -517,7 +517,7 @@ Pull protocol contract:
 - Validate schema, content hash, shard list, and per-shard SHA-256.
 - Fall back to v2 monolithic `source-sync.json` only when v3 is absent.
 
-Sync result, task-summary, timing-history, and `storageMetrics` payloads keep legacy size fields for compatibility and add authoritative v3 pressure fields: `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `shardsReadBytes`, `totalShardBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`.
+Push sync results, task summaries, and push/preview timing history keep legacy size fields (`sizeBytes`, `maxSnapshotSizeBytes`, `sizeWarning`) and add authoritative v3 pressure fields: `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `shardsReadBytes`, `totalShardBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`. Pull timing history additionally records `shardReadDurationMs`. `storageMetrics.sourceSyncSnapshots` records `snapshotCount`, `sizeBytes` statistics, `maxSnapshotSizeBytes`, `latestSizeBytes`, `latestSizeWarning`, `latestWouldChange`, and the shard subset `snapshotFormat`, `shardCount`, `changedShardCount`, `shardsPushedBytes`, `manifestSizeBytes`, `shardCapBytes`, and `shardHashes`; it does not record `shardsReadBytes`, `totalShardBytes`, or `shardReadDurationMs`.
 
 Source sync must not include jobs, fetch reports, local source-policy review state, or evidence archives.
 

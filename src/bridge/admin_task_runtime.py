@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from src.bridge import startup_work_budget
 from src.bridge.fetch_report_summary import FETCH_REPORT_SUMMARY_FILE_NAME
 from src.bridge.job_availability_service import refresh_priority_manifest_in_background
 from src.shared.fetch_report_identity import fetch_report_identity
@@ -38,7 +39,7 @@ class _SyncServiceLike(Protocol):
     def get_sync_status_payload(self) -> JsonObject: ...
     def _sync_guard(self) -> JsonObject | None: ...
     def sync_pull_sources(self) -> JsonObject: ...
-    def sync_push_sources(self) -> JsonObject: ...
+    def sync_push_sources(self, *, dry_run: bool = False) -> JsonObject: ...
     def startup_sync_pull(self) -> None: ...
     def schedule_startup_sync_pull(self) -> JsonObject: ...
     def sync_task_running(self) -> bool: ...
@@ -125,7 +126,7 @@ class _AdminTaskRuntimeRoot(Protocol):
     append_run_history: Callable[..., Any]
     run_background_script: Callable[..., Any]
     sync_pull_sources: Callable[[], JsonObject]
-    sync_push_sources: Callable[[], JsonObject]
+    sync_push_sources: Callable[..., JsonObject]
     threading: Any
 
     def _get_sync_state(self) -> _SyncStateLike: ...
@@ -182,8 +183,10 @@ def sync_pull_sources(*, root_mod: Any) -> JsonObject:
     return cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service().sync_pull_sources()
 
 
-def sync_push_sources(*, root_mod: Any) -> JsonObject:
-    return cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service().sync_push_sources()
+def sync_push_sources(*, root_mod: Any, dry_run: bool = False) -> JsonObject:
+    return (
+        cast(_AdminTaskRuntimeRoot, root_mod)._get_sync_service().sync_push_sources(dry_run=dry_run)
+    )
 
 
 def startup_sync_pull(*, root_mod: Any) -> None:
@@ -253,6 +256,20 @@ def _compaction_hold_metric_fields(seeded: Any) -> JsonObject:
     }
 
 
+def _defer_startup_sync_pull(root_mod: Any) -> JsonObject:
+    """Queue the startup pull behind the first-paint barrier.
+
+    A direct call with no served bridge schedules inline, as does a refused
+    queue submission, so the pull is never lost.
+    """
+    schedule = root_mod.schedule_startup_sync_pull
+    if startup_work_budget.is_started() and startup_work_budget.submit_startup_work(
+        "startup_sync_pull", schedule
+    ):
+        return {"queued": True, "label": "startup_sync_pull"}
+    return cast(JsonObject, schedule())
+
+
 def on_bridge_started(*, root_mod: Any) -> JsonObject:
     root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     # A task can already be running when this bridge starts (desktop reconnect to
@@ -297,7 +314,13 @@ def on_bridge_started(*, root_mod: Any) -> JsonObject:
         root_mod, "stale_task_cleanup", lambda: root_mod.cleanup_stale_startup_tasks()
     )
     startup_sync = _run_startup_step(
-        root_mod, "startup_sync_schedule", lambda: root_mod.schedule_startup_sync_pull()
+        root_mod,
+        "startup_sync_schedule",
+        lambda: _defer_startup_sync_pull(root_mod),
+        summarize=lambda result: {
+            "queued": bool(result.get("queued")),
+            "deferredLabel": str(result.get("label") or ""),
+        },
     )
     pipeline_schedule = _run_startup_step(
         root_mod,

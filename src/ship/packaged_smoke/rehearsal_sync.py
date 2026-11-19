@@ -364,9 +364,12 @@ def _post_packaged_sync_action(
     runtime_timeout_s: float,
     failure_message: str,
 ) -> dict[str, Any]:
+    # Pull and push are async-first on the bridge route; the rehearsal reads the
+    # returned result (timing and server stats), so it asks for the inline run.
+    body = {"inline": True} if action in {"push", "pull"} else {}
     status_code, payload = deps.post_json(
         f"http://127.0.0.1:{bridge_port}/sync/{action}",
-        {},
+        body,
         timeout_s=max(20.0, runtime_timeout_s),
     )
     result = payload if isinstance(payload, dict) else {}
