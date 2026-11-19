@@ -9,6 +9,7 @@ gone" cases).
 
 from __future__ import annotations
 
+import gzip
 import importlib.util
 import json
 import sys
@@ -226,6 +227,57 @@ def test_prepare_retirements_refuses_when_the_control_failed() -> None:
     }
     with pytest.raises(ValueError, match="control"):
         retire.prepare_retirements(plan)
+
+
+def test_apply_writes_a_gzip_registry_back_as_gzip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The live registry is ``.json.gz``; plain text there breaks its own read-back."""
+    url = "https://dead.example/jobs"
+    registry_path = tmp_path / "source-registry-active.json.gz"
+    row = {
+        "id": f"static:listing_url:{url}",
+        "adapter": "static",
+        "registryState": "active",
+    }
+    registry_path.write_bytes(gzip.compress(json.dumps([row]).encode("utf-8")))
+    monkeypatch.setattr(
+        retire,
+        "build_plan",
+        lambda *_args, **_kwargs: {
+            "report": "report",
+            "registry": str(registry_path),
+            "pairs": 0,
+            "candidates": 0,
+            "terminal_sources": 0,
+            "control": {"ok": True, "root": "control"},
+            "retired": [],
+            "skipped": [],
+        },
+    )
+    monkeypatch.setattr(
+        retire,
+        "prepare_retirements",
+        lambda _plan: [{**row, "registryState": "rejected"}],
+    )
+
+    exit_code = retire.main(
+        [
+            "--report",
+            str(tmp_path / "report.json"),
+            "--registry",
+            str(registry_path),
+            "--apply",
+            "--expect-rows",
+            "1",
+            "--backup-dir",
+            str(tmp_path / "backups"),
+        ]
+    )
+
+    assert exit_code == 0
+    written = retire._load_json(registry_path)
+    assert written[0]["registryState"] == "rejected"
 
 
 def test_build_plan_candidate_mode_uses_the_probe_not_the_report_status(

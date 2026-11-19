@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import importlib.util
 import json
 import sys
@@ -285,13 +286,14 @@ def test_site_changed_plan_does_not_treat_a_live_zero_job_board_as_dead() -> Non
 # --- apply and read-back -----------------------------------------------------------------
 
 
-def test_apply_reclassifies_and_repoints_with_a_backup(tmp_path: Path) -> None:
+@pytest.mark.parametrize("suffix", ["json", "json.gz"])
+def test_apply_reclassifies_and_repoints_with_a_backup(tmp_path: Path, suffix: str) -> None:
+    """The write must match the path: plain text under ``.json.gz`` breaks the read-back."""
     moved = "https://moved.example/jobs"
     ats = "https://ats.example/careers"
-    registry_path = tmp_path / "registry.json"
-    registry_path.write_text(
-        json.dumps([_registry_row(moved), _registry_row(ats)]), encoding="utf-8"
-    )
+    registry_path = tmp_path / f"registry.{suffix}"
+    body = json.dumps([_registry_row(moved), _registry_row(ats)]).encode("utf-8")
+    registry_path.write_bytes(gzip.compress(body) if suffix == "json.gz" else body)
     plan = {
         "actions": [
             {
@@ -321,7 +323,7 @@ def test_apply_reclassifies_and_repoints_with_a_backup(tmp_path: Path) -> None:
         at="2026-11-10T00:00:00+00:00",
     )
 
-    rows = json.loads(registry_path.read_text(encoding="utf-8"))
+    rows = refresh._load_json(registry_path)
     by_id = {row["id"]: row for row in rows}
     assert by_id[f"static:listing_url:{moved}"]["listing_url"] == ("https://moved.example/jobs-new")
     assert by_id[f"static:listing_url:{ats}"]["adapter"] == "greenhouse"

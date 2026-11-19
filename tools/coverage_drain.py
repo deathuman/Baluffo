@@ -163,25 +163,50 @@ def report_identity(row: dict[str, Any]) -> tuple[str, str]:
 
 
 def read_registry(data_dir: Path, name: str) -> list[dict[str, Any]]:
+    """Read one registry bucket, refusing to substitute [] for an unreadable file.
+
+    An absent bucket is genuinely empty -- the isolated run writes pending only when it
+    queues something -- but an unreadable one is not. Returning [] there reported every
+    curated board as unregistered, and ``--verify-collected`` then exited 0 because its
+    gate only fires when something registered. A gate that cannot tell "nothing landed"
+    from "the registry could not be read" is the same mistake this tool documents for
+    ``FETCH_OUTPUT``.
+    """
     path = data_dir / name
     if not path.exists():
         return []
     try:
         payload = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
-    except (OSError, ValueError):
-        return []
-    rows = payload if isinstance(payload, list) else payload.get("rows") or []
-    return [row for row in rows if isinstance(row, dict)]
+    except (OSError, EOFError, ValueError) as exc:
+        raise SystemExit(f"registry {path} is unreadable: {exc}") from exc
+    if isinstance(payload, list):
+        rows: Any = payload
+    elif isinstance(payload, dict) and isinstance(payload.get("rows"), list):
+        rows = payload["rows"]
+    else:
+        raise SystemExit(f"registry {path} is malformed")
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise SystemExit(f"registry {path} is malformed")
+    return rows
 
 
 def read_report(data_dir: Path) -> dict[str, Any]:
+    """Read the discovery report strictly: zeros are a result, not a read failure.
+
+    A missing or corrupt report used to become all-zero counts, and the round loop read
+    "approved 0, deferred 0" as "backlog exhausted" -- a success-looking exit with no
+    measurement behind it.
+    """
     path = data_dir / REPORT
-    if not path.exists():
-        return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise SystemExit(f"no discovery report at {path}; the round wrote none") from exc
+    except (OSError, UnicodeError, json.JSONDecodeError, EOFError) as exc:
+        raise SystemExit(f"discovery report {path} is unreadable: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise SystemExit(f"discovery report {path} is not a JSON object")
+    return payload
 
 
 _URL_FIELDS = ("board_url", "listing_url", "careersUrl", "api_url", "feed_url", "pages")
@@ -230,18 +255,36 @@ def hydrate_registry_urls(rows: list[dict[str, Any]]) -> int:
     return hydrated
 
 
+def seed_registry_rows(source_registry: Path) -> list[dict[str, Any]]:
+    """Read the registry a run is seeded from, refusing to run on a bad one.
+
+    A missing or unreadable seed used to fall through to an unseeded run: discovery
+    started from an empty registry and the report said every curated board was
+    unregistered -- a measurement of the wrong registry, not of the seed.
+    """
+    try:
+        raw = json.loads(source_registry.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"seed registry {source_registry} is unreadable: {exc}") from exc
+    rows = raw if isinstance(raw, list) else raw.get("rows") if isinstance(raw, dict) else None
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise SystemExit(f"seed registry {source_registry} is malformed")
+    return [dict(row) for row in rows]
+
+
 def seed_data_dir(data_dir: Path, source_registry: Path | None) -> None:
     """Prepare an isolated data dir, optionally seeded with the live registry.
 
     Seeding matters: without it discovery sees an empty registry and promotes
     candidates that the running app already serves, which measures nothing useful.
+    The seed is read before the data dir is wiped, so a bad ``--seed-registry``
+    path fails without destroying the previous run's output.
     """
+    rows = seed_registry_rows(source_registry) if source_registry is not None else None
     if data_dir.exists():
         shutil.rmtree(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
-    if source_registry and source_registry.exists():
-        raw = json.loads(source_registry.read_text(encoding="utf-8"))
-        rows = raw if isinstance(raw, list) else raw.get("rows") or []
+    if rows is not None:
         # Discovery writes rows whose only URL is inside `id`; the runtime fetches from
         # `board_url`/`listing_url`. Without this the static path has nothing to request and
         # every static board reports "fetched, kept nothing" having fetched nothing.
@@ -429,11 +472,7 @@ def hydrate_registry_file(data_dir: Path, name: str) -> int:
     path = data_dir / name
     if not path.exists():
         return 0
-    try:
-        payload = json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
-    except (OSError, ValueError):
-        return 0
-    rows = payload if isinstance(payload, list) else payload.get("rows") or []
+    rows = read_registry(data_dir, name)
     hydrated = hydrate_registry_urls(rows)
     if hydrated:
         body = json.dumps(rows, ensure_ascii=False).encode("utf-8")
@@ -447,6 +486,12 @@ def hydrate_registry_file(data_dir: Path, name: str) -> int:
 
 
 def read_json(path: Path) -> Any:
+    """Read a fetch artifact: absent is ``None``, unreadable is fatal.
+
+    Folding a corrupt ``jobs-unified.json.gz`` into ``None`` made attribution report zero
+    collected jobs -- the gate still failed, but it blamed the boards rather than the
+    file it could not read.
+    """
     if not path.exists():
         return None
     try:
@@ -454,8 +499,8 @@ def read_json(path: Path) -> Any:
         if path.suffix == ".gz":
             raw = gzip.decompress(raw)
         return json.loads(raw.decode("utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError):
-        return None
+    except (OSError, EOFError, ValueError) as exc:
+        raise SystemExit(f"fetch artifact {path} is unreadable: {exc}") from exc
 
 
 def _source_key_index(

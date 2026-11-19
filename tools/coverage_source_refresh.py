@@ -93,11 +93,14 @@ def _write_registry(path: Path, payload: Any, rows: Sequence[Mapping[str, Any]])
     else:
         output = dict(payload)
         output["rows"] = list(rows)
-    path.write_text(
-        json.dumps(output, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+    text = json.dumps(output, indent=2, ensure_ascii=False) + "\n"
+    # The live registry is ``source-registry-active.json.gz``; writing plain text under
+    # that name leaves a file the apply's own read-back cannot open.
+    if path.suffix == ".gz":
+        with gzip.open(path, mode="wt", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        return
+    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def _host(url: str) -> str:

@@ -23,10 +23,12 @@ same claim:
     target from ``--repoint-map``; without one it is printed as ``needs-target`` and
     never applied.
 
-Dry run is the default: nothing is created, moved or written. ``--apply`` additionally
-requires ``--expect-retire`` / ``--expect-repoint`` to match the computed plan, writes a
-backup under ``_out/registry-cleanup/``, saves through the canonical registry writer, and
-reads the result back before reporting success.
+Dry run is the default: it does not modify the registry. ``--json-out`` writes the
+requested plan artifact. ``--apply`` additionally requires ``--expect-retire`` /
+``--expect-repoint`` to match the computed plan, writes a backup under
+``_out/registry-cleanup/``, saves through the canonical registry writer, and reads the
+result back before reporting success. If the read-back check fails, the pre-change
+backup is restored automatically and the restore path is printed.
 
 Every plan also runs a read-only last-source guard. Active rows are grouped by their
 canonical studio family (the same ``source_family_key`` the duplicate policy uses), with
@@ -47,6 +49,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import sys
 from collections import defaultdict
@@ -80,7 +83,7 @@ BUCKETS = {
     "pending": "source-registry-pending",
     "rejected": "source-registry-rejected",
 }
-TERMINAL_ROOT_STATUSES = {"404", "410"}
+TERMINAL_STATUSES = {"404", "410"}
 PRIORITY = {"repoint": 1, "retire_seed": 2, "retire_board": 3}
 # Labels that identify a page or a field, not a studio. They must not merge unrelated
 # rows into one "last source" group; the board tenant/host takes over instead.
@@ -104,12 +107,48 @@ def registry_paths(data_dir: Path) -> dict[str, Path]:
     }
 
 
+def _read_json_rows(path: Path, label: str) -> list[dict[str, Any]]:
+    """Read a JSON array of registry rows, raising instead of substituting an empty list."""
+    try:
+        if path.suffix == ".gz":
+            with gzip.open(path, mode="rt", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        else:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(f"{label} is missing: {path}") from exc
+    except (OSError, UnicodeError, json.JSONDecodeError, EOFError) as exc:
+        raise ValueError(f"{label} is unreadable: {path}: {exc}") from exc
+    if not isinstance(payload, list) or any(not isinstance(row, dict) for row in payload):
+        raise ValueError(f"{label} is malformed: {path}")
+    return payload
+
+
+def _read_registry_bucket(path: Path, bucket: str) -> list[dict[str, Any]]:
+    try:
+        return _read_json_rows(path, f"{bucket} registry")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
 def load_state(paths: dict[str, Path]) -> dict[str, list[dict[str, Any]]]:
+    """Load every bucket, refusing to plan from an unreadable file.
+
+    A side bucket the install never wrote is genuinely empty; an existing file that
+    cannot be read is not, so only absence is allowed to mean zero rows. The state is
+    then re-read through the canonical loader for the registry journal overlay the app
+    itself applies, with the validated rows as its fallback, so that second read cannot
+    empty a bucket either.
+    """
     if not paths["active"].exists():
         raise SystemExit(
             f"no registry at {paths['active']} - pass --data-dir pointing at the Baluffo data directory"
         )
-    return {bucket: load_json_array(path, []) for bucket, path in paths.items()}
+    validated = {"active": _read_registry_bucket(paths["active"], "active")}
+    for bucket in ("pending", "rejected"):
+        path = paths[bucket]
+        validated[bucket] = _read_registry_bucket(path, bucket) if path.exists() else []
+    return {bucket: load_json_array(paths[bucket], rows) for bucket, rows in validated.items()}
 
 
 def _dedupe(urls: list[str]) -> list[str]:
@@ -298,7 +337,16 @@ def _action_kind(kinds: list[str]) -> str:
 
 
 def _terminal(evidence: list[dict[str, Any]]) -> bool:
-    return any(str(item.get("rootStatus")) in TERMINAL_ROOT_STATUSES for item in evidence)
+    """Every failing URL needs a terminal root *and* a terminal registered URL.
+
+    A 404 root with a 500 or timeout on the registered URL is not proof that the board
+    is gone; it is a probe result that must stay in review.
+    """
+    return bool(evidence) and all(
+        str(item.get("rootStatus")) in TERMINAL_STATUSES
+        and str(item.get("urlStatus")) in TERMINAL_STATUSES
+        for item in evidence
+    )
 
 
 def _control_ok(evidence: list[dict[str, Any]]) -> bool:
@@ -578,6 +626,24 @@ def write_backup(
     return directory
 
 
+def _load_backup_bucket(backup: Path, bucket: str) -> list[dict[str, Any]]:
+    """Read one backup bucket without the registry loader's empty fallback."""
+    return _read_json_rows(backup / f"{bucket}.json", f"backup {bucket} bucket")
+
+
+def restore_backup(backup: Path, paths: dict[str, Path]) -> None:
+    """Rewrite the pre-apply registry state from ``backup``.
+
+    The backup stores the pre-change rows as plain JSON. Every bucket is read
+    strictly before anything is written: a missing or malformed bucket aborts
+    the restore instead of silently substituting an empty registry. Restoring
+    through the canonical writer keeps the entrypoint the app actually reads
+    (``.json.gz`` when used) consistent instead of copying files beside it.
+    """
+    state = {bucket: _load_backup_bucket(backup, bucket) for bucket in BUCKETS}
+    save_registry_state_atomic(paths["active"], paths["pending"], paths["rejected"], state)
+
+
 def _repoint_row(row: dict[str, Any], failing_urls: list[str], target: str) -> None:
     """Point the row at ``target``, replacing every page on the failing hosts.
 
@@ -650,8 +716,17 @@ def apply_plan(
 
 
 def verify(paths: dict[str, Path], applied: dict[str, Any]) -> list[str]:
-    active = load_json_array(paths["active"], [])
-    rejected = load_json_array(paths["rejected"], [])
+    # Read back strictly: an unreadable post-write registry is a verification failure
+    # that must trigger the restore, never an empty registry that passes vacuously.
+    try:
+        active = load_json_array(
+            paths["active"], _read_json_rows(paths["active"], "active registry")
+        )
+        rejected = load_json_array(
+            paths["rejected"], _read_json_rows(paths["rejected"], "rejected registry")
+        )
+    except ValueError as exc:
+        return [f"the registry cannot be read back: {exc}"]
     active_by_id = {_row_id(row): row for row in active}
     rejected_ids = {_row_id(row) for row in rejected}
     problems: list[str] = []
@@ -728,9 +803,23 @@ def main(argv: list[str] | None = None) -> int:
     result, applied = apply_plan(state, plan)
     save_registry_state_atomic(paths["active"], paths["pending"], paths["rejected"], result)
     print(f"backup: {backup}")
+    # The writer lands the lean registry on its gzip entrypoint, so the startup paths are
+    # stale now: re-resolve before the read-back and any restore.
+    paths = registry_paths(args.data_dir.expanduser().resolve())
     problems = verify(paths, applied)
     if problems:
         print("verification FAILED:", *problems, sep="\n  ", file=sys.stderr)
+        try:
+            restore_backup(backup, paths)
+        except (OSError, TypeError, ValueError) as exc:
+            print(
+                f"restore FAILED: {exc}",
+                f"restore manually from: {backup}",
+                sep="\n  ",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"restored backup: {backup}")
         return 1
     print(
         f"applied: {len(applied['repointed'])} repoints, {len(applied['retired'])} retires "

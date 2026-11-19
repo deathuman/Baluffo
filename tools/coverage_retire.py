@@ -86,6 +86,21 @@ def _load_json(path: Path) -> Any:
     return json.loads(raw.decode("utf-8"))
 
 
+def _write_json(path: Path, payload: Any) -> None:
+    """Write JSON back in the shape the path names: gzip when it ends in ``.gz``.
+
+    The live registry is ``source-registry-active.json.gz``. Writing plain text to that
+    name produced a file no gzip reader could open, so the apply's own read-back -- and
+    every tool after it -- failed on the registry it had just written.
+    """
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    if path.suffix == ".gz":
+        with gzip.open(path, mode="wt", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        return
+    path.write_text(text, encoding="utf-8")
+
+
 def _host(url: str) -> str:
     return (urlparse(str(url or "")).hostname or "").strip().lower().removeprefix("www.")
 
@@ -414,9 +429,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     for row in prepared:
         rows[by_id[str(row["id"])]] = row
-    args.registry.write_text(
-        json.dumps(rows, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    _write_json(args.registry, rows)
 
     readback = _load_json(args.registry)
     read_rows = readback if isinstance(readback, list) else list(readback.get("rows") or [])
