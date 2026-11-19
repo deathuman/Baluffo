@@ -92,6 +92,15 @@ def test_one_dead_page_does_not_park_a_timing_out_source() -> None:
     assert _classify(details=details) == TIMEOUT
 
 
+def test_one_dead_board_does_not_park_a_family_of_empty_boards() -> None:
+    details = [
+        {"status": "error", "httpStatus": 404, "error": "HTTP 404"},
+        *({"status": "error", "httpStatus": 200, "error": "no jobs extracted"} for _ in range(5)),
+    ]
+    assert _classify(details=details) == NO_JOBS
+    assert is_retryable_failure_class(NO_JOBS)
+
+
 def test_a_404_in_the_source_error_outvotes_an_empty_detail_entry() -> None:
     # The 2026-11-18 report's shape: the only detail row says "no jobs extracted",
     # while the aggregated source error carries the HTTP 404 for the registered URL.
@@ -105,6 +114,16 @@ def test_a_404_in_the_source_error_outvotes_an_empty_detail_entry() -> None:
         )
         == DEAD_BOARD
     )
+
+
+def test_a_summarized_error_is_not_counted_twice_against_the_details() -> None:
+    # The error text and the detail row describe the same page. Counting both would
+    # let this 404 outvote the five empty boards alongside it.
+    details = [
+        {"status": "error", "httpStatus": 404, "error": "HTTP 404"},
+        *({"status": "error", "httpStatus": 200, "error": "no jobs extracted"} for _ in range(5)),
+    ]
+    assert _classify(error="HTTP 404; no jobs extracted", details=details) == NO_JOBS
 
 
 def test_zero_yield_without_evidence_is_no_jobs() -> None:

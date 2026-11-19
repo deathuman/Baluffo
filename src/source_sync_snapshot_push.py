@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from src.shared.json_shapes import as_json_object as _as_dict
@@ -86,6 +86,24 @@ def _read_known_manifest(
         return None
 
 
+def _manifest_bucket_counts(manifest: Mapping[str, Any], *, rejected_count: int) -> dict[str, int]:
+    """Count remote rows from the committed manifest.
+
+    The unchanged fast path never downloads shards, so the local snapshot it
+    builds can be missing rows another client merged into the remote. The
+    manifest's per-shard bucket and rowCount are the authoritative counts.
+    """
+    counts = {"active": 0, "pending": 0}
+    for entry in list(manifest.get("shards") or []):
+        if not isinstance(entry, Mapping):
+            continue
+        bucket = str(entry.get("bucket") or "")
+        if bucket in counts:
+            counts[bucket] += int(entry.get("rowCount") or 0)
+    counts["rejected"] = max(0, int(rejected_count))
+    return counts
+
+
 def _unchanged_fast_path_result(
     module: Any,
     config: Any,
@@ -104,7 +122,11 @@ def _unchanged_fast_path_result(
         or module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES
     )
     size_warning = snapshot_size_bytes > module.SNAPSHOT_SIZE_WARN_BYTES
-    shard_fields = _manifest_noop_shard_metadata(module, _as_dict(manifest_read.get("manifest")))
+    manifest = _as_dict(manifest_read.get("manifest"))
+    shard_fields = _manifest_noop_shard_metadata(module, manifest)
+    counts = _manifest_bucket_counts(
+        manifest, rejected_count=len(list(local_state.get("rejected") or []))
+    )
     with detail_timing.record("recordStorageMetrics"):
         record_source_sync_snapshot(
             size_bytes=snapshot_size_bytes,
@@ -129,6 +151,7 @@ def _unchanged_fast_path_result(
         "remotePreviouslyExisted": True,
         "remoteSha": str(manifest_read.get("sha") or ""),
         "snapshot": snapshot,
+        "counts": counts,
         "skipped": True,
         "skipReason": "dryRun" if dry_run else "remote_and_local_unchanged",
         "remoteReadSkipped": True,
@@ -249,44 +272,6 @@ def _try_noop_sharded_push(
             shard_hashes=dict(shard_fields.get("shardHashes") or {}),
         )
     module.record_sync_counters(totalPushes=1)
-    counters = module.record_sync_counters(noOpSkips=1)
-    return _with_detail_timing(
-        {
-            "pushed": False,
-            "remotePreviouslyExisted": True,
-            "remoteSha": str(remote.get("sha") or ""),
-            "snapshot": snapshot,
-            "skipped": True,
-            "skipReason": "no_meaningful_change",
-            "sizeBytes": snapshot_size_bytes,
-            "sizeWarning": size_warning,
-            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
-            **shard_fields,
-            "counters": counters,
-        },
-        detail_timing,
-    )
-
-
-def _try_sharded_noop_result(
-    module: Any,
-    *,
-    snapshot: dict[str, Any],
-    remote: dict[str, Any],
-    snapshot_fingerprint: str,
-    remote_fingerprint: str,
-    snapshot_size_bytes: int,
-    max_snapshot_size_bytes: int,
-    size_warning: bool,
-    shard_fields: dict[str, Any],
-    detail_timing: _SyncDetailTiming,
-) -> dict[str, Any] | None:
-    if not bool(remote.get("exists")):
-        return None
-    if str(remote.get("snapshotFormat") or "") != "sharded-v3":
-        return None
-    if snapshot_fingerprint != remote_fingerprint:
-        return None
     counters = module.record_sync_counters(noOpSkips=1)
     return _with_detail_timing(
         {
@@ -508,20 +493,6 @@ def _push_sources_snapshot_impl(
             detail_timing,
         )
     module.record_sync_counters(totalPushes=1)
-    noop_result = _try_sharded_noop_result(
-        module,
-        snapshot=snapshot,
-        remote=remote,
-        snapshot_fingerprint=snapshot_fingerprint,
-        remote_fingerprint=remote_fingerprint,
-        snapshot_size_bytes=snapshot_size_bytes,
-        max_snapshot_size_bytes=max_snapshot_size_bytes,
-        size_warning=size_warning,
-        shard_fields=shard_fields,
-        detail_timing=detail_timing,
-    )
-    if noop_result is not None:
-        return noop_result
     write_result = _push_sharded_snapshot_with_recovery(
         module,
         config,

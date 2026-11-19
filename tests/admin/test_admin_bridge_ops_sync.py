@@ -306,6 +306,32 @@ def test_sync_pull_route_reports_a_running_task_as_conflict(admin_bridge_entrypo
     assert handler.sent[-1]["payload"]["started"] is False
 
 
+class _RaisingStartSyncTaskApi(_AsyncPullRouteApi):
+    def start_sync_task(
+        self, action: str, *, reason: str = "", automatic: bool = True
+    ) -> dict[str, Any]:
+        raise RuntimeError("start failed")
+
+
+def test_sync_pull_route_returns_500_payload_when_start_sync_task_raises(
+    admin_bridge_entrypoint_root,
+):
+    api = _RaisingStartSyncTaskApi()
+    handler = FakeHandler()
+
+    handled = handle_post(handler, api=api, path="/sync/pull", payload={})
+
+    assert handled is True
+    assert api.pull_calls == 0
+    assert handler.sent[-1]["status"] == 500
+    assert handler.sent[-1]["payload"] == {
+        "started": False,
+        "task": "source_sync",
+        "action": "pull",
+        "error": "start failed",
+    }
+
+
 def test_sync_pull_route_runs_inline_when_requested(admin_bridge_entrypoint_root):
     api = _AsyncPullRouteApi()
     handler = FakeHandler()
@@ -317,3 +343,61 @@ def test_sync_pull_route_runs_inline_when_requested(admin_bridge_entrypoint_root
     assert api.pull_calls == 1
     assert handler.sent[-1]["status"] == 200
     assert handler.sent[-1]["payload"] == {"ok": True, "pulled": True}
+
+
+class _RaisingInlinePushRouteApi(_InlinePushRouteApi):
+    def __init__(self) -> None:
+        super().__init__()
+        self.status_calls: list[dict[str, Any]] = []
+
+    def sync_push_sources(self, *, dry_run: bool = False) -> dict[str, Any]:
+        self.dry_run_calls.append(dry_run)
+        raise RuntimeError("push exploded")
+
+    def set_sync_status(self, **kwargs: Any) -> None:
+        self.status_calls.append(kwargs)
+
+
+def test_sync_push_route_records_sync_status_error_when_inline_action_raises(
+    admin_bridge_entrypoint_root,
+):
+    api = _RaisingInlinePushRouteApi()
+    handler = FakeHandler()
+
+    handled = handle_post(handler, api=api, path="/sync/push", payload={"inline": True})
+
+    assert handled is True
+    assert api.dry_run_calls == [False]
+    assert api.status_calls == [
+        {
+            "action": "push",
+            "result": "error",
+            "error": "push exploded",
+            "pulled": False,
+            "pushed": False,
+        }
+    ]
+    assert handler.sent[-1]["status"] == 500
+    assert handler.sent[-1]["payload"] == {
+        "ok": False,
+        "error": "push exploded",
+        "config": {},
+    }
+
+
+def test_sync_push_route_dry_run_wins_over_inline(admin_bridge_entrypoint_root):
+    api = _InlinePushRouteApi()
+    handler = FakeHandler()
+
+    handled = handle_post(
+        handler,
+        api=api,
+        path="/sync/push",
+        payload={"inline": True, "dryRun": True},
+    )
+
+    assert handled is True
+    assert api.start_calls == []
+    assert api.dry_run_calls == [True]
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"] == {"ok": True, "pushed": True, "dryRun": True}

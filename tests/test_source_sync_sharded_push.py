@@ -252,6 +252,26 @@ def test_push_sharded_snapshot_rejects_remote_blob_sha_mismatch_without_commit()
     assert module.manifest_path not in module.branch_tree()
 
 
+def test_push_sharded_snapshot_refuses_a_truncated_tree_verification() -> None:
+    module = GitDataSyncModule()
+    module.tree_listing_truncated = True
+
+    with pytest.raises(RuntimeError, match="verification was truncated"):
+        push_sharded_snapshot(
+            module,
+            _config(),
+            _snapshot(),
+            max_shard_size=10_000,
+            opener=lambda *_a, **_kw: None,
+        )
+
+    # A truncated listing cannot prove the tree contains the pushed blobs, so
+    # the generation is not committed.
+    assert module.commits == []
+    assert module.head_commit == "parent-commit"
+    assert module.manifest_path not in module.branch_tree()
+
+
 def test_push_sharded_snapshot_noops_when_committed_manifest_matches() -> None:
     snapshot = _snapshot()
     bundle = build_sharded_snapshot_bundle(snapshot, max_shard_size=10_000)
@@ -277,14 +297,9 @@ def test_push_sharded_snapshot_noops_when_committed_manifest_matches() -> None:
 
 
 def test_push_sharded_snapshot_prunes_unreferenced_shards_after_commit() -> None:
-    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
-    shard = bundle["changedShards"][0]
     old_path = "baluffo/source-sync/shards/active/old/oldsha.json.gz"
     module = GitDataSyncModule()
-    module.contents_listing = [
-        {"type": "file", "path": old_path, "sha": "old-remote-sha"},
-        {"type": "file", "path": shard.path, "sha": "current-remote-sha"},
-    ]
+    module.tree_by_sha["base-tree"][old_path] = "old-remote-sha"
 
     result = push_sharded_snapshot(
         module,
@@ -303,14 +318,16 @@ def test_push_sharded_snapshot_prunes_unreferenced_shards_after_commit() -> None
 
 
 def test_push_sharded_snapshot_ignores_remote_gc_entries_without_paths() -> None:
-    bundle = build_sharded_snapshot_bundle(_snapshot(), max_shard_size=10_000)
-    shard = bundle["changedShards"][0]
     module = GitDataSyncModule()
-    module.contents_listing = [
-        {"type": "file", "path": "", "sha": "missing-path-sha"},
-        {"type": "file", "sha": "missing-path-key-sha"},
-        {"type": "file", "path": shard.path, "sha": "current-remote-sha"},
-    ]
+
+    def add_pathless_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            *entries,
+            {"type": "blob", "path": "", "sha": "missing-path-sha"},
+            {"type": "blob", "sha": "missing-path-key-sha"},
+        ]
+
+    module.tree_listing_override = add_pathless_entries
 
     result = push_sharded_snapshot(
         module,
@@ -329,7 +346,7 @@ def test_push_sharded_snapshot_ignores_remote_gc_entries_without_paths() -> None
 def test_push_sharded_snapshot_reports_gc_failure_without_rollback() -> None:
     old_path = "baluffo/source-sync/shards/active/old/oldsha.json.gz"
     module = GitDataSyncModule()
-    module.contents_listing = [{"type": "file", "path": old_path, "sha": "old-remote-sha"}]
+    module.tree_by_sha["base-tree"][old_path] = "old-remote-sha"
     module.delete_status = 500
 
     result = push_sharded_snapshot(

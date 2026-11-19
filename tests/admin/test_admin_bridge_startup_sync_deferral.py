@@ -1,11 +1,8 @@
 """Tests for deferring the startup sync pull behind the first-paint budget."""
 
-import socket
 import threading
-import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable, Iterator
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -16,7 +13,6 @@ import pytest
 from src import admin_bridge
 from src.bridge import admin_task_runtime, startup_work_budget, storage_health
 from src.bridge.server import httpd
-from src.bridge.server.handler import make_handler
 from tests.helpers.bridge_api import build_admin_bridge_api
 
 
@@ -95,32 +91,6 @@ def test_defer_startup_sync_pull_runs_inline_without_a_served_bridge() -> None:
     assert scheduled == ["startup_sync"]
 
 
-def _free_loopback_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-def _request_ready(port: int) -> None:
-    """Send the page's first request as soon as the listener accepts it."""
-    deadline = time.monotonic() + 5.0
-    while True:
-        try:
-            with urllib.request.urlopen(
-                f"http://127.0.0.1:{port}/app/ready", timeout=1.0
-            ) as response:
-                if not 200 <= int(response.status) < 300:
-                    raise AssertionError(f"/app/ready returned HTTP {response.status}")
-                response.read()
-            return
-        except urllib.error.HTTPError as exc:
-            raise AssertionError(f"/app/ready returned HTTP {exc.code}") from exc
-        except OSError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(0.02)
-
-
 def _first_metric(
     rows: list[dict[str, Any]], event: str, **fields: Any
 ) -> tuple[int, dict[str, Any]]:
@@ -134,15 +104,21 @@ def _first_metric(
 def test_startup_sync_pull_waits_for_first_paint_then_completes(
     admin_bridge_entrypoint_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Run the real listener and startup chain; only the remote pull is faked."""
+    """Drive the real startup chain through a fake accept loop; only the pull is faked.
+
+    The accept count, not a real socket, is the first-paint signal. The fake
+    listener holds the loop before the barrier opens, so the test can prove the
+    pull has not started without measuring how long anything took.
+    """
     root = Path(admin_bridge_entrypoint_root)
     api = build_admin_bridge_api()
     api.update_saved_sync_settings({"enabled": True})
 
+    pull_started = threading.Event()
     pull_finished = threading.Event()
 
     def fake_pull(_cfg: Any, local_state: Any, **_kwargs: Any) -> dict[str, Any]:
-        time.sleep(0.2)
+        pull_started.set()
         pull_finished.set()
         return {
             "changed": False,
@@ -166,26 +142,72 @@ def test_startup_sync_pull_waits_for_first_paint_then_completes(
 
     monkeypatch.setattr(admin_bridge, "schedule_startup_sync_pull", observe_and_schedule)
 
+    waiting_for_first_paint = threading.Event()
+    before_barrier_seen = threading.Event()
+    release_barrier = threading.Event()
     stop_server = threading.Event()
+    accepted = {"count": 0}
+
+    real_wait_for_first_paint = startup_work_budget.wait_for_first_paint
+
+    def wait_for_first_paint_with_event(timeout_s: float | None = None) -> str:
+        waiting_for_first_paint.set()
+        return real_wait_for_first_paint(timeout_s)
+
+    monkeypatch.setattr(
+        startup_work_budget,
+        "wait_for_first_paint",
+        wait_for_first_paint_with_event,
+    )
+
+    class FakeListener:
+        def __init__(self, _address: Any, _handler_cls: Any) -> None:
+            self.iterations = 0
+
+        def handle_request(self) -> None:
+            self.iterations += 1
+            if self.iterations == 1:
+                accepted["count"] = 1
+                return
+            if self.iterations == 2:
+                if not waiting_for_first_paint.wait(timeout=5.0):
+                    raise RuntimeError("startup chain never waited for first paint")
+                before_barrier_seen.set()
+                if not release_barrier.wait(timeout=5.0):
+                    raise RuntimeError("test did not release the first-paint barrier")
+                return
+            if not pull_finished.wait(timeout=5.0):
+                raise RuntimeError("startup sync pull did not finish")
+            stop_server.set()
+
+        def server_close(self) -> None:
+            return None
+
+    monkeypatch.setattr(httpd, "_BridgeHttpServer", FakeListener)
+    monkeypatch.setattr(
+        httpd,
+        "snapshot_accept_metrics",
+        lambda: {"acceptedCount": accepted["count"]},
+    )
     api.should_exit_for_owner_timeout = stop_server.is_set
-    port = _free_loopback_port()
     server_errors: list[BaseException] = []
+
+    def run_startup_hooks() -> None:
+        admin_bridge.admin_entrypoint_runtime_mod.finish_bridge_startup_hooks(
+            on_started=admin_bridge.on_bridge_started,
+            append_startup_metric=admin_bridge.append_startup_metric,
+            desktop_mode=True,
+            data_dir=root,
+        )
 
     def serve() -> None:
         try:
             httpd.run_http_server(
                 api=api,
                 host="127.0.0.1",
-                port=port,
-                handler_cls=make_handler(api=api),
-                on_started=lambda: (
-                    admin_bridge.admin_entrypoint_runtime_mod.finish_bridge_startup_hooks(
-                        on_started=admin_bridge.on_bridge_started,
-                        append_startup_metric=admin_bridge.append_startup_metric,
-                        desktop_mode=True,
-                        data_dir=root,
-                    )
-                ),
+                port=0,
+                handler_cls=BaseHTTPRequestHandler,
+                on_started=run_startup_hooks,
             )
         except BaseException as exc:  # pragma: no cover - surfaced by the assertion
             server_errors.append(exc)
@@ -212,14 +234,25 @@ def test_startup_sync_pull_waits_for_first_paint_then_completes(
         admin_bridge.admin_entrypoint_runtime_mod.begin_bridge_startup(
             append_startup_metric=admin_bridge.append_startup_metric
         )
+        # No quiet window is needed here: the fake accept loop opens the barrier
+        # on its second pass, after the startup chain is already waiting.
+        startup_work_budget.configure_startup_work_budget(
+            budget_ms=3_600_000,
+            quiet_ms=0,
+            metric_sink=admin_bridge.append_startup_metric,
+        )
         server_thread.start()
 
         try:
-            _request_ready(port)
+            assert before_barrier_seen.wait(5.0), "startup chain never reached the barrier"
+            assert not pull_started.is_set(), "startup sync pull started before first paint"
+            assert deferred_budget_snapshots == []
+            release_barrier.set()
             assert pull_finished.wait(5.0), "startup sync pull did not finish"
             admin_bridge.wait_for_sync_tasks(timeout_s=5.0)
         finally:
             stop_server.set()
+            release_barrier.set()
             server_thread.join(timeout=5.0)
 
     assert not server_errors, server_errors
@@ -246,7 +279,6 @@ def test_startup_sync_pull_waits_for_first_paint_then_completes(
     assert admitted["payload"].get("admission") == "opened"
     assert schedule_payload.get("queued") is True
     assert schedule_payload.get("deferredLabel") == "startup_sync_pull"
-    assert schedule_payload.get("durationMs", 10_000) <= 50
     assert pull_start_index > first_request_index
     assert pull_done_index > pull_start_index
     assert pull_done["payload"].get("ok") is True, pull_done

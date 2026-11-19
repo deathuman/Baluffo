@@ -614,9 +614,7 @@ def start_fetcher_task(payload: JsonObject | None = None, *, root_mod: Any) -> J
         JsonObject,
         root_mod._get_task_launch_api().start_fetcher_task(
             payload,
-            append_run_history=root_mod.append_run_history,
             normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
-            prune_started_rows_for_type=root_mod.prune_started_rows_for_type,
             run_background_script=root_mod.run_background_script,
             save_json_atomic=root_mod.save_json_atomic,
             schema_version=root_mod.SCHEMA_VERSION,

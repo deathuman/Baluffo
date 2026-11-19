@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import threading
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -54,6 +55,9 @@ class GitDataSyncModule:
         self.runtime_state: tuple[str, str] | None = None
         self.conflict_on_ref_update = False
         self.tree_listing_truncated = False
+        self.tree_listing_override: (
+            Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None
+        ) = None
         self.forced_blob_sha = ""
         self.contents_listing: list[dict[str, Any]] = []
         self.commit_history_status = 200
@@ -124,11 +128,14 @@ class GitDataSyncModule:
                 tree_sha = self.commit_tree.get(tree_sha, tree_sha)
                 if tree_sha not in self.tree_by_sha:
                     return 404, {"message": "Not Found"}, {}
+                entries = self.tree_entries(tree_sha)
+                if self.tree_listing_override is not None:
+                    entries = self.tree_listing_override(entries)
                 return (
                     200,
                     {
                         "sha": tree_sha,
-                        "tree": self.tree_entries(tree_sha),
+                        "tree": entries,
                         "truncated": self.tree_listing_truncated,
                     },
                     {},
@@ -233,6 +240,8 @@ class GitDataSyncModule:
                         for path, sha in sorted(contents_tree.items())
                         if path.startswith(prefix)
                     ]
+                    # GitHub's Contents API caps a directory at 1,000 entries.
+                    rows = rows[:1000]
                     if rows:
                         return 200, rows, {}
                 return 404, {"message": "Not Found"}, {}

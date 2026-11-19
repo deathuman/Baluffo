@@ -499,7 +499,6 @@ def failed_source_names_from_report(
     report: dict[str, Any],
     *,
     allowed_names: set[str] | None = None,
-    include_unrecoverable: bool = False,
 ) -> list[str]:
     """Extract source names with status 'error' from a normalized fetch report.
 
@@ -518,7 +517,7 @@ def failed_source_names_from_report(
             continue
         if str(row.get("status") or "").strip().lower() != "error":
             continue
-        if not include_unrecoverable and not is_retryable_source_row(row):
+        if not is_retryable_source_row(row):
             continue
         name = str(row.get("name") or "").strip()
         if allowed_names is not None and name not in allowed_names:

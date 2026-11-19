@@ -360,9 +360,7 @@ def test_packaged_smoke_fetch_mode_exercises_source_run_closeout(monkeypatch: An
 
             result = api.start_fetcher_task(
                 {"preset": "default", "quiet": True, "socialEnabled": False},
-                append_run_history=lambda row: row,
                 normalize_fetch_report_contract=lambda payload: payload,
-                prune_started_rows_for_type=lambda *_args, **_kwargs: None,
                 run_background_script=lambda *_args, **_kwargs: (_ for _ in ()).throw(
                     AssertionError("smoke mode must not spawn the fetcher")
                 ),

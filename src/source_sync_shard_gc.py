@@ -7,6 +7,11 @@ names, or the pull's shard read 404s. GC therefore retains the shards of the
 last few committed manifest generations, read from the branch's manifest commit
 history, and skips deletion entirely when that history cannot be established.
 
+Shard discovery reads the committed branch tree rather than the Contents API,
+whose 1,000-entry directory cap silently hid the tail of a busy shard
+directory. A truncated tree listing is an error, so GC deletes nothing from a
+partial view.
+
 AI boundary owns: unreferenced source-sync shard discovery, generation-retention
 window, GC path validation, delete-limit enforcement, and delete warnings.
 AI boundary implement in: this leaf for GC semantics; remote request plumbing stays in source_sync_shard_remote and manifest trust rules in source_sync_shard_manifest.
@@ -29,7 +34,12 @@ from src.source_sync_shard_model import (
     DEFAULT_GC_RETAIN_GENERATIONS,
     _normalize_base_path,
 )
-from src.source_sync_shard_remote import _content_api_url, _repo_api_url
+from src.source_sync_shard_remote import (
+    _content_api_url,
+    _repo_api_url,
+    read_branch_commit,
+    read_git_tree,
+)
 
 _RETENTION_UNAVAILABLE = "source-sync shard GC retention unavailable"
 
@@ -95,7 +105,7 @@ def prune_unreferenced_shards(
     deleted_paths: list[str] = []
     skipped_paths: list[str] = []
     delete_attempts = 0
-    for item in _list_content_tree(module, config, normalized_base, opener=opener):
+    for item in _list_shard_tree(module, config, normalized_base, opener=opener):
         path = str(item.get("path") or "").replace("\\", "/").strip()
         if not _is_gc_candidate_path(path, normalized_base):
             skipped_paths.append(path)
@@ -279,37 +289,38 @@ def _retained_shard_paths(
     return retained, read_count, ""
 
 
-def _list_content_tree(
+def _list_shard_tree(
     module: Any,
     config: Any,
-    path: str,
+    base_path: str,
     *,
     opener: Callable[..., Any],
 ) -> list[dict[str, Any]]:
-    status, payload, _headers = module._request_json(
-        method="GET",
-        url=_content_api_url(module, config, path, with_ref=True),
-        config=config,
-        timeout_s=config.timeout_s,
-        opener=opener,
+    """List shard blobs from the committed branch tree.
+
+    The Contents API returns at most 1,000 entries per directory and does not
+    paginate, so the tail of a busy shard directory was invisible to GC. The
+    recursive Git tree has a much higher cap; if GitHub truncates even that,
+    the partial view is rejected rather than used as a deletion set.
+    """
+    head = read_branch_commit(module, config, opener=opener)
+    tree = read_git_tree(
+        module, config, str(head.get("treeSha") or ""), recursive=True, opener=opener
     )
-    if status == 404:
-        return []
-    if status >= 400:
-        message = str(payload.get("message") or f"GitHub GET failed with HTTP {status}")
-        raise RuntimeError(message)
-    items = payload if isinstance(payload, list) else [payload] if isinstance(payload, dict) else []
-    files: list[dict[str, Any]] = []
-    for item in items:
-        if not isinstance(item, dict):
+    if bool(tree["truncated"]):
+        raise RuntimeError(
+            "source-sync shard GC listing is truncated; refusing to delete unreferenced shards"
+        )
+    prefix = f"{base_path}/"
+    entries: list[dict[str, Any]] = []
+    for entry in tree["entries"]:
+        path = str(entry.get("path") or "").replace("\\", "/").strip()
+        if not path.startswith(prefix):
             continue
-        item_type = str(item.get("type") or "").strip().lower()
-        item_path = str(item.get("path") or "").replace("\\", "/").strip()
-        if item_type == "dir" and item_path:
-            files.extend(_list_content_tree(module, config, item_path, opener=opener))
-        elif item_type in {"file", ""} and item_path:
-            files.append(dict(item))
-    return files
+        if str(entry.get("type") or "").lower() not in {"blob", ""}:
+            continue
+        entries.append({"path": path, "sha": str(entry.get("sha") or "").strip()})
+    return entries
 
 
 def _delete_shard_object(

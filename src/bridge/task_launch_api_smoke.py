@@ -644,9 +644,7 @@ class TaskLaunchApiSmokeMixin(TaskLaunchApiState):
         spawn_args: list[str],
         error: str,
         report_shell: dict[str, Any],
-        append_run_history: Callable[[dict[str, Any]], dict[str, Any]],
         normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
-        prune_started_rows_for_type: Callable[..., None],
         save_json_atomic: Callable[[Path, Any], None],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
         previous_report: dict[str, Any] | None = None,
@@ -664,8 +662,6 @@ class TaskLaunchApiSmokeMixin(TaskLaunchApiState):
             error=error,
             report_shell=report_shell,
             previous_report=previous_report,
-            append_run_history=append_run_history,
-            prune_started_rows_for_type=prune_started_rows_for_type,
         )
 
     def _reset_fetch_approval_state(

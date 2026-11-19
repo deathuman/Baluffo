@@ -11,7 +11,11 @@ from typing import Any
 import pytest
 
 import src.source_sync_shard as shard_mod
-from src.source_sync_shard import push_sharded_snapshot
+from src.source_sync_shard import (
+    build_sharded_snapshot_bundle,
+    prune_unreferenced_shards,
+    push_sharded_snapshot,
+)
 from tests.helpers.git_data_sync_module import GitDataSyncModule
 from tests.helpers.report_state import simple_config
 
@@ -204,3 +208,88 @@ def test_prune_leaves_shards_alone_when_retention_is_unavailable(
     assert any("retention unavailable" in warning for warning in second["warnings"])
     assert module.deleted_paths == []
     assert all(path in module.branch_tree() for path in first_paths)
+
+
+def test_gc_lists_shards_from_the_git_tree_past_the_contents_cap() -> None:
+    """The branch tree, not the capped Contents listing, is the deletion set."""
+    module = GitDataSyncModule()
+    old_paths = [
+        f"baluffo/source-sync/shards/active/a/old-{index:04d}.json.gz" for index in range(1001)
+    ]
+    for path in old_paths:
+        module.tree_by_sha["base-tree"][path] = f"old-sha-{path.rsplit('/', 1)[-1]}"
+
+    result = _push(
+        module,
+        _snapshot(
+            url="https://cap.example/jobs",
+            name="Cap Studio",
+            generated_at="2026-05-12T10:00:00+00:00",
+        ),
+        gc_delete_limit=2000,
+    )
+
+    assert result["pushed"] is True
+    assert result["gc"]["deletedCount"] == len(old_paths)
+    assert set(module.deleted_paths) == set(old_paths)
+    assert not [
+        call
+        for call in module.calls
+        if str(call.get("method")) == "GET"
+        and "/contents/baluffo/source-sync/shards" in str(call.get("url") or "")
+    ]
+    assert any(
+        str(call.get("method")) == "GET" and "/git/trees/" in str(call.get("url") or "")
+        for call in module.calls
+    )
+
+
+def test_gc_refuses_a_truncated_tree_listing() -> None:
+    module = GitDataSyncModule()
+    module.tree_listing_truncated = True
+    manifest = build_sharded_snapshot_bundle(
+        _snapshot(
+            url="https://truncated.example/jobs",
+            name="Truncated Studio",
+            generated_at="2026-05-12T10:00:00+00:00",
+        ),
+        max_shard_size=10_000,
+    )["manifest"]
+
+    with pytest.raises(RuntimeError, match="truncated"):
+        prune_unreferenced_shards(
+            module,
+            simple_config(),
+            manifest,
+            retain_generations=0,
+            opener=lambda *_args, **_kwargs: None,
+        )
+
+    assert module.deleted_paths == []
+
+
+def test_push_warns_when_the_gc_listing_is_truncated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old_path = "baluffo/source-sync/shards/active/old/oldsha.json.gz"
+    module = GitDataSyncModule()
+    module.tree_by_sha["base-tree"][old_path] = "old-remote-sha"
+
+    def truncated_listing(*_args, **_kwargs) -> list[dict[str, Any]]:
+        raise RuntimeError("source-sync shard GC listing is truncated")
+
+    monkeypatch.setattr("src.source_sync_shard_gc._list_shard_tree", truncated_listing)
+    result = _push(
+        module,
+        _snapshot(
+            url="https://truncated-warning.example/jobs",
+            name="Truncated Warning Studio",
+            generated_at="2026-05-12T10:00:00+00:00",
+        ),
+    )
+
+    assert result["pushed"] is True
+    assert result["gc"]["deletedCount"] == 0
+    assert result["gc"]["deletedPaths"] == []
+    assert any("truncated" in warning for warning in result["warnings"])
+    assert module.deleted_paths == []

@@ -685,11 +685,20 @@ class SyncService:
             )
 
         with timing.record_stage("summarizeSnapshot"):
-            counts = {
-                "active": len(snapshot.get("active") or []),
-                "pending": len(snapshot.get("pending") or []),
-                "rejected": len(state.get("rejected") or []),
-            }
+            result_counts = as_json_object(result.get("counts"))
+            counts = (
+                {
+                    "active": int(result_counts.get("active") or 0),
+                    "pending": int(result_counts.get("pending") or 0),
+                    "rejected": int(result_counts.get("rejected") or 0),
+                }
+                if result_counts
+                else {
+                    "active": len(snapshot.get("active") or []),
+                    "pending": len(snapshot.get("pending") or []),
+                    "rejected": len(state.get("rejected") or []),
+                }
+            )
         if dry_run:
             preview_record = timing.finish(
                 {

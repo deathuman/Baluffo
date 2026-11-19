@@ -589,22 +589,30 @@ def _create_verified_generation_tree(
     mismatched_paths = [
         path for path, sha in expected_blobs.items() if observed_blobs.get(path) != sha
     ]
+    truncated = bool(verified_tree["truncated"])
+    mismatch_text = ", ".join(sorted(mismatched_paths)[:5])
     remote_requests.append(
         _remote_timing_row(
             operation="verifyTree",
             method="GET",
             path=manifest_path_text,
             started_at=verify_started_at,
-            ok=bool(verified_tree["truncated"] or not mismatched_paths),
+            ok=not truncated and not mismatched_paths,
             size_bytes=sum(int(entry["sizeBytes"] or 0) for entry in verified_tree["entries"]),
             row_count=len(expected_blobs),
-            error="" if not mismatched_paths else ", ".join(sorted(mismatched_paths)[:5]),
+            error="tree listing truncated" if truncated else mismatch_text,
         )
     )
-    if mismatched_paths and not verified_tree["truncated"]:
-        joined = ", ".join(sorted(mismatched_paths)[:5])
+    # A truncated listing cannot prove the expected blobs are in the tree, so it
+    # is a failed verification, not a pass with less detail.
+    if truncated:
         raise RuntimeError(
-            f"source-sync committed tree does not match the pushed generation: {joined}"
+            "source-sync tree verification was truncated; refusing to commit an "
+            "unverified generation"
+        )
+    if mismatched_paths:
+        raise RuntimeError(
+            f"source-sync committed tree does not match the pushed generation: {mismatch_text}"
         )
     return tree
 

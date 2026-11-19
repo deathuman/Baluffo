@@ -53,16 +53,6 @@ def test_retry_list_skips_dead_boards() -> None:
     ]
 
 
-def test_include_unrecoverable_returns_every_failed_row() -> None:
-    names = failed_source_names_from_report(REPORT, include_unrecoverable=True)
-    assert names == [
-        "static_source::blocked",
-        "static_source::dead",
-        "static_source::empty",
-        "static_source::slow",
-    ]
-
-
 def test_allowed_names_still_narrows_the_list() -> None:
     names = failed_source_names_from_report(
         REPORT, allowed_names={"static_source::blocked", "static_source::dead"}

@@ -34,3 +34,30 @@ test("admin sync preview push posts dryRun and reports the preview outcome", asy
   );
   assert.match(toasts.find(({ level }) => level === "success").message, /12 active, 3 pending/);
 });
+
+test("admin sync preview push reports a failed preview instead of a success toast", async () => {
+  const toasts = [];
+  const controller = createAdminSyncController({
+    state: { syncConfigDirty: false },
+    refs: {},
+    getBridge: async () => ({}),
+    postBridge: async () => ({ ok: false, error: "remote unavailable" }),
+    isSyncBusy: () => false,
+    setBusyFlag() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    showToast(message, level) { toasts.push({ message, level }); },
+    toLocalTime: value => value.toISOString(),
+    loadOpsHealthData: async () => {},
+    scheduleOpsHealthPolling() {},
+    escapeHtml: value => String(value)
+  });
+
+  await controller.previewPushSources();
+
+  assert.ok(
+    toasts.some(
+      ({ message, level }) => level === "error" && /remote unavailable/.test(message)
+    )
+  );
+  assert.ok(!toasts.some(({ level }) => level === "success"));
+});

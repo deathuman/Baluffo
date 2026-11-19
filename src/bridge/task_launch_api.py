@@ -62,9 +62,7 @@ from src.bridge.task_launch_fetch_lifecycle import (
     fetch_report_shell as _fetch_report_shell_fn,
 )
 from src.bridge.task_launch_fetcher_args import (
-    RETRY_SOURCES_FILE_NAME as RETRY_SOURCES_FILE_NAME,
-)
-from src.bridge.task_launch_fetcher_args import (
+    RETRY_SOURCES_FILE_NAME,
     OnlySourcesValidationError,
 )
 from src.bridge.task_launch_fetcher_args import (
@@ -505,9 +503,7 @@ class TaskLaunchApi(
         self,
         payload: RunFetcherRequest | dict[str, Any] | None = None,
         *,
-        append_run_history: Callable[[dict[str, Any]], dict[str, Any]],
         normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
-        prune_started_rows_for_type: Callable[..., None],
         run_background_script: Callable[..., int],
         save_json_atomic: Callable[[Path, Any], None],
         schema_version: int,
@@ -617,9 +613,7 @@ class TaskLaunchApi(
                         error=str(exc),
                         report_shell=report_shell,
                         previous_report=previous_report,
-                        append_run_history=append_run_history,
                         normalize_fetch_report_contract=normalize_fetch_report_contract,
-                        prune_started_rows_for_type=prune_started_rows_for_type,
                         save_json_atomic=save_json_atomic,
                         fail_lifecycle_run=fail_lifecycle_run,
                     ),

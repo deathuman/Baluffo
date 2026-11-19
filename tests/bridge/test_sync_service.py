@@ -490,6 +490,7 @@ def test_sync_service_push_forwards_dry_run_preview_without_status_write() -> No
             "dryRun": True,
             "wouldChange": True,
             "remoteReadSkipped": True,
+            "counts": {"active": 7, "pending": 2, "rejected": 1},
         }
 
         svc = SyncService(
@@ -515,6 +516,7 @@ def test_sync_service_push_forwards_dry_run_preview_without_status_write() -> No
         assert result["wouldChange"] is True
         assert result["pushed"] is False
         assert result["remoteReadSkipped"] is True
+        assert result["counts"] == {"active": 7, "pending": 2, "rejected": 1}
         assert result["timing"]["action"] == "preview"
         assert result["timing"]["wouldChange"] is True
         assert source_sync.push_kwargs["dry_run"] is True

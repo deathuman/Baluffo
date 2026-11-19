@@ -328,23 +328,26 @@ REDUNDANT_STATIC_IF_PROVIDER: list[dict[str, Any]] = [
     # answered with the studio's own tenant are listed: 13 other signature matches
     # were aggregator pages, vendor demo tenants, or dead boards and are deliberately
     # absent, so their static rows keep running instead of being suppressed.
+    # BambooHR rows carry the tenant in their listing URL, not in ``adapter``: using
+    # ``adapter`` here would suppress a studio host whenever *any* BambooHR board is
+    # registered, including an unrelated tenant.
     {
         "hosts": ["endlessstudios.com", "www.endlessstudios.com", "about.endlessstudios.com"],
         "adapter": "bamboohr",
-        "provider_id_field": "adapter",
-        "provider_id_value": "bamboohr",
+        "provider_id_field": "listing_url",
+        "provider_id_value": "https://endlessstudios.bamboohr.com/careers",
     },
     {
         "hosts": ["lbcstudios.ca", "www.lbcstudios.ca"],
         "adapter": "bamboohr",
-        "provider_id_field": "adapter",
-        "provider_id_value": "bamboohr",
+        "provider_id_field": "listing_url",
+        "provider_id_value": "https://lbcstudiosca.bamboohr.com/careers",
     },
     {
         "hosts": ["high-voltage.com", "www.high-voltage.com"],
         "adapter": "bamboohr",
-        "provider_id_field": "adapter",
-        "provider_id_value": "bamboohr",
+        "provider_id_field": "listing_url",
+        "provider_id_value": "https://highvoltagesoftware.bamboohr.com/careers",
     },
     {
         "hosts": ["keenswh.com", "www.keenswh.com"],

@@ -197,6 +197,30 @@ def test_mapped_static_row_is_suppressed_only_with_the_provider_row(
     assert "studio-static" in [row["name"] for row in kept]
 
 
+@pytest.mark.parametrize("case", CASES, ids=lambda case: case["host"])
+def test_unrelated_provider_on_the_same_adapter_does_not_suppress_the_static_row(
+    case: dict[str, str],
+) -> None:
+    """A BambooHR row for another tenant must not make this host look provider-served."""
+    static_row = {
+        "name": "studio-static",
+        "studio": "Studio",
+        "adapter": "static",
+        "pages": [case["url"]],
+        "enabledByDefault": True,
+    }
+    unrelated = [
+        row for row in DEFAULT_STUDIO_SOURCE_REGISTRY if not _provider_row_matches(row, case)
+    ] + [static_row]
+
+    kept = registry_entries(
+        "static",
+        studio_source_registry=unrelated,
+        redundant_static_rules=REDUNDANT_STATIC_IF_PROVIDER,
+    )
+    assert "studio-static" in [row["name"] for row in kept]
+
+
 def test_unmapped_static_host_is_kept() -> None:
     static_row = {
         "name": "control-static",

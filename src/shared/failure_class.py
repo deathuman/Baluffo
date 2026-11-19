@@ -7,10 +7,11 @@ different outcome?**  Retry needs that answer, which is why the vocabulary here 
 small, outcome-shaped and stable.
 
 A row carries one class.  It is chosen from the per-page ``details`` entries when the
-writer supplies them, so a family with one dead board among healthy ones is not
-labelled dead; otherwise it falls back to the concatenated ``error`` text, and finally
-to the row's ``failureBucket``.  Ties prefer the retryable class on purpose: skipping a
-recoverable source is the expensive mistake, re-running a dead one is cheap.
+writer supplies them, so a family with one dead board among many empty ones stays
+``no_jobs``; otherwise it falls back to the concatenated ``error`` text, and finally
+to the row's ``failureBucket``.  Ties prefer a transient class, then a deterministic
+outcome, then no-jobs evidence: skipping a recoverable source is the expensive
+mistake, re-running a dead one is cheap.
 """
 
 from __future__ import annotations
@@ -115,20 +116,22 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (NO_JOBS, re.compile(r"no\s+jobs\s+(?:extracted|found)|no\s+openings", re.IGNORECASE)),
 )
 
-# Ties prefer the retryable class: a 404 among timeouts must not park the source.
+# Ties prefer a transient class, then a deterministic outcome, then no-jobs evidence:
+# a 404 among timeouts must not park the source, but a 404 must still beat an equally
+# weighted "no jobs" detail row when the two describe the same page.
 _TIE_PREFERENCE: tuple[str, ...] = (
     TIMEOUT,
     BLOCKED,
     RATE_LIMITED,
     SERVER_ERROR,
     NETWORK,
-    NO_JOBS,
-    UNKNOWN,
     DEAD_BOARD,
     SITE_CHANGED,
     REDIRECT_LOOP,
     INVALID_URL,
     ATS_MISREGISTERED,
+    NO_JOBS,
+    UNKNOWN,
 )
 
 _BUCKET_TO_CLASS = {
@@ -175,6 +178,16 @@ def _text_votes(text: str) -> dict[str, int]:
     return votes
 
 
+def _merge_votes(left: dict[str, int], right: dict[str, int]) -> dict[str, int]:
+    """Combine two views of the same failure without double-counting it.
+
+    The aggregated ``error`` text routinely summarizes the per-page details. Summing
+    both would let a single detail row plus its matching error sentence outvote a
+    larger set of pages, so each class keeps the larger count from either view.
+    """
+    return {name: max(left.get(name, 0), right.get(name, 0)) for name in {*left, *right}}
+
+
 def _class_for_http_status(status: Any) -> str:
     try:
         code = int(status)
@@ -217,13 +230,9 @@ def _detail_votes(details: Any) -> dict[str, int]:
 def _dominant(votes: dict[str, int]) -> str:
     if not votes:
         return ""
-    # "nothing found" is the weakest possible evidence, so it must never outvote an
-    # explicit outcome. A static source whose page 404s but whose only detail entry
-    # says "no jobs extracted" is a dead URL, not an empty board; and a zero-yield row
-    # with an unknown bucket should inherit a concrete class when one exists.
-    informative = {name: count for name, count in votes.items() if name not in {NO_JOBS, UNKNOWN}}
-    if informative:
-        votes = informative
+    # Counts matter: one dead board in a provider family with many empty boards is a
+    # retryable family, while the same 404 tied with one "no jobs" detail row on a
+    # single-page static source is a dead URL. The tie order decides only exact ties.
     return max(
         votes.items(),
         key=lambda item: (
@@ -233,10 +242,6 @@ def _dominant(votes: dict[str, int]) -> str:
             else -len(_TIE_PREFERENCE),
         ),
     )[0]
-
-
-def classify_failure_text(text: str) -> str:
-    return _dominant(_text_votes(str(text or "")))
 
 
 def classify_source_failure(
@@ -266,9 +271,7 @@ def classify_source_failure(
     # Both sources are evidence: the detail entry describes the page the adapter
     # parsed, while the aggregated error text carries failures that never reached a
     # detail row (a 404 on the registered URL is routinely one of them).
-    votes = _detail_votes(details)
-    for name, count in _text_votes(str(error or "")).items():
-        votes[name] = votes.get(name, 0) + count
+    votes = _merge_votes(_detail_votes(details), _text_votes(str(error or "")))
     if votes:
         return _dominant(votes)
 
@@ -314,7 +317,6 @@ __all__ = [
     "SITE_CHANGED",
     "TIMEOUT",
     "UNKNOWN",
-    "classify_failure_text",
     "classify_source_failure",
     "is_retryable_failure_class",
     "is_retryable_source_row",

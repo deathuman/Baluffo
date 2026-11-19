@@ -438,8 +438,6 @@ def write_fetch_launch_failure(
     error: str,
     report_shell: dict[str, Any],
     previous_report: dict[str, Any] | None = None,
-    append_run_history: Callable[[dict[str, Any]], dict[str, Any]] = lambda row: {},
-    prune_started_rows_for_type: Callable[..., None] = lambda *_args, **_kwargs: None,
 ) -> dict[str, Any]:
     finished_at = ctx.now_iso()
     failure_summary = {"error": error, "failedSources": 1, "outputCount": 0}
