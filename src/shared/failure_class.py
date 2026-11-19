@@ -191,7 +191,8 @@ def _merge_votes(left: dict[str, int], right: dict[str, int]) -> dict[str, int]:
 def _class_for_http_status(status: Any) -> str:
     try:
         code = int(status)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # int(float("inf")) raises OverflowError, not ValueError.
         return ""
     if code in _STATUS_TO_CLASS:
         return _STATUS_TO_CLASS[code]

@@ -20,6 +20,7 @@ from src.shared.failure_class import (
     RATE_LIMITED,
     REDIRECT_LOOP,
     TIMEOUT,
+    _class_for_http_status,
     classify_source_failure,
     is_retryable_failure_class,
     resolve_failure_class,
@@ -52,6 +53,11 @@ def _classify(**overrides: object) -> str:
 )
 def test_error_text_maps_to_class(error: str, expected: str) -> None:
     assert _classify(error=error) == expected
+
+
+def test_a_non_finite_http_status_is_not_a_class() -> None:
+    """``int(float('inf'))`` raises OverflowError; an unset status must not crash."""
+    assert _class_for_http_status(float("inf")) == ""
 
 
 @pytest.mark.parametrize("name", [DEAD_BOARD, ATS_MISREGISTERED, REDIRECT_LOOP, INVALID_URL])
