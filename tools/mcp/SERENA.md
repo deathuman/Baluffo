@@ -15,35 +15,37 @@ For Codex browser inspection, use the built-in in-app Browser and Developer mode
 
 ## Install Serena
 
-Follow Serena's official `uv`-managed install path rather than marketplace installs:
+Follow Serena's official `uv`-managed install path rather than marketplace installs. The baseline is
+`uvx`, not a global `uv tool install`: every first-class client below launches Serena through `uvx`,
+which resolves the package on demand and never puts a `serena` executable on `PATH`.
 
-1. Install `uv`: <https://docs.astral.sh/uv/getting-started/installation/>
-2. Install Serena:
-
-```powershell
-uv tool install --force -p 3.13 "serena-agent"
-serena --help
-```
-
-If `serena` is not found after install, restart your shell so the `uv` tool path is available.
-For direct CLI use on Windows, the `uv`-managed executable is typically available at
-`$env:USERPROFILE\.local\bin\serena.exe`.
-
-Update Serena explicitly; normal repo checks should report stale installs, not auto-upgrade them:
+1. Install `uv`, which provides `uvx`: <https://docs.astral.sh/uv/getting-started/installation/>
+2. Confirm `uvx` resolves Serena:
 
 ```powershell
-uv tool install --force -p 3.13 "serena-agent"
-serena --version
+uvx -p 3.13 --from "serena-agent@latest" serena --version
 ```
 
-If Windows reports `serena.exe` is locked, stop only running Serena MCP processes, rerun the upgrade,
-then restart or reconnect Codex/OpenCode so they open a fresh MCP stdio transport.
+If that command is not found, restart your shell so `uvx` is on `PATH`. No global `uv tool install`
+and no `serena.exe` on `PATH` are part of this repo's baseline; a leftover `uv tool install` is
+optional and nothing here launches it.
+
+Run one-off Serena CLI commands through the same `uvx` prefix for the same reason:
+
+```powershell
+uvx -p 3.13 --from "serena-agent@latest" serena project health-check
+```
+
+The `serena-agent@latest` reference re-resolves on every launch, so updating is the next launch, not
+a separate command. Normal repo checks report the resolved version and never auto-upgrade it. If a
+long-running client keeps serving an older release, restart that client session so it opens a fresh
+MCP stdio transport and a fresh `uvx` resolution.
 
 ### Certified Local Baseline
 
 This setup was validated on Windows with:
 
-- latest `serena-agent` release resolved at setup time
+- latest `serena-agent` release resolved at setup time by `uvx`
 - Python 3.13
 - Language-server backend with `python` and `typescript`
 
@@ -75,7 +77,7 @@ Do not run `codex mcp add serena` from this repo: that command writes the user-g
 ### OpenCode
 
 OpenCode is the other first-class client for this repo.
-Baluffo already commits an `opencode.json` reference config that expects Serena on `PATH`.
+Baluffo already commits an `opencode.json` reference config that launches Serena through `uvx`.
 Use Serena's generic `ide` context here; upstream Serena does not publish an OpenCode-specific context today.
 
 Current repo launch shape (OpenCode v2 native `mcp.servers`):
@@ -95,7 +97,8 @@ Current repo launch shape (OpenCode v2 native `mcp.servers`):
 
 OpenCode v2 also still accepts the V1 `mcp.<name>` shape with `"enabled": true`, but the tracked
 file uses the native V2 shape with `mcp.servers` and no `enabled` key.
-Install Serena once, then run OpenCode from the repo root so it can use the committed repo config.
+Confirm `uvx` resolves Serena (see [Install Serena](#install-serena)), then run OpenCode from the
+repo root so it can use the committed repo config.
 The launcher resolves Serena through `uvx`, so it needs `uvx` on `PATH` rather than a `serena`
 tool install; a stale `serena.exe` install is not required.
 If OpenCode cannot start Serena, restart your shell/session so `uvx` is resolvable, or override the
@@ -112,8 +115,8 @@ treating the servers as missing.
 After installing Serena, create the repo-local project config from the repo root:
 
 ```powershell
-serena project create --language python --language typescript
-serena project health-check
+uvx -p 3.13 --from "serena-agent@latest" serena project create --language python --language typescript
+uvx -p 3.13 --from "serena-agent@latest" serena project health-check
 ```
 
 This creates `.serena/project.yml` as local-only state for this clone.
@@ -141,7 +144,7 @@ Use these checks when you want to confirm the local Serena setup is actually wor
 
 ```powershell
 Get-Content "$env:CODEX_HOME\baluffo.config.toml"
-uvx -p 3.13 --from serena-agent serena project health-check
+uvx -p 3.13 --from "serena-agent@latest" serena project health-check
 ```
 
 Expected working results in this repo:
@@ -152,6 +155,7 @@ Expected working results in this repo:
   - Python via Pyright
   - TypeScript via `typescript-language-server`
 - Serena reports the version resolved by the current unpinned package reference.
+- `python scripts/ai_env_check.py` reports `serena` as `OK` with a `via uvx` detail.
 - The repo-local Serena health-check log was written under `.serena/logs/health-checks/`.
 
 ### Verified Repo-Local Project State
@@ -163,14 +167,15 @@ Expected working results in this repo:
 ## Secondary Client Examples
 
 Cursor, Cline, and Windsurf are supported examples, but they are not the repo's primary standard.
+Each one registers the same `uvx` launch shape as the first-class clients.
 
 ### Cursor
 
 ```json
 {
   "name": "baluffo-serena",
-  "command": "serena",
-  "args": ["start-mcp-server", "--context", "ide", "--project-from-cwd"],
+  "command": "uvx",
+  "args": ["-p", "3.13", "--from", "serena-agent@latest", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
   "env": {}
 }
 ```
@@ -184,7 +189,7 @@ Cline is a supported secondary client, not a repo primary standard. It reads **u
   "mcpServers": {
     "serena": {
       "command": "uvx",
-      "args": ["-p", "3.13", "--from", "serena-agent", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
+      "args": ["-p", "3.13", "--from", "serena-agent@latest", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
       "disabled": false,
       "autoApprove": []
     }
@@ -204,8 +209,8 @@ Use the same command and args:
 {
   "mcpServers": {
     "baluffo-serena": {
-      "command": "serena",
-      "args": ["start-mcp-server", "--context", "ide", "--project-from-cwd"]
+      "command": "uvx",
+      "args": ["-p", "3.13", "--from", "serena-agent@latest", "serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"]
     }
   }
 }

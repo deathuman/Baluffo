@@ -17,10 +17,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.python_version_guard import MIN_VERSION, is_required_python
+
 REQUIRED_NODE = "25.8.0"
-REQUIRED_PYTHON = (3, 13)
 SERENA_PACKAGE = "serena-agent"
 SERENA_CLIENT_CONFIG = "opencode.json"
+BASIC_MEMORY_PACKAGE = "basic-memory"
+BASIC_MEMORY_REFRESH = f"uv tool install -p 3.13 {BASIC_MEMORY_PACKAGE}@latest --force"
 # uvx options that consume the following argument, so the probe parser can tell a
 # flag's value from the tool name uvx is about to run.
 UVX_VALUE_FLAGS = frozenset({"-p", "--python", "--from", "--with", "--index", "--python-version"})
@@ -150,51 +156,151 @@ def _serena_uvx_probe() -> list[str] | None:
     return [launcher, *prefix[1:], "--version"]
 
 
+def _serena_version_check(current: str, *, check_updates: bool, via: str, stale_hint: str) -> Check:
+    """Report a resolved Serena version, optionally against the current PyPI release."""
+    if not check_updates:
+        return Check("serena", "ok", f"{current} {via}; use --check-updates to compare PyPI")
+
+    latest = _latest_pypi_version(SERENA_PACKAGE)
+    if latest is None:
+        return Check("serena", "warn", f"{current} {via}; PyPI update check unavailable")
+    if _version_tuple(current) < _version_tuple(latest):
+        return Check("serena", "warn", f"{current} {via}; latest is {latest}; {stale_hint}")
+    return Check("serena", "ok", f"{current} {via}; current (latest {latest})")
+
+
 def _check_serena(check_updates: bool) -> Check:
-    serena = shutil.which("serena.exe") or shutil.which("serena")
-    if serena is None:
-        probe = _serena_uvx_probe()
-        if probe is None:
-            return Check(
-                "serena",
-                "fail",
-                "serena not resolvable: no executable on PATH and no uvx registration in "
-                f"{SERENA_CLIENT_CONFIG}; install with uv tool install -p 3.13 "
-                f"{SERENA_PACKAGE}@latest --prerelease=allow",
-            )
+    """Resolve Serena the way this repo's clients launch it.
+
+    ``opencode.json``, ``.agents/mcp.json`` and the Codex profile all launch Serena through
+    ``uvx``, which resolves the tool per launch and never puts a ``serena`` executable on
+    PATH. That launch shape is the documented baseline (tools/mcp/SERENA.md), so a
+    uvx-resolvable Serena is a healthy environment rather than a warning. A bare PATH
+    install still answers ``serena --version``, but no first-class client would launch it,
+    so it is reported as a warning naming the shape the clients expect.
+    """
+    probe = _serena_uvx_probe()
+    if probe is not None:
         # uvx resolves the tool on demand, so this probe can be slow on a cold cache.
         resolved = _capture(*probe, timeout=90)
         if resolved is None or resolved.returncode != 0:
             return Check("serena", "fail", _first_line(resolved))
         version = _extract_version(_first_line(resolved)) or "unknown"
+        return _serena_version_check(
+            version,
+            check_updates=check_updates,
+            via=f"via uvx ({SERENA_CLIENT_CONFIG})",
+            stale_hint="restart the client session so uvx re-resolves the latest release",
+        )
+
+    serena = shutil.which("serena.exe") or shutil.which("serena")
+    if serena is None:
         return Check(
             "serena",
-            "warn",
-            f"{version} via uvx ({SERENA_CLIENT_CONFIG}), not a uv tool install; the MCP "
-            "works, but tools/mcp/SERENA.md's uv-tool baseline and its "
-            f"`uv tool install --force -p 3.13 {SERENA_PACKAGE}` update path do not apply",
+            "fail",
+            "serena not resolvable: no uvx launch in "
+            f"{SERENA_CLIENT_CONFIG} and no serena on PATH; install uv so uvx is on PATH "
+            f'(`uvx -p 3.13 --from "{SERENA_PACKAGE}@latest" serena --version`)',
         )
     completed = _capture(serena, "--version")
     if completed is None or completed.returncode != 0:
         return Check("serena", "fail", _first_line(completed))
 
     first_line = _first_line(completed)
-    current = _extract_version(first_line)
-    if not current:
-        return Check("serena", "ok", first_line)
-    if not check_updates:
-        return Check("serena", "ok", f"{current}; use --check-updates to compare PyPI")
+    current = _extract_version(first_line) or "unknown"
+    check = _serena_version_check(
+        current,
+        check_updates=check_updates,
+        via="on PATH only, not via uvx",
+        stale_hint=f"run uv tool upgrade {SERENA_PACKAGE} --prerelease=allow",
+    )
+    if shutil.which("uvx") is None:
+        note = f"`uvx` is not on PATH and {SERENA_CLIENT_CONFIG} launches Serena through it"
+    else:
+        note = f"{SERENA_CLIENT_CONFIG} has no uvx launch for serena"
+    return Check("serena", "warn", f"{check.detail}; {note}")
 
-    latest = _latest_pypi_version(SERENA_PACKAGE)
-    if latest is None:
-        return Check("serena", "warn", f"{current}; PyPI update check unavailable")
-    if _version_tuple(current) < _version_tuple(latest):
+
+def _resolved_version(executable: str, *args: str, timeout: int = 15) -> str | None:
+    """Run ``executable`` and return the version it prints, or None when it cannot."""
+    completed = _capture(executable, *args, timeout=timeout)
+    if completed is None or completed.returncode != 0:
+        return None
+    return _extract_version(_first_line(completed))
+
+
+def _same_version(left: str, right: str) -> bool:
+    """Compare dotted versions without treating a trailing ``.0`` as a difference."""
+    left_parts, right_parts = _version_tuple(left), _version_tuple(right)
+    width = max(len(left_parts), len(right_parts))
+    return left_parts + (0,) * (width - len(left_parts)) == right_parts + (0,) * (
+        width - len(right_parts)
+    )
+
+
+def _check_basic_memory() -> Check:
+    """Compare the two Basic Memory launch shapes against each other.
+
+    tools/mcp/BASIC_MEMORY.md requires both shapes to stay on one version: every
+    first-class client launches ``uvx basic-memory@latest``, while the optional
+    bare-command examples (Cursor, Cline) launch whatever ``uv tool install`` last put on
+    PATH. Both read one ``%USERPROFILE%\\.basic-memory\\memory.db``, so the channel that
+    starts a newer release first migrates the database forward, and a lagging install then
+    dies with ``Can't locate revision``. Either version looks healthy on its own, which is
+    why the guide's rule needs a check rather than a reader.
+    """
+    uvx = shutil.which("uvx")
+    # uvx resolves the package on demand, so a cold cache makes this probe slow.
+    uvx_version = (
+        _resolved_version(uvx, f"{BASIC_MEMORY_PACKAGE}@latest", "--version", timeout=90)
+        if uvx is not None
+        else None
+    )
+
+    on_path = shutil.which("basic-memory.exe") or shutil.which("basic-memory")
+    path_version = _resolved_version(on_path, "--version") if on_path is not None else None
+
+    if uvx_version and path_version:
+        if _same_version(uvx_version, path_version):
+            return Check(
+                "basic_memory",
+                "ok",
+                f"{uvx_version} via uvx and PATH; both launch shapes agree",
+            )
         return Check(
-            "serena",
+            "basic_memory",
             "warn",
-            f"{current} installed; latest is {latest}; run uv tool upgrade serena-agent --prerelease=allow",
+            f"uvx {uvx_version} vs PATH {path_version}; both read one memory.db, so the "
+            f"newer one migrates it out from under the older; refresh with "
+            f"`{BASIC_MEMORY_REFRESH}`",
         )
-    return Check("serena", "ok", f"{current} current (latest {latest})")
+
+    if uvx_version:
+        return Check(
+            "basic_memory",
+            "warn",
+            f"{uvx_version} via uvx only; no PATH install, so the bare-command examples "
+            f"(Cursor, Cline) cannot launch it; add one with `{BASIC_MEMORY_REFRESH}`",
+        )
+
+    if path_version:
+        uvx_note = (
+            "`uvx` is not on PATH, and every first-class client launches it through uvx"
+            if uvx is None
+            else f"`uvx {BASIC_MEMORY_PACKAGE}@latest --version` did not report a version"
+        )
+        return Check(
+            "basic_memory",
+            "warn",
+            f"PATH {path_version} only; {uvx_note}; refresh with `{BASIC_MEMORY_REFRESH}`",
+        )
+
+    return Check(
+        "basic_memory",
+        "warn",
+        f"neither uvx nor PATH resolves {BASIC_MEMORY_PACKAGE}; install uv for the uvx "
+        f"clients, then `{BASIC_MEMORY_REFRESH}`",
+    )
 
 
 def _check_lockfiles() -> Check:
@@ -209,16 +315,75 @@ def _check_lockfiles() -> Check:
 
 
 def _check_node_modules() -> Check:
-    if (ROOT / "node_modules").is_dir():
-        return Check("node_modules", "ok", "node_modules present")
-    return Check("node_modules", "warn", "node_modules missing; run npm ci")
+    """Verify the installed tree, not just the directory.
+
+    ``node_modules`` being a directory reported a false green: a half-finished or
+    corrupted install (interrupted ``npm ci``, a stale lockfile, a removed dependency)
+    leaves the folder in place while imports fail at runtime. Run ``npm ls`` so the
+    check reflects whether the tree actually satisfies ``package.json``.
+    """
+    if not (ROOT / "node_modules").is_dir():
+        return Check("node_modules", "warn", "node_modules missing; run npm ci")
+
+    npm = shutil.which("npm.cmd") or shutil.which("npm")
+    if npm is None:
+        return Check("node_modules", "warn", "npm not found; cannot verify node_modules")
+
+    completed = _capture(npm, "ls", "--depth=0", "--offline", timeout=30)
+    if completed is None or completed.returncode != 0:
+        return Check(
+            "node_modules", "warn", f"node_modules present but unusable: {_first_line(completed)}"
+        )
+    return Check("node_modules", "ok", "node_modules present and satisfies package.json")
+
+
+PYTHON_VERSION_PROBE = "import sys; print('%d.%d.%d' % sys.version_info[:3])"
 
 
 def _check_python_env() -> Check:
-    expected = ROOT / ".venv"
-    if expected.exists():
-        return Check("python_env", "ok", ".venv present")
-    return Check("python_env", "warn", ".venv missing; create/sync local Python env")
+    """Verify the venv runs Python at the repo's pinned version.
+
+    Directory existence alone reported a false green: this clone's ``.venv`` is a Linux/WSL
+    venv whose ``bin/python`` points at a ``/usr/bin/python3`` that does not exist on Windows,
+    so every ``python -m ...`` inside it failed while the preflight called the environment
+    ready. Presence is read with ``lstat`` because ``exists()`` raises ``OSError`` on those
+    broken links instead of answering; a present interpreter is then run, and the version it
+    prints is compared with the pin in ``src/python_version_guard.py``.
+    """
+    venv = ROOT / ".venv"
+    if not venv.is_dir():
+        return Check("python_env", "warn", ".venv missing; create/sync local Python env")
+
+    pinned = f"{MIN_VERSION[0]}.{MIN_VERSION[1]}+"
+    problems: list[str] = []
+    for relative in ("Scripts/python.exe", "bin/python"):  # Windows and POSIX layouts
+        interpreter = venv / relative
+        try:
+            interpreter.lstat()
+        except OSError:
+            continue
+        version = _resolved_version(str(interpreter), "-c", PYTHON_VERSION_PROBE)
+        if version is None:
+            problems.append(f"{relative} is not runnable here")
+        elif not is_required_python(_version_tuple(version)):
+            problems.append(f"{relative} reports Python {version}, needs {pinned}")
+        else:
+            return Check(
+                "python_env", "ok", f".venv {version} runnable ({relative}), meets {pinned}"
+            )
+
+    if not problems:
+        return Check(
+            "python_env",
+            "warn",
+            f".venv has no Scripts/python.exe or bin/python; recreate it for this OS "
+            f"(needs Python {pinned})",
+        )
+    return Check(
+        "python_env",
+        "warn",
+        f".venv unusable: {'; '.join(problems)}; recreate it for this OS (needs Python {pinned})",
+    )
 
 
 def _check_git_hooks() -> Check:
@@ -342,6 +507,7 @@ def _checks(*, smoke: bool, check_updates: bool) -> list[Check]:
         _check_node(),
         _check_npm(),
         _check_serena(check_updates),
+        _check_basic_memory(),
         _check_lockfiles(),
         _check_node_modules(),
         _check_python_env(),

@@ -5,7 +5,7 @@
 > - **Canonical for:** AI-coder environment checks, local toolbelt setup, and setup drift triage
 > - **Not canonical for:** runtime storage contracts, release sequencing, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`WSL_SETUP.md`](WSL_SETUP.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), and [`testing.md`](testing.md) as needed
-> - **Last updated:** 2026-08-17 (Serena install unpinned to latest release)
+> - **Last updated:** 2026-11-19 (Serena baseline documented as `uvx`, matching the client registrations)
 
 This repo keeps AI-coder tooling contributor-local. These tools are not Baluffo runtime, packaging, CI, Python, Node, or pre-commit dependencies.
 
@@ -17,7 +17,10 @@ From the repo root:
 python scripts/ai_env_check.py --smoke
 ```
 
-This reports Python, Node, npm, Serena, lockfiles, local dependency folders, Git hooks, the lean AI toolbelt, Playwright, and obvious WSL path problems.
+This reports Python, Node, npm, Serena, the two Basic Memory launch shapes (it warns when
+`uvx basic-memory@latest` and the PATH install disagree), lockfiles, local dependency folders, the
+`.venv` interpreter (it is run and checked against the pinned version, not assumed from the
+directory), Git hooks, the lean AI toolbelt, Playwright, and obvious WSL path problems.
 
 For machine-readable output:
 
@@ -33,12 +36,15 @@ python scripts/ai_env_check.py --smoke --check-updates
 
 ## Serena MCP
 
-Install or update the required code-intelligence MCP:
+Serena is the required code-intelligence MCP. The repo's clients launch it through `uvx`, so the
+baseline check is that `uvx` resolves it; there is no global `uv tool install` step:
 
 ```bash
-uv tool install --force -p 3.13 "serena-agent"
-serena --version
+uvx -p 3.13 --from "serena-agent@latest" serena --version
 ```
+
+`uvx` resolves `serena-agent@latest` on each launch, so an update is the next client launch rather
+than a command.
 
 Then follow [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md) for Codex/OpenCode registration and repo-local health checks.
 

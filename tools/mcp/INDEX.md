@@ -48,8 +48,11 @@ gets `mcp__<server>__<tool>` tools directly:
   (`loadAgentDefinitions()`), then exposes them as `mcp__<server>__<tool>` tools.
 - Also loads custom `.agents/*.ts` agent definitions, auto-adds their ids to base agents'
   `spawnableAgents`, and lists them in the `@` menu.
-- This repo's `.agents/mcp.json` registers `serena` and `basic-memory` (same commands as
-  `opencode.json`). Verified 2026-08-17 on CLI 0.0.149: the client log
+- This repo's `.agents/mcp.json` registers `serena` and `basic-memory` with the same launch
+  vectors as `opencode.json` (`uvx` with `@latest` package references); only the client schema
+  differs, using `mcpServers.<name>` with `command`/`args` and `type: stdio`. `release_docs_policy`
+  fails if the two files drift apart on what they launch.
+  Verified 2026-08-17 on CLI 0.0.149: the client log
   (`~/.config/manicode/projects/Baluffo/chats/<timestamp>/log.jsonl`) shows
   `[agents] Loaded MCP servers from mcp.json` with `["serena","basic-memory"]`.
 
@@ -62,8 +65,9 @@ Re-verified 2026-08-21: the current Desktop build's MCP settings surface reads `
 file the CLI uses"), merging each configured server into the agent's tool list; new servers become
 available after adding/editing the file and reloading the app. Only the **user-scope** file is read —
 whether the Desktop build also reads repo-scoped `{cwd}/.agents/mcp.json` like the CLI is not yet
-verified. This repo works via the user-scope file (created 2026-08-21 with `serena` and `basic-memory`,
-same commands as `opencode.json`).
+verified. This repo works via the user-scope file (created 2026-08-21 with `serena` and `basic-memory`;
+keep its entries in the same `uvx` launch shape as the repo file, per
+[BASIC_MEMORY.md](BASIC_MEMORY.md) — the drift guard only covers the two tracked files).
 
 Historical baseline (Desktop 0.0.63, 2026-08-17): the orchestrator did **not** load `.agents/mcp.json`
 — `loadMCPConfig` was never called in the installed bundle — and the hosted `codebuff` engine's tool

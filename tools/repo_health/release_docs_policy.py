@@ -1222,7 +1222,12 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
     assert "repo docs stay canonical" in serena_text
     assert ".serena/" in serena_text
     assert "codex --profile baluffo" in serena_text
-    assert 'uv tool install --force -p 3.13 "serena-agent"' in serena_text
+    # The documented baseline must match how the first-class clients launch Serena:
+    # uvx resolves the package per launch, so the doc may not advertise a `uv tool install`
+    # baseline that no repo client uses.
+    assert 'uvx -p 3.13 --from "serena-agent@latest" serena --version' in serena_text
+    assert "No global `uv tool install`" in serena_text
+    assert "re-resolves on every launch" in serena_text
     assert "latest `serena-agent` release" in serena_text
     assert '"--from", "serena-agent@latest"' in serena_text
     assert "serena project create --language python --language typescript" in serena_text
@@ -1263,6 +1268,86 @@ def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -
     ]
     assert opencode["mcp"]["servers"]["basic-memory"]["command"] == [
         "uvx",
+        "basic-memory@latest",
+        "mcp",
+        "--project",
+        "baluffo-memory",
+    ]
+
+
+def test_basic_memory_doc_matches_tracked_client_launch_shapes(repo_root: Path) -> None:
+    """The guide must show the launch the tracked configs use, Codex included.
+
+    Codex is a first-class client, so it registers through ``uvx`` like the two tracked configs
+    do. A PATH ``basic-memory`` executable there would put one client on whatever
+    ``uv tool install`` last wrote while every other client follows ``@latest``.
+    """
+    basic_memory_text = (repo_root / "tools" / "mcp" / "BASIC_MEMORY.md").read_text(
+        encoding="utf-8"
+    )
+    opencode = json.loads((repo_root / "opencode.json").read_text(encoding="utf-8"))
+    uvx_command = " ".join(opencode["mcp"]["servers"]["basic-memory"]["command"])
+
+    assert uvx_command in basic_memory_text
+    assert "uv tool install -p 3.13 basic-memory@latest" in basic_memory_text
+
+    codex_section = basic_memory_text.split("### Codex CLI", 1)[1].split("### OpenCode", 1)[0]
+    assert "codex mcp add basic-memory -- uvx basic-memory@latest mcp" in codex_section
+    assert "basic-memory.exe" not in codex_section
+
+    # The version rule the launch split depends on stays reachable from the install section.
+    assert "### Keeping Both Launch Shapes on One Version" in basic_memory_text
+
+
+def test_basic_memory_recovery_documents_a_wal_safe_backup(repo_root: Path) -> None:
+    """Recovery may not back up ``memory.db`` alone: WAL holds committed pages while clients run."""
+    basic_memory_text = (repo_root / "tools" / "mcp" / "BASIC_MEMORY.md").read_text(
+        encoding="utf-8"
+    )
+
+    skew_section = basic_memory_text.split("### Migration Revision Skew", 1)[1].split(
+        "### Keeping Both Launch Shapes", 1
+    )[0]
+
+    assert "memory.db-wal" in skew_section
+    # The recovery command itself must use the backup API, not the prose around it.
+    blocks = re.findall(r"```powershell\n(.*?)```", skew_section, re.S)
+    backup_block = next((block for block in blocks if "BALUFFO_MEMORY_DB" in block), "")
+    assert ".backup(" in backup_block
+
+
+def test_tracked_mcp_configs_declare_the_same_launches(repo_root: Path) -> None:
+    opencode = json.loads((repo_root / "opencode.json").read_text(encoding="utf-8"))
+    agents = json.loads((repo_root / ".agents" / "mcp.json").read_text(encoding="utf-8"))
+
+    opencode_servers = opencode["mcp"]["servers"]
+    agents_servers = agents["mcpServers"]
+    assert set(opencode_servers) == set(agents_servers) == {"serena", "basic-memory"}
+
+    # The client schemas differ on purpose: OpenCode v2 stores a command vector with
+    # `type: local`, while `.agents/mcp.json` stores `command` + `args` with `type: stdio`.
+    assert {entry["type"] for entry in opencode_servers.values()} == {"local"}
+    assert {entry["type"] for entry in agents_servers.values()} == {"stdio"}
+
+    # Everything that decides *what launches* must match. An unpinned package reference or a PATH
+    # executable in one file but not the other starts two versions of one tool against the same
+    # local state, and nothing else in the repo reports that drift.
+    for name, entry in agents_servers.items():
+        assert entry["command"] == opencode_servers[name]["command"][0], name
+        assert entry["args"] == opencode_servers[name]["command"][1:], name
+
+    assert agents_servers["serena"]["args"] == [
+        "-p",
+        "3.13",
+        "--from",
+        "serena-agent@latest",
+        "serena",
+        "start-mcp-server",
+        "--context",
+        "ide",
+        "--project-from-cwd",
+    ]
+    assert agents_servers["basic-memory"]["args"] == [
         "basic-memory@latest",
         "mcp",
         "--project",

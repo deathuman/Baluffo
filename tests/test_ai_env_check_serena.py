@@ -98,8 +98,8 @@ def test_uvx_probe_is_none_when_launcher_is_missing(client_root, monkeypatch) ->
     assert ai_env_check._serena_uvx_probe() is None
 
 
-def test_check_reports_warn_not_fail_when_only_uvx_resolves(client_root, monkeypatch) -> None:
-    """A reachable Serena must never be a hard failure: the MCP may be serving calls."""
+def test_check_reports_ok_when_the_client_uvx_launch_resolves(client_root, monkeypatch) -> None:
+    """uvx is the documented baseline, so the launch the clients use is a clean result."""
     _write_config(
         client_root,
         [
@@ -127,6 +127,28 @@ def test_check_reports_warn_not_fail_when_only_uvx_resolves(client_root, monkeyp
         return Done()
 
     monkeypatch.setattr(ai_env_check, "_capture", fake_capture)
+    check = ai_env_check._check_serena(check_updates=False)
+
+    assert check.status == "ok"
+    assert "1.7.0" in check.detail
+    assert "uvx" in check.detail
+
+
+def test_check_warns_when_only_a_path_install_resolves(client_root, monkeypatch) -> None:
+    """A `serena` on PATH does not help the clients, which launch through uvx."""
+    _write_config(client_root, ["uvx", "--from", "serena-agent@latest", "serena"])
+    monkeypatch.setattr(
+        ai_env_check.shutil,
+        "which",
+        lambda name: "serena.exe" if name == "serena.exe" else None,
+    )
+
+    class Done:
+        returncode = 0
+        stdout = "Serena 1.7.0\n"
+        stderr = ""
+
+    monkeypatch.setattr(ai_env_check, "_capture", lambda *args, timeout=15: Done())
     check = ai_env_check._check_serena(check_updates=False)
 
     assert check.status == "warn"

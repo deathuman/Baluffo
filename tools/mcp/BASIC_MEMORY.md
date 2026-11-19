@@ -19,24 +19,49 @@ Upstream references:
 
 ## Install Basic Memory
 
-Follow the same `uv`-managed install path as Serena:
+Every first-class client launches Basic Memory through `uvx`, so install only what your clients
+need:
+
+| Launch shape | Clients | Requirement |
+|---|---|---|
+| `uvx basic-memory@latest …` | OpenCode (`opencode.json`), Freebuff CLI/Desktop (`.agents/mcp.json`) and Codex CLI — every first-class client | `uvx` on `PATH`; nothing installed |
+| `basic-memory …` | Optional: the bare-command secondary examples (Cursor, Cline) | `uv tool install -p 3.13 basic-memory@latest` |
+
+The PATH install exists only for the bare-command secondary examples. `release_docs_policy` fails
+if the two tracked repo configs ever disagree about how a server launches. Neither shape makes
+Basic Memory a Baluffo runtime, Python, Node, packaging, release, or CI dependency.
+
+Confirm `uvx` resolves Basic Memory — the only setup step OpenCode needs:
+
+```powershell
+uvx basic-memory@latest --version
+```
+
+Add the PATH install when you use a client that launches `basic-memory` bare:
 
 ```powershell
 uv tool install -p 3.13 basic-memory@latest
-basic-memory --help
+basic-memory --version
 ```
 
 If `basic-memory` or `bm` is not found after install, restart your shell so the `uv` tool path is available.
 For direct CLI use on Windows, the `uv`-managed executable is typically available at
 `$env:USERPROFILE\.local\bin\basic-memory.exe`.
 
+`basic-memory@latest` re-resolves on every `uvx` launch, so an `uvx` client updates by restarting the
+session, with no separate install or upgrade command. The PATH install only moves on
+`uv tool install` or `uv tool upgrade`, so it can sit behind the `uvx` channel. Both channels read
+one database, so see
+[Keeping Both Launch Shapes on One Version](#keeping-both-launch-shapes-on-one-version).
+
 ### Certified Local Baseline
 
 This setup was validated on Windows with:
 
-- `basic-memory` 0.23.0 (re-verified 2026-08-24 after the revision-skew fix; earlier baselines 0.21.5/0.22.1)
+- `uvx basic-memory@latest` and a PATH `uv tool install` on the same version
 - Python 3.13
-- Semantic search enabled and vector reindex validated
+- Semantic search enabled, with vector reindex validated (see
+  [Semantic Search Status](#semantic-search-status))
 
 For deterministic MCP sessions, keep Basic Memory auto-update disabled in
 `$env:USERPROFILE\.basic-memory\config.json` and update manually with a health check.
@@ -61,21 +86,28 @@ basic-memory reindex --project baluffo-memory --search
 
 ### Codex CLI
 
-Codex is a first-class client for this repo. Use Codex's MCP command flow instead of hand-editing config files:
+Codex is a first-class client for this repo and launches Basic Memory through `uvx`, the same shape
+as the repo-tracked configs, so it needs no `uv tool install`. Use Codex's MCP command flow instead
+of hand-editing config files:
 
 ```powershell
-codex mcp add basic-memory -- "$env:USERPROFILE\.local\bin\basic-memory.exe" mcp --project baluffo-memory
+codex mcp add basic-memory -- uvx basic-memory@latest mcp --project baluffo-memory
 codex mcp list
 codex mcp get basic-memory
 ```
 
-`codex mcp add` writes the user-global Codex MCP config for you. Keep that config user-local rather than committing a repo-managed Codex config file.
-A working `codex mcp get basic-memory` registration should report:
+`codex mcp add` writes the user-global Codex MCP config for you. Keep that config user-local rather
+than committing a repo-managed Codex config file. A working `codex mcp get basic-memory`
+registration should report:
 
 - `enabled: true`
 - `transport: stdio`
-- `command: $env:USERPROFILE\.local\bin\basic-memory.exe` or another user-local basic-memory executable path
-- `args: mcp --project baluffo-memory`
+- `command: uvx` (Codex may record the absolute `uvx` path it finds on `PATH`)
+- `args: basic-memory@latest mcp --project baluffo-memory`
+
+`basic-memory@latest` re-resolves on each Codex launch, so an update arrives with the next session
+rather than a command. If you edit the user-global config by hand, change only `command` and `args`
+so any tool-approval settings in the same registration survive.
 
 The `--project baluffo-memory` lock is intentional. It constrains the MCP server with
 `BASIC_MEMORY_MCP_PROJECT`, preventing accidental cross-project reads or writes if another
@@ -101,9 +133,10 @@ Baluffo already commits the `basic-memory` entry in `opencode.json`:
 
 OpenCode v2 also still accepts the V1 `mcp.<name>` shape with `"enabled": true`, but the tracked
 file uses the native V2 shape with `mcp.servers` and no `enabled` key.
-Install Basic Memory once, then run OpenCode from the repo root so it can use the committed repo config.
-The launcher resolves Basic Memory through `uvx`, so it needs `uvx` on `PATH` rather than a
-`basic-memory` tool install; a stale `basic-memory.exe` install is not required.
+There is no install step for this client. Run OpenCode from the repo root so it can use the
+committed repo config; the launcher resolves Basic Memory through `uvx`, so it needs `uvx` on
+`PATH` rather than a `basic-memory` tool install, and a stale `basic-memory.exe` install is not
+required.
 If OpenCode cannot start Basic Memory, restart your shell/session so `uvx` is resolvable, or override
 the command in machine-local client configuration. Do not commit absolute
 `basic-memory.exe` paths to `opencode.json`; the tracked file stays portable across machines.
@@ -121,6 +154,31 @@ On OpenCode v2.0.18, a directory the background service has not loaded yet can s
 run `opencode reload`, before treating the servers as missing (see the same note in
 [SERENA.md](SERENA.md)).
 
+### Freebuff CLI and Desktop
+
+`.agents/mcp.json` is tracked as well, and it launches the same two servers the same way as
+`opencode.json`:
+
+```json
+{
+  "mcpServers": {
+    "basic-memory": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["basic-memory@latest", "mcp", "--project", "baluffo-memory"]
+    }
+  }
+}
+```
+
+Only the client schema differs: `.agents/mcp.json` stores `command` + `args` with `type: stdio`,
+where OpenCode stores a `command` vector with `type: local`. Both resolve
+`uvx basic-memory@latest`, so Freebuff needs `uvx` on `PATH` and no `basic-memory` tool install. The
+client log should show `[agents] Loaded MCP servers from mcp.json` with `serena` and
+`basic-memory` in the list. Freebuff Desktop reads the user-scope `~/.agents/mcp.json` instead of
+this repo file (see [INDEX.md](INDEX.md)); keep its entries in the same launch shape, because
+`test_tracked_mcp_configs_declare_the_same_launches` only covers the two tracked files.
+
 ## Secondary Clients
 
 ### Claude Desktop
@@ -132,7 +190,7 @@ Edit `claude_desktop_config.json` (Windows: `%APPDATA%\Claude\claude_desktop_con
   "mcpServers": {
     "basic-memory": {
       "command": "uvx",
-      "args": ["basic-memory", "mcp", "--project", "baluffo-memory"]
+      "args": ["basic-memory@latest", "mcp", "--project", "baluffo-memory"]
     }
   }
 }
@@ -185,7 +243,7 @@ Add to User Settings JSON (`Ctrl+Shift+P`, `Preferences: Open User Settings (JSO
     "servers": {
       "basic-memory": {
         "command": "uvx",
-        "args": ["basic-memory", "mcp", "--project", "baluffo-memory"]
+        "args": ["basic-memory@latest", "mcp", "--project", "baluffo-memory"]
       }
     }
   }
@@ -416,23 +474,65 @@ index.
 
 Symptom: every `basic-memory` invocation fails with
 `Can't locate revision identified by '<hash>'`, and MCP clients show basic-memory disconnected
-(the stdio server dies during startup migrations). Verified 2026-08-24: the uv-tool-pinned install
-was 0.22.1 while `memory.db` had been migrated to revision `2d26b287813b` by 0.23.0 — a client
-using `uvx basic-memory` (always latest, e.g. the Claude Desktop registration) ran against the
-shared `%USERPROFILE%\.basic-memory\memory.db`.
+(the stdio server dies during startup migrations). Any client following `@latest` migrates the
+shared `%USERPROFILE%\.basic-memory\memory.db` forward, so an install pinned behind it stops
+starting.
 
-Fix: back up `memory.db`, align the pinned tool with the version that migrated the DB, then run the
-health check sequence above:
+Fix: take a WAL-safe backup, align the pinned tool with the version that migrated the DB, then run
+the health check sequence above.
+
+A plain `Copy-Item` of `memory.db` is not a backup while any client is running. In WAL mode
+committed state also lives in `memory.db-wal`, so a copy of `memory.db` alone restores an older
+database, and the recovery can then read a WAL that no longer matches it. Either stop every Basic
+Memory client and copy `memory.db`, `memory.db-wal` and `memory.db-shm` together, or let SQLite
+snapshot itself:
 
 ```powershell
-Copy-Item "$env:USERPROFILE\.basic-memory\memory.db" "$env:USERPROFILE\.basic-memory\memory.db.bak-<date>" -Force
+$env:BALUFFO_MEMORY_DB = "$env:USERPROFILE\.basic-memory\memory.db"
+@'
+import os, sqlite3, sys
+src = os.environ["BALUFFO_MEMORY_DB"]
+dst = f"{src}.bak-{sys.argv[1]}"
+with sqlite3.connect(src) as source, sqlite3.connect(dst) as target:
+    source.backup(target)
+    target.execute("PRAGMA journal_mode=DELETE")
+con = sqlite3.connect(dst)
+revision = con.execute("SELECT version_num FROM alembic_version").fetchone()
+print(dst, os.path.getsize(dst), "bytes", "revision", revision)
+print("integrity", con.execute("PRAGMA integrity_check").fetchone())
+'@ | python - (Get-Date -Format 'yyyy-MM-dd')
+```
+
+`Connection.backup()` copies through SQLite itself, so it includes commits still sitting in the WAL
+without stopping the clients, and `journal_mode=DELETE` on the copy leaves one self-contained file
+with no WAL of its own. The script prints the size, the revision it captured, and
+`integrity_check` — a backup whose revision you cannot read is not one you can restore from.
+
+```powershell
 uv tool install -p 3.13 basic-memory@latest --force
 basic-memory project list   # must not report the revision error
 ```
 
-Prevention: keep all clients on one delivery channel. Prefer the pinned `basic-memory.exe`
-(`uv tool install`) everywhere; avoid `uvx basic-memory` registrations that float to latest while
-another install is pinned.
+### Keeping Both Launch Shapes on One Version
+
+Prevention: both launch shapes read one `%USERPROFILE%\.basic-memory\memory.db`, so keep their
+versions in step instead of pinning one deliberately behind the other. `uvx basic-memory@latest`
+migrates the database forward the first time any client starts a newer release, and a PATH install
+left on an older version then fails with the revision error above. Compare the two and refresh the
+pinned tool whenever `uvx` moves ahead:
+
+```powershell
+uvx basic-memory@latest --version   # what every first-class client runs
+basic-memory --version              # what the optional bare-command examples (Cursor, Cline) run
+uv tool install -p 3.13 basic-memory@latest --force
+```
+
+A `uvx` registration alone cannot cause that error; a refreshed `uvx` client plus a stale PATH
+install does.
+
+`python scripts/ai_env_check.py` reports this as the `basic_memory` row: `ok` when both shapes print
+the same version, and `warn` — with the refresh command in the detail — when they differ or when
+only one shape resolves.
 
 ## Required Use
 
