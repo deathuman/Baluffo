@@ -348,6 +348,14 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated source loader names to run (for targeted/incremental fetches).",
     )
     parser.add_argument(
+        "--only-sources-file",
+        default="",
+        help=(
+            "Path to a newline-delimited source loader list. Used instead of "
+            "--only-sources when the list is too long for the Windows command line."
+        ),
+    )
+    parser.add_argument(
         "--no-seed-existing-output",
         action="store_true",
         help="Do not carry existing jobs into a targeted --only-sources run.",

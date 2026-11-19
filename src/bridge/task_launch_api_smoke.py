@@ -649,6 +649,7 @@ class TaskLaunchApiSmokeMixin(TaskLaunchApiState):
         prune_started_rows_for_type: Callable[..., None],
         save_json_atomic: Callable[[Path, Any], None],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
+        previous_report: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         ctx = self._build_fetch_lifecycle_context(
             normalize_fetch_report_contract=normalize_fetch_report_contract,
@@ -662,6 +663,7 @@ class TaskLaunchApiSmokeMixin(TaskLaunchApiState):
             spawn_args=spawn_args,
             error=error,
             report_shell=report_shell,
+            previous_report=previous_report,
             append_run_history=append_run_history,
             prune_started_rows_for_type=prune_started_rows_for_type,
         )

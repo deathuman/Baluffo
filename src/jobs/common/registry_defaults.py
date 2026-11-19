@@ -173,6 +173,106 @@ DEFAULT_STUDIO_SOURCE_REGISTRY: list[dict[str, Any]] = [
         "nlPriority": False,
         "enabledByDefault": True,
     },
+    # Reclassified 2026-11-18 from the 0.3.066 fetch report. Each row below was the
+    # ATS a failing static careers page actually served, verified against the live
+    # board API on that date (posting counts in the PR/commit body).
+    {
+        "name": "Endless Studios (BambooHR)",
+        "studio": "Endless Studios",
+        "adapter": "bamboohr",
+        "listing_url": "https://endlessstudios.bamboohr.com/careers",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "LBC Studio (BambooHR)",
+        "studio": "LBC Studio",
+        "adapter": "bamboohr",
+        "listing_url": "https://lbcstudiosca.bamboohr.com/careers",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "High Voltage Software (BambooHR)",
+        "studio": "High Voltage Software",
+        "adapter": "bamboohr",
+        "listing_url": "https://highvoltagesoftware.bamboohr.com/careers",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Keen Software House (Greenhouse)",
+        "studio": "Keen Software House",
+        "adapter": "greenhouse",
+        "slug": "kswh",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Neowiz (Lever)",
+        "studio": "Neowiz",
+        "adapter": "lever",
+        "account": "neowiz",
+        "api_url": "https://api.lever.co/v0/postings/neowiz?mode=json",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Playco (Lever)",
+        "studio": "Playco",
+        "adapter": "lever",
+        "account": "playco",
+        "api_url": "https://api.lever.co/v0/postings/playco?mode=json",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Skydance Interactive (Lever)",
+        "studio": "Skydance Interactive",
+        "adapter": "lever",
+        "account": "skydance",
+        "api_url": "https://api.lever.co/v0/postings/skydance?mode=json",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Don't Nod (SmartRecruiters)",
+        "studio": "Don't Nod",
+        "adapter": "smartrecruiters",
+        "company_id": "dontnod",
+        "api_url": "https://api.smartrecruiters.com/v1/companies/dontnod/postings",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Unchained Entertainment (SmartRecruiters)",
+        "studio": "Unchained Entertainment",
+        "adapter": "smartrecruiters",
+        "company_id": "citystateentertainmentllc",
+        "api_url": (
+            "https://api.smartrecruiters.com/v1/companies/citystateentertainmentllc/postings"
+        ),
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Anzu.io (Workable)",
+        "studio": "Anzu.io",
+        "adapter": "workable",
+        "account": "anzu",
+        "api_url": "https://apply.workable.com/api/v1/widget/accounts/anzu?details=true",
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
+    {
+        "name": "Square Enix (Workable)",
+        "studio": "Square Enix",
+        "adapter": "workable",
+        "account": "square-enix",
+        "api_url": ("https://apply.workable.com/api/v1/widget/accounts/square-enix?details=true"),
+        "nlPriority": False,
+        "enabledByDefault": True,
+    },
 ]
 
 REDUNDANT_STATIC_IF_PROVIDER: list[dict[str, Any]] = [
@@ -223,6 +323,76 @@ REDUNDANT_STATIC_IF_PROVIDER: list[dict[str, Any]] = [
         "adapter": "jazzhr",
         "provider_id_field": "board_url",
         "provider_id_value": "https://nextlevelgames.applytojob.com/apply",
+    },
+    # Verified 2026-11-18 against the live board APIs. Only hosts whose ATS board
+    # answered with the studio's own tenant are listed: 13 other signature matches
+    # were aggregator pages, vendor demo tenants, or dead boards and are deliberately
+    # absent, so their static rows keep running instead of being suppressed.
+    {
+        "hosts": ["endlessstudios.com", "www.endlessstudios.com", "about.endlessstudios.com"],
+        "adapter": "bamboohr",
+        "provider_id_field": "adapter",
+        "provider_id_value": "bamboohr",
+    },
+    {
+        "hosts": ["lbcstudios.ca", "www.lbcstudios.ca"],
+        "adapter": "bamboohr",
+        "provider_id_field": "adapter",
+        "provider_id_value": "bamboohr",
+    },
+    {
+        "hosts": ["high-voltage.com", "www.high-voltage.com"],
+        "adapter": "bamboohr",
+        "provider_id_field": "adapter",
+        "provider_id_value": "bamboohr",
+    },
+    {
+        "hosts": ["keenswh.com", "www.keenswh.com"],
+        "adapter": "greenhouse",
+        "provider_id_field": "slug",
+        "provider_id_value": "kswh",
+    },
+    {
+        "hosts": ["neowiz.com", "www.neowiz.com"],
+        "adapter": "lever",
+        "provider_id_field": "account",
+        "provider_id_value": "neowiz",
+    },
+    {
+        "hosts": ["play.co", "www.play.co"],
+        "adapter": "lever",
+        "provider_id_field": "account",
+        "provider_id_value": "playco",
+    },
+    {
+        "hosts": ["skydance.com", "www.skydance.com"],
+        "adapter": "lever",
+        "provider_id_field": "account",
+        "provider_id_value": "skydance",
+    },
+    {
+        "hosts": ["dont-nod.com", "www.dont-nod.com"],
+        "adapter": "smartrecruiters",
+        "provider_id_field": "company_id",
+        "provider_id_value": "dontnod",
+    },
+    {
+        "hosts": ["unchained-entertainment.com", "www.unchained-entertainment.com"],
+        "adapter": "smartrecruiters",
+        "provider_id_field": "company_id",
+        "provider_id_value": "citystateentertainmentllc",
+    },
+    {
+        "hosts": ["anzu.io", "www.anzu.io"],
+        "adapter": "workable",
+        "provider_id_field": "account",
+        "provider_id_value": "anzu",
+    },
+    {
+        "hosts": ["square-enix-games.com", "www.square-enix-games.com"],
+        "adapter": "workable",
+        "provider_id_field": "account",
+        "provider_id_value": "square-enix",
     },
 ]
 

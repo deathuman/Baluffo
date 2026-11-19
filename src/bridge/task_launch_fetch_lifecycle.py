@@ -27,6 +27,8 @@ from src.bridge.task_admission import (
     get_active_lifecycle_task_metadata,
 )
 
+FETCH_LAUNCH_FAILURE_REPORT_NAME = "jobs-fetch-report.launch-failure.json"
+
 FETCH_LIFECYCLE_HEARTBEAT_MIN_INTERVAL_S = 30.0
 FETCH_LIFECYCLE_RUNNING_SOURCE_NAME_LIMIT = 3
 
@@ -177,6 +179,10 @@ def _compact_fetch_lifecycle_summary(summary: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── report shell ────────────────────────────────────────────────────
+
+
+def fetch_launch_failure_path(report_path: Path) -> Path:
+    return Path(report_path).with_name(FETCH_LAUNCH_FAILURE_REPORT_NAME)
 
 
 def fetch_report_shell(
@@ -431,8 +437,9 @@ def write_fetch_launch_failure(
     spawn_args: list[str],
     error: str,
     report_shell: dict[str, Any],
-    append_run_history: Callable[[dict[str, Any]], dict[str, Any]],
-    prune_started_rows_for_type: Callable[..., None],
+    previous_report: dict[str, Any] | None = None,
+    append_run_history: Callable[[dict[str, Any]], dict[str, Any]] = lambda row: {},
+    prune_started_rows_for_type: Callable[..., None] = lambda *_args, **_kwargs: None,
 ) -> dict[str, Any]:
     finished_at = ctx.now_iso()
     failure_summary = {"error": error, "failedSources": 1, "outputCount": 0}
@@ -443,8 +450,11 @@ def write_fetch_launch_failure(
         terminal_reason="launch_failed",
         summary=failure_summary,
     )
+    # A launch that never started owns no fetch evidence. Keep the failure in a
+    # sidecar instead of stamping a one-source stub over the last good report,
+    # which then drove Action Center health off a phantom run.
     ctx.save_json_atomic(
-        ctx.jobs_fetch_report,
+        fetch_launch_failure_path(ctx.jobs_fetch_report),
         ctx.normalize_fetch_report_contract(
             {
                 **report_shell,
@@ -466,6 +476,10 @@ def write_fetch_launch_failure(
             }
         ),
     )
+    if isinstance(previous_report, dict) and previous_report:
+        # The launch path claims the report slot with an empty shell before it
+        # spawns; put the last good report back when the spawn never happened.
+        ctx.save_json_atomic(ctx.jobs_fetch_report, previous_report)
     ctx.bridge_log(
         "error",
         "task_start_failed",
@@ -486,9 +500,11 @@ def write_fetch_launch_failure(
 
 
 __all__ = [
+    "FETCH_LAUNCH_FAILURE_REPORT_NAME",
     "FetchLifecycleContext",
     "active_fetch_start_response",
     "close_fetch_lifecycle_from_report",
+    "fetch_launch_failure_path",
     "fetch_report_shell",
     "fetch_summary_is_failed",
     "heartbeat_fetch_lifecycle_from_tasks",

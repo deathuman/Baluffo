@@ -33,6 +33,7 @@ from src.jobs.models import CanonicalJob
 from src.jobs.row_payload import row_payload
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
+from src.shared.failure_class import classify_source_failure
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
 from .pipeline_runtime_writers import bind_fetch_text_to_source
@@ -776,6 +777,16 @@ def _classify_report_outcome(
         report["failureBucket"] = failure_bucket.value
     if int(report.get("keptCount") or 0) == 0 and report["status"] != "excluded":
         report["zeroKeptClassification"] = zero_kept_classification.value
+    # Retry policy reads this, not `error`: one token per row that answers "can the
+    # same URL plausibly succeed next run?". Kept at the end so the per-page details
+    # and the failureBucket above are already in place.
+    report["failureClass"] = classify_source_failure(
+        status=report["status"],
+        kept_count=int(report.get("keptCount") or 0),
+        error=report.get("error"),
+        details=report.get("details"),
+        failure_bucket=report.get("failureBucket"),
+    )
 
 
 def execute_loader(

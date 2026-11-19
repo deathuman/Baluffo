@@ -6,7 +6,9 @@ from typing import Any
 
 from src.bridge.task_launch_fetch_lifecycle import (
     FetchLifecycleContext,
+    fetch_launch_failure_path,
     heartbeat_fetch_lifecycle_from_tasks,
+    write_fetch_launch_failure,
 )
 from tests.helpers.mutation import append_and_return
 
@@ -23,7 +25,11 @@ def _save_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _ctx(tmp_path: Path, heartbeats: list[dict[str, Any]]) -> FetchLifecycleContext:
+def _ctx(
+    tmp_path: Path,
+    heartbeats: list[dict[str, Any]],
+    failures: list[dict[str, Any]] | None = None,
+) -> FetchLifecycleContext:
     return FetchLifecycleContext(
         jobs_fetch_report=tmp_path / "jobs-fetch-report.json",
         jobs_fetch_tasks=tmp_path / "jobs-fetch-tasks.json",
@@ -36,7 +42,15 @@ def _ctx(tmp_path: Path, heartbeats: list[dict[str, Any]]) -> FetchLifecycleCont
         load_runtime_evidence=None,
         save_json_atomic=_save_json,
         finish_lifecycle_run=lambda *_args, **_kwargs: {},
-        fail_lifecycle_run=lambda *_args, **_kwargs: {},
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            append_and_return(
+                failures,
+                {"runId": run_id, "taskType": task_type, **kwargs},
+                {},
+            )
+            if failures is not None
+            else {}
+        ),
         cancel_lifecycle_run=lambda *_args, **_kwargs: {},
         heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: append_and_return(
             heartbeats, {"runId": run_id, "taskType": task_type, **kwargs}, {}
@@ -175,6 +189,67 @@ def test_fetch_lifecycle_heartbeat_gate_suppresses_same_phase_rewrites(
         "seeding_existing_output",
         "selecting_sources",
     ]
+
+
+def test_fetch_launch_failure_restores_last_good_report(tmp_path: Path) -> None:
+    failures: list[dict[str, Any]] = []
+    ctx = _ctx(tmp_path, [], failures)
+    previous = {
+        "runId": "fetch_good_1",
+        "startedAt": "2026-07-02T09:00:00+00:00",
+        "finishedAt": "2026-07-02T09:20:00+00:00",
+        "summary": {"outputCount": 40267, "failedSources": 556, "sourceCount": 2547},
+        "sources": [{"name": "google_sheets", "status": "ok", "keptCount": 30948}],
+    }
+    _save_json(tmp_path / "jobs-fetch-report.json", previous)
+    shell = {
+        "runId": "fetch_bad_1",
+        "startedAt": "2026-07-02T10:00:00+00:00",
+        "finishedAt": "",
+        "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+        "sources": [],
+    }
+
+    result = write_fetch_launch_failure(
+        ctx,
+        run_id="fetch_bad_1",
+        started_at="2026-07-02T10:00:00+00:00",
+        preset="retry_failed",
+        spawn_args=["--only-sources-file", "C:/data/.jobs-fetch-retry-sources.txt"],
+        error="[WinError 206] The filename or extension is too long",
+        report_shell=shell,
+        previous_report=previous,
+    )
+
+    assert result["started"] is False
+    assert _load_json_object(ctx.jobs_fetch_report, {}) == previous
+    failure = _load_json_object(fetch_launch_failure_path(ctx.jobs_fetch_report), {})
+    assert failure["runId"] == "fetch_bad_1"
+    assert failure["summary"]["error"].startswith("[WinError 206]")
+    assert [row["name"] for row in failure["sources"]] == ["jobs_fetcher.py"]
+    assert len(failures) == 1
+    assert failures[0]["terminal_reason"] == "launch_failed"
+    assert failures[0]["summary"]["error"].startswith("[WinError 206]")
+
+
+def test_fetch_launch_failure_without_previous_report_writes_only_the_sidecar(
+    tmp_path: Path,
+) -> None:
+    ctx = _ctx(tmp_path, [])
+    shell = {"runId": "fetch_bad_2", "startedAt": "2026-07-02T10:00:00+00:00", "sources": []}
+
+    write_fetch_launch_failure(
+        ctx,
+        run_id="fetch_bad_2",
+        started_at="2026-07-02T10:00:00+00:00",
+        preset="retry_failed",
+        spawn_args=[],
+        error="spawn denied",
+        report_shell=shell,
+    )
+
+    assert not ctx.jobs_fetch_report.exists()
+    assert fetch_launch_failure_path(ctx.jobs_fetch_report).exists()
 
 
 def test_fetch_lifecycle_heartbeat_without_gate_preserves_direct_heartbeat_behavior(

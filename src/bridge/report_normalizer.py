@@ -28,6 +28,7 @@ from src.shared.availability_report import (
     normalize_source_direct_conflicts,
     normalize_sweep_coverage,
 )
+from src.shared.failure_class import is_retryable_source_row
 from src.shared.fetch_report_normalization import (
     coerce_fetch_report_detail_row as _coerce_fetch_report_detail_row,
 )
@@ -498,8 +499,16 @@ def failed_source_names_from_report(
     report: dict[str, Any],
     *,
     allowed_names: set[str] | None = None,
+    include_unrecoverable: bool = False,
 ) -> list[str]:
-    """Extract source names with status 'error' from a normalized fetch report."""
+    """Extract source names with status 'error' from a normalized fetch report.
+
+    Retry asks for sources a re-run can plausibly help. Rows whose ``failureClass`` is
+    deterministic -- a dead board (404/410), an unsafe redirect, a malformed URL, or a
+    static page that now serves a provider signature -- are skipped: re-fetching the
+    same URL reproduces the same outcome and inflates the failure count. A row with no
+    class is kept, so an unclassified failure never drops out of Retry silently.
+    """
     sources = report.get("sources")
     if not isinstance(sources, list):
         return []
@@ -508,6 +517,8 @@ def failed_source_names_from_report(
         if not isinstance(row, dict):
             continue
         if str(row.get("status") or "").strip().lower() != "error":
+            continue
+        if not include_unrecoverable and not is_retryable_source_row(row):
             continue
         name = str(row.get("name") or "").strip()
         if allowed_names is not None and name not in allowed_names:

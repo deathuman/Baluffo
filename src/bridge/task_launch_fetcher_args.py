@@ -20,6 +20,10 @@ CONTAINER_DEFAULT_FETCH_MAX_PER_DOMAIN = 2
 CONTAINER_DEFAULT_ADAPTER_HTTP_CONCURRENCY = 16
 CONTAINER_DEFAULT_STATIC_DETAIL_CONCURRENCY = 4
 
+# Beside the fetch report; newline-delimited so a 500+ name retry stays off argv,
+# which Windows caps at 32,767 characters.
+RETRY_SOURCES_FILE_NAME = ".jobs-fetch-retry-sources.txt"
+
 
 class RunFetcherRequest(TypedDict, total=False):
     preset: str
@@ -148,6 +152,7 @@ def _apply_fetcher_preset_args(
     source_ttl: int,
     default_source_loaders: Callable[[], list[tuple[str, Any]]],
     failed_source_names_from_latest_report: Callable[[set[str] | None], list[str]],
+    write_only_sources_file: Callable[[list[str]], str],
 ) -> str:
     if preset == "incremental":
         args.extend(["--skip-successful-sources", "--source-ttl-minutes", str(source_ttl)])
@@ -156,7 +161,9 @@ def _apply_fetcher_preset_args(
         available_names = {name for name, _loader in default_source_loaders()}
         failed_names = failed_source_names_from_latest_report(available_names)
         if failed_names:
-            args.extend(["--only-sources", ",".join(failed_names)])
+            # Never join the list into argv: a full-catalogue retry is ~38k
+            # characters, past the Windows 32,767-character CreateProcess limit.
+            args.extend(["--only-sources-file", write_only_sources_file(failed_names)])
         args.extend(["--ignore-circuit-breaker"])
         return preset
     if preset == "uncapped":
@@ -238,6 +245,7 @@ def build_fetcher_args_from_payload(
     safe_int: Callable[[Any, int, int, int], int],
     default_source_loaders: Callable[[], list[tuple[str, Any]]],
     failed_source_names_from_latest_report: Callable[[set[str] | None], list[str]],
+    write_only_sources_file: Callable[[list[str]], str],
     container_mode: bool = False,
 ) -> tuple[list[str], str]:
     data = payload if isinstance(payload, dict) else {}
@@ -330,6 +338,7 @@ def build_fetcher_args_from_payload(
         source_ttl=source_ttl,
         default_source_loaders=default_source_loaders,
         failed_source_names_from_latest_report=failed_source_names_from_latest_report,
+        write_only_sources_file=write_only_sources_file,
     )
     _apply_fetcher_flag_overrides(args, data, source_ttl=source_ttl)
     _apply_only_sources_override(args, data, default_source_loaders=default_source_loaders)
@@ -352,6 +361,7 @@ def build_fetcher_extra_env_from_preset(preset: str) -> dict[str, str]:
 
 __all__ = [
     "OnlySourcesValidationError",
+    "RETRY_SOURCES_FILE_NAME",
     "RunFetcherRequest",
     "build_fetcher_args_from_payload",
     "build_fetcher_extra_env_from_preset",

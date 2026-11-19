@@ -54,11 +54,13 @@
 
 - `default`: full run with explicit runtime defaults.
 - `incremental`: enables `--skip-successful-sources` and sets the TTL window.
-- `retry_failed`: resolves failed sources from latest report, keeps deterministic ordering, filters unknown source names, and runs with `--ignore-circuit-breaker` plus `--only-sources` when the report has failed sources.
+- `retry_failed`: resolves failed sources from latest report, keeps deterministic ordering, filters unknown source names, and drops rows whose `failureClass` is deterministic — `dead_board` (404/410), `site_changed`, `redirect_loop`, `invalid_url` and `ats_misregistered` reproduce the same outcome on a re-run, so queueing them only inflates the failure count. `blocked`, `rate_limited`, `timeout`, `network`, `server_error`, `no_jobs` and unclassified rows stay in the list. It writes the filtered list newline-delimited to `.jobs-fetch-retry-sources.txt` beside the fetch report, and runs with `--ignore-circuit-breaker` plus `--only-sources-file` when the report has failed sources. The names are never joined into argv: a full-catalogue retry is ~38k characters, past the Windows 32,767-character CreateProcess limit, where the launch died with `[WinError 206]`. The fetcher fails the run if the file is missing or lists nothing rather than silently widening to every source.
 - `force_full`: full run with `--ignore-circuit-breaker`.
 - `uncapped`: aggressive admin run that bypasses freshness skips, cadence skips, and circuit-breaker quarantine and avoids admin-imposed source/concurrency narrowing while still keeping hard transport safety.
 
 Quiet mode is never implicit in a preset: `--quiet` is passed only when the request payload sets `quiet: true`.
+
+A fetch launch that fails before the child starts records `terminal_reason: launch_failed` and writes the failure shell to `jobs-fetch-report.launch-failure.json`. `jobs-fetch-report.json` is restored to the last good report, so a failed launch cannot replace published fetch evidence with a one-source stub that hides the real sources and failures.
 
 Bridge defaults:
 

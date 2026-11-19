@@ -237,6 +237,7 @@ def test_shared_fetch_defaults_propagate_to_cli_and_bridge(monkeypatch) -> None:
         ),
         default_source_loaders=lambda: [],
         failed_source_names_from_latest_report=lambda _names: [],
+        write_only_sources_file=lambda _names: "retry-sources.txt",
     )
 
     def value_after(flag: str) -> str:

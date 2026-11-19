@@ -16,6 +16,7 @@ from typing import Any
 
 from src.shared.coerce import as_float as _float_or_zero
 from src.shared.coerce import as_text as _clean_text
+from src.shared.failure_class import resolve_failure_class
 from src.shared.json_shapes import as_json_list, as_json_object
 
 FINALIZATION_TIMING_KEYS = (
@@ -248,6 +249,10 @@ def normalize_fetch_report_source_row_base(
     http_counters = _source_row_http_counters(src)
     if http_counters is not None:
         payload["httpCounters"] = http_counters
+    # Additive: a stored report written before this key backfills from the same row
+    # fields, so Retry classifies old reports too instead of treating every source as
+    # unclassified and re-queuing the dead ones.
+    payload["failureClass"] = resolve_failure_class(src)
     return payload
 
 

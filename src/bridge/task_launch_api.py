@@ -62,6 +62,9 @@ from src.bridge.task_launch_fetch_lifecycle import (
     fetch_report_shell as _fetch_report_shell_fn,
 )
 from src.bridge.task_launch_fetcher_args import (
+    RETRY_SOURCES_FILE_NAME as RETRY_SOURCES_FILE_NAME,
+)
+from src.bridge.task_launch_fetcher_args import (
     OnlySourcesValidationError,
 )
 from src.bridge.task_launch_fetcher_args import (
@@ -244,8 +247,16 @@ class TaskLaunchApi(
             safe_int=self._deps.safe_int,
             default_source_loaders=self._deps.default_source_loaders,
             failed_source_names_from_latest_report=self._deps.failed_source_names_from_latest_report,
+            write_only_sources_file=self._write_fetcher_retry_sources_file,
             container_mode=bool(getattr(self._runtime, "container_mode", False)),
         )
+
+    def _write_fetcher_retry_sources_file(self, names: list[str]) -> str:
+        # A full-catalogue retry list is ~38k characters; argv cannot carry it.
+        path = self._paths.jobs_fetch_report.parent / RETRY_SOURCES_FILE_NAME
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(names) + "\n", encoding="utf-8", newline="\n")
+        return str(path)
 
     def build_fetcher_extra_env_from_preset(self, preset: str) -> dict[str, str]:
         return _build_fetcher_extra_env_from_preset(preset)
@@ -555,6 +566,11 @@ class TaskLaunchApi(
             report_shell = self._fetch_report_shell(
                 run_id=run_id, started_at=started_at, schema_version=schema_version
             )
+            # The shell below claims the report slot before the spawn, so hold the
+            # last good report to restore if the spawn never happens.
+            previous_report = load_json_object(self._paths.jobs_fetch_report, None)
+            if not isinstance(previous_report, dict) or not previous_report:
+                previous_report = None
             if self._packaged_smoke_fetch_source_runs_enabled():
                 return cast(
                     TaskStartResponse,
@@ -600,6 +616,7 @@ class TaskLaunchApi(
                         spawn_args=spawn_args,
                         error=str(exc),
                         report_shell=report_shell,
+                        previous_report=previous_report,
                         append_run_history=append_run_history,
                         normalize_fetch_report_contract=normalize_fetch_report_contract,
                         prune_started_rows_for_type=prune_started_rows_for_type,

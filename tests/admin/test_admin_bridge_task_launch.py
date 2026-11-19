@@ -22,6 +22,7 @@ class _FetcherArgsCase:
     expected_present: tuple[str, ...] = ()
     expected_absent: tuple[str, ...] = ()
     expected_values: tuple[tuple[str, str], ...] = ()
+    expected_only_sources_lines: tuple[str, ...] | None = None
 
 
 def _jobs_fetch_report_path(data_root: Path) -> Path:
@@ -51,6 +52,13 @@ def _run_fetcher_args_case(case: _FetcherArgsCase, data_root: Path) -> None:
     for option, value in case.expected_values:
         assert option in args
         assert args[args.index(option) + 1] == value
+    if case.expected_only_sources_lines is not None:
+        assert "--only-sources" not in args
+        list_path = Path(args[args.index("--only-sources-file") + 1])
+        assert list_path.parent == data_root
+        assert list_path.read_text(encoding="utf-8").splitlines() == list(
+            case.expected_only_sources_lines
+        )
 
 
 FETCHER_ARGS_CASES = [
@@ -71,13 +79,13 @@ FETCHER_ARGS_CASES = [
                 ],
             },
             expected_present=(
-                "--only-sources",
+                "--only-sources-file",
                 "--ignore-circuit-breaker",
                 "--fetch-strategy",
                 "--adapter-http-concurrency",
             ),
-            expected_absent=("--quiet",),
-            expected_values=(("--only-sources", "google_sheets,remote_ok"),),
+            expected_absent=("--quiet", "--only-sources"),
+            expected_only_sources_lines=("google_sheets", "remote_ok"),
         ),
         id="retry-failed-filters-unknown",
     ),
@@ -93,7 +101,7 @@ FETCHER_ARGS_CASES = [
                 ]
             },
             expected_present=("--ignore-circuit-breaker",),
-            expected_absent=("--only-sources", "--quiet"),
+            expected_absent=("--only-sources", "--only-sources-file", "--quiet"),
         ),
         id="retry-failed-without-known-failures",
     ),
@@ -507,9 +515,18 @@ def test_fetch_lifecycle_terminal_report_with_failed_sources_still_succeeds():
     ]
 
 
-def test_start_fetcher_task_spawn_failure_writes_terminal_error_report(
+def test_start_fetcher_task_spawn_failure_preserves_last_good_report(
     admin_bridge_entrypoint_root: Path,
 ) -> None:
+    previous = {
+        "runId": "fetch_previous",
+        "startedAt": "2026-03-27T13:00:00+00:00",
+        "finishedAt": "2026-03-27T13:20:00+00:00",
+        "summary": {"outputCount": 40267, "failedSources": 556, "sourceCount": 2547},
+        "sources": [{"name": "google_sheets", "status": "ok", "keptCount": 30948}],
+    }
+    save_json_atomic(_jobs_fetch_report_path(admin_bridge_entrypoint_root), previous)
+
     with mock.patch.object(
         admin_bridge,
         "run_background_script",
@@ -520,10 +537,13 @@ def test_start_fetcher_task_spawn_failure_writes_terminal_error_report(
     assert result["started"] is False
     assert str(result.get("error") or "") == "spawn denied"
     run_id = str(result.get("runId") or "")
-    report = _load_json_object(_jobs_fetch_report_path(admin_bridge_entrypoint_root), {})
-    assert str(report.get("runId") or "") == run_id
-    assert str(report.get("finishedAt") or "")
-    assert str((report.get("summary") or {}).get("error") or "") == "spawn denied"
+    assert _load_json_object(_jobs_fetch_report_path(admin_bridge_entrypoint_root), {}) == previous
+    failure = _load_json_object(
+        admin_bridge_entrypoint_root / "jobs-fetch-report.launch-failure.json", {}
+    )
+    assert str(failure.get("runId") or "") == run_id
+    assert str((failure.get("summary") or {}).get("error") or "") == "spawn denied"
+    assert [row.get("name") for row in failure.get("sources") or []] == ["jobs_fetcher.py"]
     recent_rows = admin_bridge.get_lifecycle_recent_runs()
     matching = [row for row in recent_rows if str(row.get("runId") or "") == run_id]
     assert len(matching) == 1
@@ -531,6 +551,48 @@ def test_start_fetcher_task_spawn_failure_writes_terminal_error_report(
     assert str(matching[0].get("lifecycleStatus") or "") == "failed"
     assert str((matching[0].get("summary") or {}).get("error") or "") == "spawn denied"
     assert admin_bridge.load_run_history() == []
+
+
+def test_start_fetcher_task_spawn_failure_without_previous_report_writes_no_stub(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    with mock.patch.object(
+        admin_bridge,
+        "run_background_script",
+        side_effect=OSError("spawn denied"),
+    ):
+        result = admin_bridge.start_fetcher_task({})
+
+    assert result["started"] is False
+    report = _load_json_object(_jobs_fetch_report_path(admin_bridge_entrypoint_root), {})
+    assert [row.get("name") for row in report.get("sources") or []] == []
+    assert "jobs_fetcher.py" not in json.dumps(report)
+
+
+def test_retry_failed_passes_large_source_list_out_of_band(
+    admin_bridge_entrypoint_root: Path,
+) -> None:
+    names = [
+        f"static_source::static:listing_url:https://studio-{index:04d}.example/careers/open-roles"
+        for index in range(556)
+    ]
+    save_json_atomic(
+        _jobs_fetch_report_path(admin_bridge_entrypoint_root),
+        {"sources": [{"name": name, "status": "error"} for name in names]},
+    )
+    loaders: list[tuple[str, Any]] = [(name, (lambda **_: [])) for name in names]
+
+    with mock.patch.object(admin_bridge, "default_source_loaders", return_value=loaders):
+        args, preset = admin_bridge.build_fetcher_args_from_payload({"preset": "retry_failed"})
+
+    assert preset == "retry_failed"
+    assert "--only-sources" not in args
+    assert "--only-sources-file" in args
+    # The whole command line must stay under the Windows CreateProcess limit,
+    # where the old comma-joined list died with WinError 206.
+    assert sum(len(argument) + 1 for argument in args) < 32767
+    list_path = Path(args[args.index("--only-sources-file") + 1])
+    assert list_path.read_text(encoding="utf-8").splitlines() == sorted(names, key=str.lower)
 
 
 def test_start_fetcher_task_unexpected_spawn_failure_is_not_swallowed():

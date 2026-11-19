@@ -51,6 +51,26 @@ def _only_sources_selection(
     only_sources = [
         clean_text(part) for part in str(args.only_sources or "").split(",") if clean_text(part)
     ]
+    only_sources_file = clean_text(getattr(args, "only_sources_file", ""))
+    if only_sources_file:
+        # A failed-source retry can name 500+ long static URLs. Joined into
+        # --only-sources that argv exceeds the Windows 32,767-character limit and
+        # the launch dies with WinError 206, so the bridge writes them here.
+        # A file we cannot read, or that lists nothing, must fail the run rather
+        # than silently widening it to every source.
+        path = Path(only_sources_file).expanduser()
+        try:
+            raw_names = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise OnlySourcesSelectionError(
+                f"Cannot read --only-sources-file {path}: {exc}"
+            ) from exc
+        file_names = [clean_text(line) for line in raw_names.splitlines() if clean_text(line)]
+        if not file_names:
+            raise OnlySourcesSelectionError(
+                f"--only-sources-file {path} listed no source loader names"
+            )
+        only_sources.extend(file_names)
     if not only_sources:
         return None, False, selection_exclusions, False
     wanted = set(only_sources)
