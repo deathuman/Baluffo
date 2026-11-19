@@ -21,6 +21,18 @@ from urllib.parse import parse_qs, unquote, urlsplit
 root: Any | None = None
 
 
+def _git_blob_sha1(payload: bytes) -> str:
+    """Return the git blob object id GitHub assigns to ``payload``."""
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return hashlib.sha1(header + payload).hexdigest()  # git object ids are SHA-1 by definition
+
+
+def _git_tree_sha(files: dict[str, str]) -> str:
+    """Return a stable object id for a flat path-to-blob tree."""
+    seed = json.dumps(sorted(files.items()), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha1(b"tree\0" + seed).hexdigest()
+
+
 def _root() -> Any:
     if root is None:
         raise RuntimeError("packaged_smoke.rehearsal_sync.root is not configured")
@@ -94,6 +106,7 @@ class _PackagedSyncRehearsalHandler(http.server.BaseHTTPRequestHandler):
         branch: str,
         remote_objects: dict[str, dict[str, Any]],
         stats: dict[str, Any],
+        git_state: dict[str, Any],
         **kwargs: Any,
     ) -> None:
         self._installation_id = str(installation_id or "")
@@ -101,6 +114,7 @@ class _PackagedSyncRehearsalHandler(http.server.BaseHTTPRequestHandler):
         self._branch = str(branch or "")
         self._remote_objects = remote_objects
         self._stats = stats
+        self._git_state = git_state
         super().__init__(*args, **kwargs)
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -125,6 +139,77 @@ class _PackagedSyncRehearsalHandler(http.server.BaseHTTPRequestHandler):
         auth_header = str(self.headers.get("Authorization") or "").strip()
         return auth_header == "Bearer packaged-sync-rehearsal-token"
 
+    def _git_suffix(self) -> str:
+        prefix = f"/repos/{self._repo}/git/"
+        path = urlsplit(self.path).path
+        if not path.startswith(prefix):
+            return ""
+        return path[len(prefix) :].strip("/")
+
+    def _objects_for_ref(self, ref: str) -> dict[str, dict[str, Any]] | None:
+        """Return the object view a contents read should see for ``ref``."""
+        if not ref or ref == self._branch:
+            return self._remote_objects
+        commit = self._git_state["commitBySha"].get(ref)
+        if commit is None:
+            return None
+        blobs = self._git_state["blobs"]
+        return {
+            path: {"content": blobs[sha], "sha": sha}
+            for path, sha in commit["files"].items()
+            if sha in blobs
+        }
+
+    def _commit_payload(self, commit: dict[str, Any]) -> dict[str, Any]:
+        return {"sha": str(commit["sha"]), "commit": {"tree": {"sha": str(commit["tree"])}}}
+
+    def _handle_git_get(self, parsed: Any) -> bool:
+        """Serve the branch-commit, commit-history and git-tree reads."""
+        branch_commit = f"/repos/{self._repo}/commits/{self._branch}"
+        history = f"/repos/{self._repo}/commits"
+        if parsed.path == branch_commit:
+            if not self._authorized():
+                self._send_json({"message": "Unexpected rehearsal access token."}, status=401)
+                return True
+            head = self._git_state["commitBySha"][self._git_state["head"]]
+            self._send_json(self._commit_payload(head))
+            return True
+        if parsed.path == history:
+            if not self._authorized():
+                self._send_json({"message": "Unexpected rehearsal access token."}, status=401)
+                return True
+            try:
+                per_page = int((parse_qs(parsed.query).get("per_page") or ["1"])[0] or 1)
+            except ValueError:
+                per_page = 1
+            commits = list(reversed(self._git_state["commits"]))[: max(1, per_page)]
+            self._send_json([{"sha": str(row["sha"])} for row in commits])
+            return True
+        suffix = self._git_suffix()
+        if not suffix.startswith("trees/"):
+            return False
+        if not self._authorized():
+            self._send_json({"message": "Unexpected rehearsal access token."}, status=401)
+            return True
+        tree_sha = unquote(suffix[len("trees/") :]).strip("/")
+        files = self._git_state["trees"].get(tree_sha)
+        if files is None:
+            self._send_json({"message": "Not Found"}, status=404)
+            return True
+        blobs = self._git_state["blobs"]
+        entries = [
+            {
+                "path": path,
+                "mode": "100644",
+                "type": "blob",
+                "sha": blob_sha,
+                "size": len(blobs.get(blob_sha, b"")),
+            }
+            for path, blob_sha in sorted(files.items())
+        ]
+        self._send_json({"sha": tree_sha, "tree": entries, "truncated": False})
+        return True
+
     def _send_content_object(self, path: str, row: dict[str, Any]) -> None:
         raw = bytes(row.get("content") or b"")
         self._send_json(
@@ -147,6 +232,10 @@ class _PackagedSyncRehearsalHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlsplit(self.path)
+        git_suffix = self._git_suffix()
+        if git_suffix in {"blobs", "trees", "commits"}:
+            self._handle_git_post(git_suffix)
+            return
         expected_path = f"/app/installations/{self._installation_id}/access_tokens"
         if parsed.path != expected_path:
             self.send_error(404)
@@ -164,27 +253,113 @@ class _PackagedSyncRehearsalHandler(http.server.BaseHTTPRequestHandler):
             }
         )
 
+    def _handle_git_post(self, git_suffix: str) -> None:
+        if not self._authorized():
+            self._send_json({"message": "Unexpected rehearsal access token."}, status=401)
+            return
+        try:
+            payload = self._read_json_body()
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._send_json({"message": f"Invalid git payload: {exc}"}, status=400)
+            return
+        if git_suffix == "blobs":
+            try:
+                content = base64.b64decode(str(payload.get("content") or ""))
+            except ValueError as exc:
+                self._send_json({"message": f"Invalid blob payload: {exc}"}, status=400)
+                return
+            sha = _git_blob_sha1(content)
+            self._git_state["blobs"][sha] = content
+            self._stats["blobRequests"] = int(self._stats.get("blobRequests") or 0) + 1
+            self._stats["bytesWritten"] = int(self._stats.get("bytesWritten") or 0) + len(content)
+            self._send_json({"sha": sha}, status=201)
+            return
+        if git_suffix == "trees":
+            base_tree = str(payload.get("base_tree") or "")
+            files = dict(self._git_state["trees"].get(base_tree, {}))
+            for entry in payload.get("tree") or []:
+                if not isinstance(entry, dict):
+                    continue
+                path = str(entry.get("path") or "").replace("\\", "/").strip()
+                sha = str(entry.get("sha") or "").strip()
+                if path and sha:
+                    files[path] = sha
+            tree_sha = _git_tree_sha(files)
+            self._git_state["trees"][tree_sha] = files
+            self._stats["treeRequests"] = int(self._stats.get("treeRequests") or 0) + 1
+            self._send_json({"sha": tree_sha, "tree": [], "truncated": False}, status=201)
+            return
+        tree_sha = str(payload.get("tree") or "").strip()
+        parents = [str(parent) for parent in payload.get("parents") or [] if str(parent)]
+        files = self._git_state["trees"].get(tree_sha)
+        if files is None or not parents:
+            self._send_json({"message": "Invalid git commit payload"}, status=422)
+            return
+        commit_sha = f"commit-{len(self._git_state['commits']) + 1}"
+        commit = {
+            "sha": commit_sha,
+            "tree": tree_sha,
+            "parents": parents,
+            "files": dict(files),
+        }
+        self._git_state["commits"].append(commit)
+        self._git_state["commitBySha"][commit_sha] = commit
+        self._stats["commitRequests"] = int(self._stats.get("commitRequests") or 0) + 1
+        self._send_json({"sha": commit_sha, "tree": {"sha": tree_sha}}, status=201)
+
+    def do_PATCH(self) -> None:
+        suffix = self._git_suffix()
+        if not suffix.startswith("refs/heads/"):
+            self.send_error(404)
+            return
+        if not self._authorized():
+            self._send_json({"message": "Unexpected rehearsal access token."}, status=401)
+            return
+        try:
+            payload = self._read_json_body()
+        except (ValueError, json.JSONDecodeError) as exc:
+            self._send_json({"message": f"Invalid ref payload: {exc}"}, status=400)
+            return
+        commit_sha = str(payload.get("sha") or "").strip()
+        commit = self._git_state["commitBySha"].get(commit_sha)
+        if commit is None:
+            self._send_json({"message": "Update is not a fast forward"}, status=422)
+            return
+        self._git_state["head"] = commit_sha
+        blobs = self._git_state["blobs"]
+        self._remote_objects.clear()
+        for path, blob_sha in commit["files"].items():
+            if blob_sha in blobs:
+                self._remote_objects[path] = {"content": blobs[blob_sha], "sha": blob_sha}
+        self._stats["refUpdates"] = int(self._stats.get("refUpdates") or 0) + 1
+        self._send_json(
+            {"ref": f"refs/heads/{self._branch}", "object": {"sha": commit_sha, "type": "commit"}}
+        )
+
     def do_GET(self) -> None:
         parsed = urlsplit(self.path)
+        if self._handle_git_get(parsed):
+            return
         path = self._content_path()
         if not path:
             self.send_error(404)
             return
-        query = parse_qs(parsed.query or "")
-        if str((query.get("ref") or [""])[0]) != self._branch:
+        ref = str((parse_qs(parsed.query or "").get("ref") or [""])[0] or "")
+        objects = self._objects_for_ref(ref)
+        if objects is None:
             self._send_json({"message": "Unexpected sync branch."}, status=404)
             return
         if not self._authorized():
             self._send_json({"message": "Unexpected rehearsal access token."}, status=401)
             return
         self._stats["contentRequests"] = int(self._stats.get("contentRequests") or 0) + 1
-        if path in self._remote_objects:
-            self._send_content_object(path, self._remote_objects[path])
+        if path in objects:
+            self._send_content_object(path, objects[path])
             return
         prefix = path.rstrip("/") + "/"
         matches = [
             (object_path, row)
-            for object_path, row in sorted(self._remote_objects.items())
+            for object_path, row in sorted(objects.items())
             if object_path.startswith(prefix)
         ]
         if matches:
@@ -256,11 +431,31 @@ def _start_packaged_sync_rehearsal_server(
             "sha": "packaged-sync-rehearsal-sha",
         }
     }
+    seeded_blob_sha = _git_blob_sha1(snapshot_bytes)
+    seeded_files = {str(packaged_config.path): seeded_blob_sha}
+    seeded_tree_sha = _git_tree_sha(seeded_files)
+    seeded_commit = {
+        "sha": "commit-1",
+        "tree": seeded_tree_sha,
+        "parents": [],
+        "files": dict(seeded_files),
+    }
+    git_state: dict[str, Any] = {
+        "blobs": {seeded_blob_sha: snapshot_bytes},
+        "trees": {seeded_tree_sha: dict(seeded_files)},
+        "commits": [seeded_commit],
+        "commitBySha": {"commit-1": seeded_commit},
+        "head": "commit-1",
+    }
     stats: dict[str, Any] = {
         "tokenRequests": 0,
         "contentRequests": 0,
         "putRequests": 0,
         "deleteRequests": 0,
+        "blobRequests": 0,
+        "treeRequests": 0,
+        "commitRequests": 0,
+        "refUpdates": 0,
         "bytesWritten": 0,
         "lastJwtPrefix": "",
     }
@@ -273,6 +468,7 @@ def _start_packaged_sync_rehearsal_server(
             branch=packaged_config.branch,
             remote_objects=remote_objects,
             stats=stats,
+            git_state=git_state,
             **kwargs,
         )
 
@@ -388,8 +584,10 @@ def _check_packaged_sync_rehearsal_stats(server_stats: dict[str, Any]) -> None:
         raise RuntimeError("Packaged sync rehearsal never requested a GitHub App token.")
     if int(server_stats.get("contentRequests") or 0) <= 0:
         raise RuntimeError("Packaged sync rehearsal never read the remote snapshot content.")
-    if int(server_stats.get("putRequests") or 0) <= 0:
-        raise RuntimeError("Packaged sync rehearsal never wrote the remote snapshot content.")
+    if int(server_stats.get("blobRequests") or 0) <= 0:
+        raise RuntimeError("Packaged sync rehearsal never wrote remote sync blobs.")
+    if int(server_stats.get("refUpdates") or 0) <= 0:
+        raise RuntimeError("Packaged sync rehearsal never advanced the remote branch ref.")
 
 
 def _packaged_sync_success_result(
@@ -422,6 +620,10 @@ def _packaged_sync_success_result(
             "contentRequests": int(server_stats.get("contentRequests") or 0),
             "putRequests": int(server_stats.get("putRequests") or 0),
             "deleteRequests": int(server_stats.get("deleteRequests") or 0),
+            "blobRequests": int(server_stats.get("blobRequests") or 0),
+            "treeRequests": int(server_stats.get("treeRequests") or 0),
+            "commitRequests": int(server_stats.get("commitRequests") or 0),
+            "refUpdates": int(server_stats.get("refUpdates") or 0),
             "bytesWritten": int(server_stats.get("bytesWritten") or 0),
             "syncTest": sync_test,
             "syncPush": sync_push,

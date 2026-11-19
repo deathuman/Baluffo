@@ -374,7 +374,7 @@ def test_request_json_does_not_retry_401_when_retry_disabled(monkeypatch) -> Non
         raw_calls.append(kwargs)
         return 401, {"message": "bad credentials"}, {}
 
-    root._request_raw_json = fake_raw_request
+    root._request_raw_json_value = fake_raw_request
 
     status, body, _headers = runtime.request_json(
         root,

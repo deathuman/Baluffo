@@ -169,7 +169,7 @@ def _manifest_history_commits(
         ),
     )
     try:
-        status, payload, _headers = module._request_json(
+        status, payload, _headers = module._request_json_value(
             method="GET",
             url=url,
             config=config,

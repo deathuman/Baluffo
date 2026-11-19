@@ -681,6 +681,44 @@ def _handle_rate_limit_retry(
     )
 
 
+def request_json_value(
+    root_mod: Any,
+    *,
+    method: str,
+    url: str,
+    config: Any,
+    timeout_s: int,
+    payload: dict[str, Any] | None = None,
+    opener: Callable[..., Any],
+    allow_retry_401: bool = True,
+) -> tuple[int, Any, dict[str, str]]:
+    """Read JSON while keeping array bodies, which ``request_json`` drops."""
+    rate_limit_preflight(root_mod)
+    manager = get_auth_manager(root_mod, config)
+    token = manager.get_installation_token(opener=opener)
+    status, body, headers = root_mod._request_raw_json_value(
+        method=method,
+        url=url,
+        headers=root_mod._github_json_headers(f"Bearer {token}"),
+        timeout_s=timeout_s,
+        payload=payload,
+        opener=opener,
+    )
+    rate_limit_note_response(root_mod, status, headers, body)
+    if status == 401 and allow_retry_401:
+        token = manager.get_installation_token(opener=opener, force_refresh=True)
+        status, body, headers = root_mod._request_raw_json_value(
+            method=method,
+            url=url,
+            headers=root_mod._github_json_headers(f"Bearer {token}"),
+            timeout_s=timeout_s,
+            payload=payload,
+            opener=opener,
+        )
+        rate_limit_note_response(root_mod, status, headers, body)
+    return status, body, headers
+
+
 def request_json(
     root_mod: Any,
     *,
@@ -692,27 +730,14 @@ def request_json(
     opener: Callable[..., Any],
     allow_retry_401: bool = True,
 ) -> tuple[int, dict[str, Any], dict[str, str]]:
-    rate_limit_preflight(root_mod)
-    manager = get_auth_manager(root_mod, config)
-    token = manager.get_installation_token(opener=opener)
-    status, body, headers = root_mod._request_raw_json(
+    status, body, headers = request_json_value(
+        root_mod,
         method=method,
         url=url,
-        headers=root_mod._github_json_headers(f"Bearer {token}"),
+        config=config,
         timeout_s=timeout_s,
         payload=payload,
         opener=opener,
+        allow_retry_401=allow_retry_401,
     )
-    rate_limit_note_response(root_mod, status, headers, body)
-    if status == 401 and allow_retry_401:
-        token = manager.get_installation_token(opener=opener, force_refresh=True)
-        status, body, headers = root_mod._request_raw_json(
-            method=method,
-            url=url,
-            headers=root_mod._github_json_headers(f"Bearer {token}"),
-            timeout_s=timeout_s,
-            payload=payload,
-            opener=opener,
-        )
-        rate_limit_note_response(root_mod, status, headers, body)
-    return status, body, headers
+    return status, body if isinstance(body, dict) else {}, headers

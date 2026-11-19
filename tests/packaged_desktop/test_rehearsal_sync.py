@@ -1,5 +1,8 @@
 """Packaged desktop rehearsal tests for sync."""
 
+import hashlib
+from typing import Any
+
 from src.ship.packaged_smoke import rehearsal_sync
 
 from ._rehearsal_shared import (
@@ -104,6 +107,104 @@ def test_packaged_sync_rehearsal_server_serves_fake_github_app_flow() -> None:
                 assert response.status == 200
             assert stats["putRequests"] == 1
             assert stats["deleteRequests"] == 1
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2.0)
+
+
+def test_packaged_sync_rehearsal_server_accepts_an_atomic_git_push() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        portable_root = Path(tmp) / "portable"
+        _write_packaged_sync_bundle_config(portable_root)
+        _loaded_path, _raw_payload, packaged_config = (
+            smoke._load_portable_packaged_sync_rehearsal_config(  # noqa: SLF001
+                portable_root
+            )
+        )
+        base_url, stats, server, thread = smoke._start_packaged_sync_rehearsal_server(  # noqa: SLF001
+            packaged_config=packaged_config,
+            snapshot_payload={
+                "schemaVersion": source_sync.SYNC_SCHEMA_VERSION,
+                "generatedAt": "2026-04-19T12:00:00+00:00",
+                "source": {"name": "packaged_sync_rehearsal"},
+                "active": [],
+                "pending": [],
+                "rejected": [],
+            },
+        )
+        headers = {"Authorization": "Bearer packaged-sync-rehearsal-token"}
+        manifest_path = "baluffo/source-sync.json"
+
+        def _request(
+            url: str, *, body: dict[str, object] | None = None, method: str = "GET"
+        ) -> Any:
+            data = json.dumps(body).encode("utf-8") if body is not None else None
+            request = Request(url, data=data, headers=headers, method=method)
+            with urlopen(request, timeout=5) as response:  # noqa: S310
+                return json.loads(response.read().decode("utf-8"))
+
+        try:
+            head = _request(f"{base_url}/repos/owner/repo/commits/main")
+            assert head["sha"] == "commit-1"
+            assert head["commit"]["tree"]["sha"]
+
+            payload = json.dumps({"shards": []}, indent=2).encode("utf-8")
+            blob = _request(
+                f"{base_url}/repos/owner/repo/git/blobs",
+                body={
+                    "content": base64.b64encode(payload).decode("ascii"),
+                    "encoding": "base64",
+                },
+                method="POST",
+            )
+            expected_blob_sha = hashlib.sha1(
+                f"blob {len(payload)}\0".encode("ascii") + payload
+            ).hexdigest()
+            assert blob["sha"] == expected_blob_sha
+
+            tree = _request(
+                f"{base_url}/repos/owner/repo/git/trees",
+                body={
+                    "base_tree": head["commit"]["tree"]["sha"],
+                    "tree": [
+                        {
+                            "path": manifest_path,
+                            "mode": "100644",
+                            "type": "blob",
+                            "sha": blob["sha"],
+                        }
+                    ],
+                },
+                method="POST",
+            )
+            listing = _request(f"{base_url}/repos/owner/repo/git/trees/{tree['sha']}?recursive=1")
+            listed = {row["path"]: row["sha"] for row in listing["tree"]}
+            assert listed[manifest_path] == expected_blob_sha
+            assert listing["truncated"] is False
+
+            commit = _request(
+                f"{base_url}/repos/owner/repo/git/commits",
+                body={"message": "update", "tree": tree["sha"], "parents": [head["sha"]]},
+                method="POST",
+            )
+            ref = _request(
+                f"{base_url}/repos/owner/repo/git/refs/heads/main",
+                body={"sha": commit["sha"], "force": False},
+                method="PATCH",
+            )
+            assert ref["object"]["sha"] == commit["sha"]
+
+            content = _request(f"{base_url}/repos/owner/repo/contents/{manifest_path}?ref=main")
+            assert base64.b64decode(content["content"]) == payload
+            history = _request(
+                f"{base_url}/repos/owner/repo/commits?path={manifest_path}&sha=main&per_page=2"
+            )
+            assert [row["sha"] for row in history] == [commit["sha"], "commit-1"]
+            assert stats["blobRequests"] == 1
+            assert stats["treeRequests"] == 1
+            assert stats["commitRequests"] == 1
+            assert stats["refUpdates"] == 1
         finally:
             server.shutdown()
             server.server_close()
@@ -239,8 +340,12 @@ def test_run_packaged_sync_rehearsal_captures_performance_profile() -> None:
                     {
                         "tokenRequests": 1,
                         "contentRequests": 1,
-                        "putRequests": 1,
+                        "putRequests": 0,
                         "deleteRequests": 0,
+                        "blobRequests": 2,
+                        "treeRequests": 1,
+                        "commitRequests": 1,
+                        "refUpdates": 1,
                         "bytesWritten": 64,
                     },
                     None,

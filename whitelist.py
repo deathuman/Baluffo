@@ -28,6 +28,7 @@ _.do_OPTIONS  # unused method (src\bridge\server\handler.py:119)
 _.do_POST  # unused method (src\bridge\server\handler.py:155)
 _.do_PUT  # unused method (src\ship\packaged_smoke\rehearsal_sync.py:202)
 _.do_DELETE  # unused method (src\ship\packaged_smoke\rehearsal_sync.py:227)
+_.do_PATCH  # unused method (src\ship\packaged_smoke\rehearsal_sync.py) — ref fast-forward
 _.handle_starttag  # unused method (src\jobs\availability_validator.py) — HTMLParser callback
 _.handle_endtag  # unused method (src\jobs\availability_validator.py) — HTMLParser callback
 _.handle_data  # unused method (src\jobs\availability_validator.py) — HTMLParser callback

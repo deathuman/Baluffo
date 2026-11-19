@@ -1,18 +1,9 @@
-## [0.3.067] - 2026-11-18
+## [0.3.068] - 2026-11-19
 
 ### Fixed
 
-- Admin stops reporting a WAL checkpoint that already succeeded. The storage warning followed the last maintenance record, and only a later maintenance attempt rewrote that record, so a database whose write-ahead log had been emptied by a vacuum, a rebuild or a bulk-delete checkpoint kept showing "WAL checkpoint could not finish" next to a log that no longer existed. The warning now follows the log's live size: it clears once the file is back under the checkpoint threshold, and it stays up when either the size or the threshold is missing, because an unmeasured file is not a fixed one.
-- The storage panel quotes the sizes currently on disk instead of the sizes recorded before the last attempt, naming that attempt's own reading only when the two disagree. A resolved checkpoint no longer reads as a gigabyte log beside the database it was folded into.
-- A checkpoint that completes outside the scheduled maintenance pass now updates the maintenance record: the bulk-delete and bulk-insert passes, a backup, an install, and a vacuum that leaves the log empty. The panel can no longer show a busy attempt that already finished, and the record carries the age of that attempt, shown as "just now" for anything under a minute instead of rounding to "0m ago".
-- The Jobs page can rebuild a missing feed again. After an earlier successful full run, a lost or unreadable local feed left the page showing "Local jobs feed is missing or unreadable" because the repair request was refused as already completed. That request now rebuilds the feed when the local one is missing or unreadable, and still refuses to replace a feed the app can serve.
-
-### Changed
-
-- A browser failure that happens before any page opens now reads as "context creation" instead of being blamed on navigation, so a browser that never reached a page is described as one.
-- When Admin cannot capture the browser's own error log, it says so: it names the module it looked for and the installed Playwright version, instead of showing an empty log file that reads like a browser with nothing to report.
-
+- Source sync now prunes the shard files a push replaces. The cleanup step reads the repository's manifest history, and that read discarded any response that was a list, so every push reported the retention window as unavailable and deleted nothing; replaced shards accumulated on the remote indefinitely. The history now arrives intact, so superseded shards are removed while the generations a pull may still be reading are kept.
 ### Notes
 
-- Release preflight now runs `npm run test:frontend:packaged:jobs-feed-recovery`, which seeds a completed pipeline and a successful report with no feed, then requires the real packaged Jobs page to rebuild the feed instead of dead-ending on the missing-feed error.
-- This release changes how Admin reports storage maintenance and how the Jobs page recovers a missing feed. The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all stay as they are, and no saved job, note, or sync behaves differently.
+- Release preflight's packaged sync rehearsal now drives the atomic Git commit path a real push uses — branch head, blobs, tree, commit and ref update — instead of only the older single-file writes, so a rehearsal can no longer pass while the shipped push path goes untested.
+- This release changes how source sync cleans up replaced shard files. The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all stay as they are, and no feed, saved job, note, or synced row changes.

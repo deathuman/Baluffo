@@ -374,6 +374,10 @@ def _request_raw_json(
     )
 
 
+def _request_raw_json_value(**kwargs: Any) -> tuple[int, Any, dict[str, str]]:
+    return _source_sync_config.request_raw_json_value(_self_module(), **kwargs)
+
+
 def _parse_iso(value: Any) -> datetime | None:
     return _source_sync_runtime.parse_iso(value)
 
@@ -463,6 +467,10 @@ def _request_json(
         opener=opener,
         allow_retry_401=allow_retry_401,
     )
+
+
+def _request_json_value(**kwargs: Any) -> tuple[int, Any, dict[str, str]]:
+    return _source_sync_runtime.request_json_value(_self_module(), **kwargs)
 
 
 def normalize_snapshot(payload: dict[str, Any]) -> dict[str, Any]:

@@ -414,7 +414,7 @@ def validate_sync_config(module: Any, config: Any) -> None:
         )
 
 
-def request_raw_json(
+def request_raw_json_value(
     module: Any,
     *,
     method: str,
@@ -423,7 +423,7 @@ def request_raw_json(
     timeout_s: int,
     payload: dict[str, Any] | None = None,
     opener: Callable[..., Any] | None = None,
-) -> tuple[int, dict[str, Any], dict[str, str]]:
+) -> tuple[int, Any, dict[str, str]]:
     body: bytes | None = None
     if payload is not None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -450,7 +450,7 @@ def request_raw_json(
             parsed = json.loads(raw) if raw else {}
             return (
                 int(response.getcode() or 200),
-                parsed if isinstance(parsed, dict) else {},
+                parsed,
                 {key.lower(): str(value) for key, value in response.headers.items()},
             )
     except module.HTTPError as exc:
@@ -472,6 +472,29 @@ def request_raw_json(
         raise wrap_github_request_error(exc, prefix="Sync request failed") from exc
     except URLError as exc:
         raise wrap_github_request_error(exc, prefix="Sync request failed") from exc
+
+
+def request_raw_json(
+    module: Any,
+    *,
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    timeout_s: int,
+    payload: dict[str, Any] | None = None,
+    opener: Callable[..., Any] | None = None,
+) -> tuple[int, dict[str, Any], dict[str, str]]:
+    """Read a JSON object, dropping a response body that is not an object."""
+    status, parsed, response_headers = request_raw_json_value(
+        module,
+        method=method,
+        url=url,
+        headers=headers,
+        timeout_s=timeout_s,
+        payload=payload,
+        opener=opener,
+    )
+    return status, parsed if isinstance(parsed, dict) else {}, response_headers
 
 
 def request_raw_bytes(

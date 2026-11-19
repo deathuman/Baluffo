@@ -110,6 +110,9 @@ class GitDataSyncModule:
         if self.runtime_state and self.runtime_state[0] == code:
             self.runtime_state = None
 
+    def _request_json_value(self, **kwargs: Any) -> tuple[int, Any, dict[str, str]]:
+        return self._request_json(**kwargs)
+
     def _request_json(self, **kwargs: Any) -> tuple[int, Any, dict[str, str]]:
         with self._lock:
             self._in_flight += 1

@@ -48,6 +48,16 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.068] - 2026-11-19
+
+### Fixed
+
+- Source sync now prunes the shard files a push replaces. The cleanup step reads the repository's manifest history, and that read discarded any response that was a list, so every push reported the retention window as unavailable and deleted nothing; replaced shards accumulated on the remote indefinitely. The history now arrives intact, so superseded shards are removed while the generations a pull may still be reading are kept.
+### Notes
+
+- Release preflight's packaged sync rehearsal now drives the atomic Git commit path a real push uses — branch head, blobs, tree, commit and ref update — instead of only the older single-file writes, so a rehearsal can no longer pass while the shipped push path goes untested.
+- This release changes how source sync cleans up replaced shard files. The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all stay as they are, and no feed, saved job, note, or synced row changes.
+
 ## [0.3.067] - 2026-11-18
 
 ### Fixed
@@ -104,24 +114,3 @@ Five rules the guardrail enforces so this cannot quietly regress:
 ### Notes
 
 - The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility are unchanged. Existing feeds, saved jobs, notes, and compatibility exports are preserved.
-
-## [0.3.063] - 2026-11-15
-
-> This is a desktop rollup: it includes the guarded delete that shipped to the container
-> channel as 0.3.062, so a desktop install upgrading from 0.3.061 receives it in one step.
-
-### Changed
-
-- Deleting the retained pre-rebuild database now requires explicit confirmation and a fresh database check. The completed rebuild's generation must still match its counts and hashes, or, if a newer feed has superseded and removed it, the current published feed must match its own stored counts and hashes. A mismatch keeps the rollback copy in place, and Admin refreshes the freed-space summary after a successful delete.
-- Automatic database storage reclaim now arms itself instead of waiting to be switched on. After upgrading, a host that never set `BALUFFO_RECLAIM_AUTO_ENABLED` runs one rehearsal — a validated copy that is measured and then discarded, never installed — and, when that measurement shows the free-space margin is adequate, automatic shrinking may start on its own once a run is safe: the database reads as bloated, the copy fits in free space, and no task or compaction is running. The Runtime Database Storage panel now says why automatic starts are allowed, and Rehearse, Run and Stop work as before. To opt out, set `BALUFFO_RECLAIM_AUTO_ENABLED=0` and restart the bridge: that blocks the arming rehearsal and every automatic start, while the manual controls keep working.
-
-### Fixed
-
-- Container images now record the commit and build time they were built from, so `/ops/health` reports the identity of the running image instead of the placeholder `unknown`; a local build without a stamp reports empty strings rather than a value nobody can check.
-- The one-time delete of a retained pre-rebuild database now runs as a background storage-rebuild job. Admin starts it, can leave the page open, and polls the existing storage-rebuild status until validation and unlink finish; a duplicate start reuses the active run. Validation failure is terminal and keeps the backup. If the bridge restarts after the file was unlinked but before the delete journal was written, the next status read records the completed deletion without touching the live database or any other file.
-
-### Notes
-
-- The background-delete and reconciliation changes keep the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility unchanged. Existing feeds, saved jobs, notes, and compatibility exports are preserved; the delete remains explicitly confirmed and feed-validated.
-- Self-arming changes only when automatic reclaim may start, never what it does: a run still validates the database before installing anything, keeps the retained copy, and refuses every safety blocker. A host with `BALUFFO_RECLAIM_AUTO_ENABLED=0` behaves exactly as before, and every host can still rehearse or run by hand.
-- The guarded delete keeps the same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility unchanged. Existing feeds, saved jobs, notes, and compatibility exports are preserved; the rollback copy is removed only after the operator confirms deletion.
