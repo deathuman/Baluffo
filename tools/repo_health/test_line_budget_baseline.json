@@ -41,7 +41,7 @@
     "tests/frontend/unit/admin-ops-controller.test.mjs": 979,
     "tests/frontend/unit/admin-ops-diagnostics-render.test.mjs": 633,
     "tests/frontend/unit/admin-ops-history-render.test.mjs": 266,
-    "tests/frontend/unit/admin-registry-controller.test.mjs": 793,
+    "tests/frontend/unit/admin-registry-controller.test.mjs": 816,
     "tests/frontend/unit/admin-schedule-partial-hydration-smoke.test.mjs": 408,
     "tests/frontend/unit/admin-storage-tables-controller.test.mjs": 457,
     "tests/frontend/unit/admin-storage-tables-render.test.mjs": 544,

@@ -13,6 +13,8 @@ import {
   createDeferredWithReject as createDeferred,
   flushMicrotasks
 } from "./helpers/async-test-helpers.mjs";
+import { syncAdminBusyUi, toAdminViewState } from "../../../frontend/admin/app/busy-state.js";
+import { FETCHER_PRESET_META } from "../../../frontend/admin/app/fetcher.js";
 
 test("admin registry controller loads filtered discovery state and dispatches refresh", async () => {
   const state = {
@@ -332,45 +334,67 @@ test("admin registry controller explains hidden zero-job pending rows", async ()
   );
 });
 
-test("admin registry controller renders registry buckets when the combined source payload resolves", async () => {
-  const report = createDeferred();
-  const candidates = createDeferred();
+test("admin registry first load renders source tables and clears discoveryLoad after the lazy renderer import", async () => {
   const sources = createDeferred();
   const fixture = createRegistryControllerFixture({
+    refs: {
+      adminLoadDiscoveryBtnEl: createElement({ dataset: {} }),
+      adminDiscoveryProgressBadgeEl: createElement()
+    },
     options: {
       getBridge: path => {
         if (path === "/tasks/run-jobs-pipeline-status") return { active: false, stage: "idle" };
-        if (path === "/discovery/report") return report.promise;
-        if (path === "/discovery/candidates") return candidates.promise;
         if (String(path).startsWith("/registry/sources")) return sources.promise;
         throw new Error(`unexpected path ${path}`);
-      },
-      getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
-      renderSourcesTableHtml: rows => rows.map(row => row.name).join("|")
+      }
     }
   });
-  const controller = createAdminRegistryController(fixture.options);
+  const syncBusyUi = () => syncAdminBusyUi({
+    busyState: fixture.state.adminBusyState,
+    viewState: toAdminViewState(fixture.state.adminBusyState, { isUnlocked: true }),
+    fetcherPresetMeta: FETCHER_PRESET_META,
+    refs: { ...fixture.refs, adminSourceFilterBtnEls: [] },
+    onSyncDiscoveryLogDisclosure() {}
+  });
+  const controller = createAdminRegistryController({
+    ...fixture.options,
+    setBusyFlag: (key, value) => { fixture.state.adminBusyState[key] = value; syncBusyUi(); }
+  });
 
-  const loadPromise = controller.loadDiscoveryData(); await flushMicrotasks(2);
+  const loadPromise = controller.loadDiscoveryData({
+    sourceTablesOnly: true,
+    logChanges: false,
+    skipIfFreshMs: 10000,
+    suppressRegistryRetry: true
+  });
+  await flushMicrotasks();
+
+  // setBusyFlag mirrors runtime.js, so the badge follows the real flag transitions: the
+  // flag spans the lazy import and fetch, and the finally clears it before the row flush.
+  assert.equal(fixture.state.adminBusyState.discoveryLoad, true);
+  assert.equal(fixture.refs.adminLoadDiscoveryBtnEl.disabled, true);
+  assert.equal(fixture.refs.adminLoadDiscoveryBtnEl.textContent, "Loading Discovery...");
+  assert.equal(fixture.refs.adminDiscoveryProgressBadgeEl.textContent, "Loading Source Data");
   assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Loading pending sources/);
   assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Loading active sources/);
   assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Loading rejected sources/);
 
-  report.resolve({ summary: {} });
-  candidates.resolve({ candidates: [] });
   sources.resolve(registrySourcesPayload({
     pending: [{ id: "pending_ready", name: "Pending Ready", jobsFound: 1 }],
     active: [{ id: "active_ready", name: "Active Ready", jobsFound: 1 }],
     rejected: [{ id: "rejected_ready", name: "Rejected Ready", jobsFound: 1 }]
   }));
-  // The discovery renderer is a lazy module now, so the load promise includes its
-  // import rather than resolving within a fixed number of microtasks.
   await loadPromise;
+  assert.equal(fixture.state.adminBusyState.discoveryLoad, false);
+  assert.equal(fixture.refs.adminDiscoveryProgressBadgeEl.textContent, "Discovery Idle");
+  assert.doesNotMatch(fixture.refs.adminPendingSourcesEl.innerHTML, /Pending Ready/);
   fixture.renderScheduler.flush();
 
   assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "Pending Ready");
   assert.equal(fixture.refs.adminActiveSourcesEl.innerHTML, "Active Ready");
   assert.equal(fixture.refs.adminRejectedSourcesEl.innerHTML, "Rejected Ready");
+  assert.equal(fixture.refs.adminLoadDiscoveryBtnEl.disabled, false);
+  assert.equal(fixture.refs.adminLoadDiscoveryBtnEl.attributes["aria-disabled"], "false");
 });
 
 test("admin registry controller only logs discovery refreshes when the registry snapshot changes", async () => {
