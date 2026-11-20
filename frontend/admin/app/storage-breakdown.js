@@ -160,9 +160,13 @@ export function createStorageBreakdownController({
     }
   }
 
-  function render(tableSizes) {
+  function render(tableSizes, integrityCheck = null) {
     if (!refs.adminStorageTablesBodyEl) return;
-    refs.adminStorageTablesBodyEl.innerHTML = renderStorageTablesHtml(tableSizes, formatBytes);
+    refs.adminStorageTablesBodyEl.innerHTML = renderStorageTablesHtml(
+      tableSizes,
+      formatBytes,
+      integrityCheck
+    );
   }
 
   // The verdict is advisory here: a failed read keeps the last warning rather
@@ -1159,7 +1163,7 @@ export function createStorageBreakdownController({
     const tableSizes = storage.tableSizes || null;
     if (!tableSizes) return null;
     healthRendered = true;
-    render(tableSizes);
+    render(tableSizes, storage.integrityCheck || null);
     setStatus(
       statusText(tableSizes),
       tableSizes.status === "partial" || tableSizes.status === "unavailable" ? "warning" : ""

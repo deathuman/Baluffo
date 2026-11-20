@@ -261,6 +261,31 @@ function attemptAgeNote(storage) {
   return ` (${formatAge(seconds / 3600)})`;
 }
 
+// The live quick check is deferred above 64 MiB, so on a large store `quickCheck`
+// never answers. The background verification is the reading that can run there; this
+// note states when it last completed instead of letting a deferred check read as a
+// check that found nothing. `never` is a finding, not a blank.
+function integrityVerificationNote(storage) {
+  const check = storage?.integrityCheck;
+  // A payload from before the background verification carries no record at all, so
+  // the only claim it supports is the one it already made.
+  if (!check || typeof check !== "object") {
+    return storage?.quickCheckDeferred === true
+      ? "; integrity check deferred at this database size"
+      : "";
+  }
+  const status = String(check.status || "").trim();
+  const ageSeconds = Number(check.ageSeconds);
+  // `formatAge` already ends in "ago".
+  const when = Number.isFinite(ageSeconds) && ageSeconds >= 0
+    ? (ageSeconds < 60 ? "just now" : formatAge(ageSeconds / 3600))
+    : "";
+  if (status === "ok") return when ? `; integrity verified ${when}` : "; integrity verified";
+  if (status === "failed") return "; integrity verification failed";
+  if (status === "incomplete") return "; integrity check stopped at its time budget";
+  return "; integrity not verified yet on this database";
+}
+
 function evaluateStorageHealth(storageData) {
   if (!storageData) return null;
   const storage = storageData.storage;
@@ -285,16 +310,14 @@ function evaluateStorageHealth(storageData) {
   const failureMs = isoMs(at);
   const ageNote = attemptAgeNote(storage);
   const when = failureMs ? ` on ${formatFailureTimestamp(failureMs)}${ageNote}` : "";
-  const deferredNote = storage.quickCheckDeferred === true
-    ? "; integrity check deferred at this database size"
-    : "";
+  const integrityNote = integrityVerificationNote(storage);
   if (!unhealthy) {
     if (diagFailures === 0 && walOutstanding) {
       const dateNote = when || "; attempt date not recorded";
       return {
         id: "storage_health",
         severity: "warning",
-        summary: `${walCheckpointCopy(storage)}${dateNote}${deferredNote}`,
+        summary: `${walCheckpointCopy(storage)}${dateNote}${integrityNote}`,
         actions
       };
     }
@@ -310,8 +333,17 @@ function evaluateStorageHealth(storageData) {
   const code = String(storageReason(storage).code || "").trim();
   const reasonMessage = storageReasonMessage(storage);
 
-  if (quickCheckFailed(storage)) {
-    const detail = String(storage.quickCheck || "").trim().slice(0, 160);
+  // A background verification failure is the only integrity verdict a large store can
+  // produce: its live check is deferred, so gating this branch on `quickCheck` would
+  // report a corrupt file as a generic storage problem.
+  const verificationFailed = String(storage?.integrityCheck?.status || "").trim() === "failed";
+  if (verificationFailed || quickCheckFailed(storage)) {
+    const detail = (verificationFailed
+      ? String(storage?.integrityCheck?.result || storage?.integrityCheck?.error || "")
+      : String(storage.quickCheck || ""))
+      .trim()
+      .replace(/\s+/g, " ")
+      .slice(0, 160);
     return {
       id: "storage_health",
       severity: "critical",
@@ -329,7 +361,7 @@ function evaluateStorageHealth(storageData) {
     return {
       id: "storage_health",
       severity: "warning",
-      summary: `${walCheckpointCopy(storage)}${reasonMessage ? `: ${reasonMessage}` : ""}${dateNote}${deferredNote}`,
+      summary: `${walCheckpointCopy(storage)}${reasonMessage ? `: ${reasonMessage}` : ""}${dateNote}${integrityNote}`,
       actions
     };
   }
@@ -338,7 +370,7 @@ function evaluateStorageHealth(storageData) {
   return {
     id: "storage_health",
     severity: "critical",
-    summary: `${label}${reasonMessage ? `: ${reasonMessage}` : ""}${when}${deferredNote}`,
+    summary: `${label}${reasonMessage ? `: ${reasonMessage}` : ""}${when}${integrityNote}`,
     actions
   };
 }

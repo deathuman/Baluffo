@@ -34,6 +34,22 @@ function payload(overrides = {}) {
   };
 }
 
+test("renders the integrity verification age instead of a bare deferred check", () => {
+  const verified = renderStorageTablesHtml(payload(), formatBytes, {
+    status: "ok",
+    ageSeconds: 6 * 3600,
+    checkedAt: "2026-11-19T06:00:00.000Z"
+  });
+  assert.match(verified, /Integrity/);
+  assert.match(verified, /Verified 6 h ago/);
+
+  const never = renderStorageTablesHtml(payload(), formatBytes, {
+    status: "never",
+    ageSeconds: null
+  });
+  assert.match(never, /Never verified/);
+});
+
 test("renders estimated table sizes with share, row estimates, and pooled bytes", () => {
   const html = renderStorageTablesHtml(payload(), formatBytes);
 

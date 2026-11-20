@@ -24,6 +24,29 @@ async function storageSignalHtml(storage) {
   return refs.actionCenterItemsEl.innerHTML;
 }
 
+test("storage copy says when the file was last verified instead of only that the check was deferred", async () => {
+  const verified = await storageSignalHtml({
+    healthy: true,
+    quickCheck: "deferred-large-database",
+    quickCheckDeferred: true,
+    databaseBytes: 272695296,
+    integrityCheck: { status: "ok", ageSeconds: 6 * 3600, checkedAt: "2026-11-19T06:00:00Z" },
+    walMaintenance: { status: "busy", walBytes: 900000000 }
+  });
+  assert.match(verified, /integrity verified 6h ago/);
+  assert.doesNotMatch(verified, /integrity check deferred/);
+
+  const never = await storageSignalHtml({
+    healthy: true,
+    quickCheck: "deferred-large-database",
+    quickCheckDeferred: true,
+    databaseBytes: 272695296,
+    integrityCheck: { status: "never", ageSeconds: null, checkedAt: "" },
+    walMaintenance: { status: "busy", walBytes: 900000000 }
+  });
+  assert.match(never, /integrity not verified yet on this database/);
+});
+
 test("storage copy names the recorded cause instead of guessing an integrity failure", async () => {
   const at = new Date(Date.now() - 90 * 60 * 1000).toISOString();
   const expectedAt = `${at.slice(0, 19).replace("T", " ")} UTC`;

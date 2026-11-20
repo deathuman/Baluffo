@@ -55,6 +55,13 @@ BULK_DELETE_SECURE_DELETE = "FAST"
 # is rate-limited independently of the size check.
 DEFAULT_WAL_CHECKPOINT_COOLDOWN_S = 60.0
 DEFAULT_QUICK_CHECK_MAX_DATABASE_BYTES = 64 * 1024 * 1024
+# Past that cap the health read defers its limited check, which left a large store with
+# no integrity reading at all: `healthy` was a write-path verdict nobody had ever
+# confirmed. The store verifies the whole file in the background instead, once a day,
+# on its own connection and inside a hard time budget, and the health payload reports
+# when that last ran.
+DEFAULT_INTEGRITY_CHECK_INTERVAL_S = 24 * 60 * 60
+DEFAULT_INTEGRITY_CHECK_BUDGET_S = 120.0
 DEFAULT_VACUUM_FREELIST_THRESHOLD_BYTES = 50 * 1024 * 1024
 DEFAULT_VACUUM_FREELIST_RATIO = 0.20
 # A VACUUM rewrites the whole database, so its cost and its write-lock hold time
@@ -215,6 +222,8 @@ class BaluffoStore:
         wal_truncate_threshold_bytes: int = DEFAULT_WAL_TRUNCATE_THRESHOLD_BYTES,
         wal_checkpoint_cooldown_s: float = DEFAULT_WAL_CHECKPOINT_COOLDOWN_S,
         quick_check_max_database_bytes: int = DEFAULT_QUICK_CHECK_MAX_DATABASE_BYTES,
+        integrity_check_interval_s: float = DEFAULT_INTEGRITY_CHECK_INTERVAL_S,
+        integrity_check_budget_s: float = DEFAULT_INTEGRITY_CHECK_BUDGET_S,
         vacuum_freelist_threshold_bytes: int = DEFAULT_VACUUM_FREELIST_THRESHOLD_BYTES,
         vacuum_freelist_ratio: float = DEFAULT_VACUUM_FREELIST_RATIO,
         vacuum_large_database_bytes: int = DEFAULT_VACUUM_LARGE_DATABASE_BYTES,
@@ -243,6 +252,21 @@ class BaluffoStore:
         )
         self.wal_checkpoint_cooldown_s = max(0.0, float(wal_checkpoint_cooldown_s))
         self.quick_check_max_database_bytes = max(1, int(quick_check_max_database_bytes))
+        self.integrity_check_interval_s = max(0.0, float(integrity_check_interval_s))
+        self.integrity_check_budget_s = max(1.0, float(integrity_check_budget_s))
+        # `never` until one completes. `checkedAtEpoch` is the wall clock the age is
+        # computed from, so a reader never has to parse the ISO stamp.
+        self._last_integrity_check: dict[str, Any] = {
+            "status": "never",
+            "checkedAt": "",
+            "checkedAtEpoch": 0.0,
+            "durationMs": 0,
+            "databaseBytes": 0,
+            "budgetMs": int(self.integrity_check_budget_s * 1000),
+            "result": "",
+            "error": "",
+        }
+        self._integrity_thread: threading.Thread | None = None
         self.vacuum_freelist_threshold_bytes = max(1, int(vacuum_freelist_threshold_bytes))
         self.vacuum_freelist_ratio = max(0.01, min(1.0, float(vacuum_freelist_ratio)))
         self.vacuum_large_database_bytes = max(1, int(vacuum_large_database_bytes))
@@ -984,6 +1008,135 @@ class BaluffoStore:
         if int(sizes.get("databaseBytes") or 0) > self.quick_check_max_database_bytes:
             return "deferred-large-database", True
         return self.quick_check(limit=1), False
+
+    def integrity_check_status(self) -> dict[str, Any]:
+        """The last background verification of the whole database, with its age.
+
+        A store past the health quick-check cap never gets a live check, so this is
+        the only reading that can answer "is this file intact" at that size. It is
+        reported separately from `quickCheck` on purpose: the live field still says
+        the check was deferred, and this one says when the file was last verified --
+        or that it never has been, which a deferred check used to leave unstated.
+        """
+        with self._maintenance_lock:
+            record = dict(self._last_integrity_check)
+            thread = self._integrity_thread
+            running = bool(thread is not None and thread.is_alive())
+        checked_epoch = float(record.get("checkedAtEpoch") or 0.0)
+        age_s = int(round(time.time() - checked_epoch)) if checked_epoch > 0 else None
+        return {
+            "status": str(record.get("status") or "never"),
+            "checkedAt": str(record.get("checkedAt") or ""),
+            "ageSeconds": age_s,
+            "durationMs": int(record.get("durationMs") or 0),
+            "databaseBytes": int(record.get("databaseBytes") or 0),
+            "budgetMs": int(record.get("budgetMs") or 0),
+            "intervalSeconds": int(self.integrity_check_interval_s),
+            "result": str(record.get("result") or ""),
+            "error": str(record.get("error") or ""),
+            "running": running,
+            "due": self._integrity_check_is_due(),
+        }
+
+    def _integrity_check_is_due(self) -> bool:
+        if self.integrity_check_interval_s <= 0:
+            return False
+        with self._maintenance_lock:
+            checked_epoch = float(self._last_integrity_check.get("checkedAtEpoch") or 0.0)
+        if checked_epoch <= 0:
+            return True
+        return (time.time() - checked_epoch) >= self.integrity_check_interval_s
+
+    def schedule_integrity_check_if_due(self, *, force: bool = False) -> bool:
+        """Start one background integrity verification when one is due.
+
+        Off the request path, on its own connection, and one at a time: the health
+        read stays bounded while the file is actually read. Forces exist for an
+        operator action and for tests; a scheduled run obeys the interval.
+        """
+        if self._closed:
+            return False
+        if not force and not self._integrity_check_is_due():
+            return False
+        with self._maintenance_lock:
+            if self._integrity_thread is not None and self._integrity_thread.is_alive():
+                return False
+            thread = threading.Thread(
+                target=self._run_integrity_check,
+                kwargs={"budget_s": self.integrity_check_budget_s},
+                name="baluffo-sqlite-integrity-check",
+                daemon=True,
+            )
+            self._integrity_thread = thread
+            thread.start()
+        return True
+
+    def _integrity_probe(self, conn: sqlite3.Connection) -> str:
+        """The whole-file check. Split out so a failure path can be exercised."""
+        return str(conn.execute("PRAGMA quick_check").fetchone()[0] or "")
+
+    def _run_integrity_check(self, *, budget_s: float) -> None:
+        """Verify every page on a separate connection, inside a hard budget.
+
+        The progress handler is what makes a budget possible: SQLite cannot cancel a
+        running pragma any other way, and a store whose read is pathologically slow
+        must not pin a daemon thread forever. A separate connection keeps the writer's
+        lock out of it, so this never blocks the pipeline. A real failure latches the
+        store unhealthy; an interrupted or unreadable run records the attempt without
+        claiming the file is corrupt.
+        """
+        started = time.perf_counter()
+        budget = max(1.0, float(budget_s))
+        deadline = started + budget
+        sizes = self.file_sizes()
+        status = "failed"
+        result = ""
+        error = ""
+        conn: sqlite3.Connection | None = None
+
+        def _past_deadline() -> int:
+            return 1 if time.perf_counter() >= deadline else 0
+
+        try:
+            conn = sqlite3.connect(
+                str(self.db_path), timeout=max(1.0, self.busy_timeout_ms / 1000.0)
+            )
+            conn.set_progress_handler(_past_deadline, 2_000)
+            result = self._integrity_probe(conn)
+            status = "ok" if result == "ok" else "failed"
+        except sqlite3.OperationalError as exc:
+            if "interrupt" in str(exc).lower():
+                status = "incomplete"
+                error = f"integrity check stopped at its {int(budget)}s budget"
+            else:
+                error = str(exc)
+        except (sqlite3.Error, OSError) as exc:
+            error = str(exc)
+        finally:
+            if conn is not None:
+                try:
+                    conn.set_progress_handler(None, 0)
+                    conn.close()
+                except sqlite3.Error:
+                    pass
+
+        record = {
+            "status": status,
+            "checkedAt": _now_iso(),
+            "checkedAtEpoch": time.time(),
+            "durationMs": int(round((time.perf_counter() - started) * 1000)),
+            "databaseBytes": int(sizes.get("databaseBytes") or 0),
+            "budgetMs": int(round(budget * 1000)),
+            "result": result if status == "failed" else "",
+            "error": error,
+        }
+        with self._maintenance_lock:
+            self._last_integrity_check = record
+        if status == "failed":
+            self._mark_unhealthy(
+                "integrity_check",
+                f"SQLite quick_check failed: {result or error or 'unknown'}",
+            )
 
     def _pragma_with_source(self, sql: str, fallback: Any) -> tuple[Any, str]:
         """Read a writer-only pragma without waiting on a held write lock.
@@ -2672,6 +2825,11 @@ class BaluffoStore:
     def health(self) -> dict[str, Any]:
         health_started = time.perf_counter()
         quick_check, quick_check_deferred = self.quick_check_for_health()
+        # Only a store too large for the live check needs the background one, and this
+        # call never waits for it: it starts a daemon thread at most once a day and the
+        # payload reports what the last run found.
+        if quick_check_deferred:
+            self.schedule_integrity_check_if_due()
         migration_version = self.migration_version()
         busy_rate = self._busy_count / max(1, self._write_attempts)
         sizes = self.file_sizes()
@@ -2703,6 +2861,9 @@ class BaluffoStore:
             "quickCheckScope": "deferred" if quick_check_deferred else "limited",
             "quickCheckDeferred": quick_check_deferred,
             "quickCheckMaxDatabaseBytes": self.quick_check_max_database_bytes,
+            # The reading a deferred live check cannot produce, with the time it was
+            # taken. `status: "never"` is a statement, not a missing value.
+            "integrityCheck": self.integrity_check_status(),
             "healthy": bool(self._healthy and quick_check_ok),
             # The cause, not just the verdict: the Action Center used to render every
             # unhealthy store as "SQLite integrity check failed", including a latched

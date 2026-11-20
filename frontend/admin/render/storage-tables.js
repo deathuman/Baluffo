@@ -435,7 +435,29 @@ export function renderStorageTablesMessageHtml(message) {
   return `<div class="admin-storage-state"><p>${escapeHtml(message)}</p></div>`;
 }
 
-export function renderStorageTablesHtml(tableSizes, formatBytesFormatter) {
+// "When was this database last verified?" is a question the size-capped live check
+// cannot answer on a large store, so the panel states it outright: the age of the last
+// background verification, or that none has run.
+function formatVerificationAge(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  if (seconds < 60) return "just now";
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} h ago`;
+  return `${Math.round(seconds / 86400)} d ago`;
+}
+
+function integrityStatValue(integrityCheck) {
+  if (!integrityCheck || typeof integrityCheck !== "object") return "Not reported";
+  const status = String(integrityCheck.status || "").trim();
+  const age = formatVerificationAge(Number(integrityCheck.ageSeconds));
+  if (status === "ok") return age ? `Verified ${age}` : "Verified";
+  if (status === "failed") return "Failed — see diagnostics";
+  if (status === "incomplete") return "Stopped at its time budget";
+  if (integrityCheck.running === true) return "Running now";
+  return "Never verified";
+}
+
+export function renderStorageTablesHtml(tableSizes, formatBytesFormatter, integrityCheck = null) {
   const format = typeof formatBytesFormatter === "function" ? formatBytesFormatter : formatBytes;
   if (!tableSizes || typeof tableSizes !== "object") {
     return renderStorageTablesMessageHtml("Storage health did not include a table-size breakdown.");
@@ -502,6 +524,7 @@ export function renderStorageTablesHtml(tableSizes, formatBytesFormatter) {
       ${renderStat("Allocated space", format(allocatedBytes))}
       ${renderStat("Free space", format(toNumber(tableSizes.freelistBytes)))}
       ${renderStat("Last checked", formatTime(tableSizes.capturedAt))}
+      ${renderStat("Integrity", integrityStatValue(integrityCheck))}
     </div>
     ${notices.map(notice => `<p class="admin-storage-notice${partial ? " is-warning" : ""}">${escapeHtml(notice)}</p>`).join("")}
     <div class="admin-storage-table-block">
