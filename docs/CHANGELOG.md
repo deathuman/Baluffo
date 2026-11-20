@@ -48,6 +48,19 @@ Five rules the guardrail enforces so this cannot quietly regress:
 
 ## [Unreleased]
 
+## [0.3.069] - 2026-11-20
+
+### Fixed
+
+- The probe-wave line in Admin no longer reads as a current all-clear. It showed a "clean" chip from whatever receipt was on disk, which on the live container came from a wave that had run 16 days earlier, so a lane nobody had exercised looked verified. The row now prints when that wave finished and marks a stale or undated receipt as a warning; a fresh wave still reads clean.
+- A large database now gets the integrity check it used to defer forever. Above 64 MiB the live check was skipped for size, so "healthy" only meant writes were succeeding and nothing had ever verified the file. The database is now verified in the background once a day, and the storage panel says when that last happened — or that it never has. A failed check marks the store unhealthy and quotes the database's own error.
+- A source whose browser fallback attempt was refused or blocked now records why. The row already said "browser fallback unavailable (cooldown active)" but not what closed the lane, so a run-wide cooldown read as an unexplained refusal; the row now carries the browser error that closed it — taken at the moment of the refusal, so a browser that recovers later in the same run does not take the reason back — and a source that only asked for fallback without ever being tried does not claim one. A page that rendered with no jobs in it is not stamped at all: that empty is a finding about the board, and giving it the run's browser error would be the same conflation in a different field.
+- Admin's fetch duration reports the middle of recent runs instead of their average. One long run, or a group of quick aborts, could move an average far from how long a run usually takes — the live container read about 50 minutes while its runs took around 2.5 hours. The card shows the median, with the 90th percentile and the number of runs behind it underneath, so the figure can be checked rather than trusted.
+
+### Notes
+
+- This release changes only what Admin reports: fetch duration is stated as a median, a large database's file is verified in the background, a refused browser fallback keeps the cause that closed the lane, and a probe receipt is dated. The same-origin Linux container, GHCR multi-arch image publishing, wildcard browser CORS allow headers, and desktop localhost bridge compatibility all stay as they are, and no feed, saved job, note, or synced row changes.
+
 ## [0.3.068] - 2026-11-19
 
 > This is a desktop rollup: it includes the changes that reached the container
