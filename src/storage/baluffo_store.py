@@ -256,16 +256,7 @@ class BaluffoStore:
         self.integrity_check_budget_s = max(1.0, float(integrity_check_budget_s))
         # `never` until one completes. `checkedAtEpoch` is the wall clock the age is
         # computed from, so a reader never has to parse the ISO stamp.
-        self._last_integrity_check: dict[str, Any] = {
-            "status": "never",
-            "checkedAt": "",
-            "checkedAtEpoch": 0.0,
-            "durationMs": 0,
-            "databaseBytes": 0,
-            "budgetMs": int(self.integrity_check_budget_s * 1000),
-            "result": "",
-            "error": "",
-        }
+        self._last_integrity_check: dict[str, Any] = {"status": "never"}
         self._integrity_thread: threading.Thread | None = None
         self.vacuum_freelist_threshold_bytes = max(1, int(vacuum_freelist_threshold_bytes))
         self.vacuum_freelist_ratio = max(0.01, min(1.0, float(vacuum_freelist_ratio)))
@@ -1028,14 +1019,9 @@ class BaluffoStore:
             "status": str(record.get("status") or "never"),
             "checkedAt": str(record.get("checkedAt") or ""),
             "ageSeconds": age_s,
-            "durationMs": int(record.get("durationMs") or 0),
-            "databaseBytes": int(record.get("databaseBytes") or 0),
-            "budgetMs": int(record.get("budgetMs") or 0),
-            "intervalSeconds": int(self.integrity_check_interval_s),
             "result": str(record.get("result") or ""),
             "error": str(record.get("error") or ""),
             "running": running,
-            "due": self._integrity_check_is_due(),
         }
 
     def _integrity_check_is_due(self) -> bool:
@@ -1047,23 +1033,21 @@ class BaluffoStore:
             return True
         return (time.time() - checked_epoch) >= self.integrity_check_interval_s
 
-    def schedule_integrity_check_if_due(self, *, force: bool = False) -> bool:
+    def schedule_integrity_check_if_due(self) -> bool:
         """Start one background integrity verification when one is due.
 
         Off the request path, on its own connection, and one at a time: the health
-        read stays bounded while the file is actually read. Forces exist for an
-        operator action and for tests; a scheduled run obeys the interval.
+        read stays bounded while the file is actually read.
         """
-        if self._closed:
-            return False
-        if not force and not self._integrity_check_is_due():
+        if self._closed or not self._integrity_check_is_due():
             return False
         with self._maintenance_lock:
+            if self._closed:
+                return False
             if self._integrity_thread is not None and self._integrity_thread.is_alive():
                 return False
             thread = threading.Thread(
                 target=self._run_integrity_check,
-                kwargs={"budget_s": self.integrity_check_budget_s},
                 name="baluffo-sqlite-integrity-check",
                 daemon=True,
             )
@@ -1073,9 +1057,9 @@ class BaluffoStore:
 
     def _integrity_probe(self, conn: sqlite3.Connection) -> str:
         """The whole-file check. Split out so a failure path can be exercised."""
-        return str(conn.execute("PRAGMA quick_check").fetchone()[0] or "")
+        return str(conn.execute("PRAGMA integrity_check").fetchone()[0] or "")
 
-    def _run_integrity_check(self, *, budget_s: float) -> None:
+    def _run_integrity_check(self) -> None:
         """Verify every page on a separate connection, inside a hard budget.
 
         The progress handler is what makes a budget possible: SQLite cannot cancel a
@@ -1086,9 +1070,8 @@ class BaluffoStore:
         claiming the file is corrupt.
         """
         started = time.perf_counter()
-        budget = max(1.0, float(budget_s))
+        budget = self.integrity_check_budget_s
         deadline = started + budget
-        sizes = self.file_sizes()
         status = "failed"
         result = ""
         error = ""
@@ -1124,9 +1107,6 @@ class BaluffoStore:
             "status": status,
             "checkedAt": _now_iso(),
             "checkedAtEpoch": time.time(),
-            "durationMs": int(round((time.perf_counter() - started) * 1000)),
-            "databaseBytes": int(sizes.get("databaseBytes") or 0),
-            "budgetMs": int(round(budget * 1000)),
             "result": result if status == "failed" else "",
             "error": error,
         }
@@ -1135,7 +1115,7 @@ class BaluffoStore:
         if status == "failed":
             self._mark_unhealthy(
                 "integrity_check",
-                f"SQLite quick_check failed: {result or error or 'unknown'}",
+                f"SQLite integrity_check failed: {result or error or 'unknown'}",
             )
 
     def _pragma_with_source(self, sql: str, fallback: Any) -> tuple[Any, str]:

@@ -22,8 +22,8 @@ def _deferred_store(tmp_path: Path, **kwargs: Any) -> BaluffoStore:
     return BaluffoStore(tmp_path, quick_check_max_database_bytes=10, **kwargs)
 
 
-def _run_scheduled(store: BaluffoStore, *, force: bool = False) -> None:
-    assert store.schedule_integrity_check_if_due(force=force) is True
+def _run_scheduled(store: BaluffoStore) -> None:
+    assert store.schedule_integrity_check_if_due() is True
     thread = store._integrity_thread
     assert thread is not None
     thread.join(timeout=30)
@@ -36,7 +36,7 @@ def test_a_deferred_store_reports_never_before_any_verification(tmp_path: Path) 
         assert status["status"] == "never"
         assert status["checkedAt"] == ""
         assert status["ageSeconds"] is None
-        assert status["due"] is True
+        assert status["running"] is False
 
 
 def test_the_background_check_verifies_the_file_and_records_when(tmp_path: Path) -> None:
@@ -49,7 +49,6 @@ def test_the_background_check_verifies_the_file_and_records_when(tmp_path: Path)
         assert status["checkedAt"]
         assert status["ageSeconds"] is not None
         assert status["ageSeconds"] >= 0
-        assert status["databaseBytes"] > 0
         assert status["running"] is False
 
 
@@ -57,22 +56,14 @@ def test_a_fresh_verification_is_not_due_again(tmp_path: Path) -> None:
     with _deferred_store(tmp_path) as store:
         _run_scheduled(store)
 
-        assert store.integrity_check_status()["due"] is False
         assert store.schedule_integrity_check_if_due() is False
-
-
-def test_a_forced_run_reruns_the_check(tmp_path: Path) -> None:
-    with _deferred_store(tmp_path) as store:
-        _run_scheduled(store)
-
-        _run_scheduled(store, force=True)
         assert store.integrity_check_status()["status"] == "ok"
 
 
 def test_a_zero_interval_disables_the_schedule(tmp_path: Path) -> None:
     with _deferred_store(tmp_path, integrity_check_interval_s=0) as store:
-        assert store.integrity_check_status()["due"] is False
         assert store.schedule_integrity_check_if_due() is False
+        assert store.integrity_check_status()["status"] == "never"
 
 
 def test_the_health_payload_keeps_the_deferred_verdict_and_adds_the_record(
@@ -89,6 +80,15 @@ def test_the_health_payload_keeps_the_deferred_verdict_and_adds_the_record(
         assert health["quickCheckDeferred"] is True
         assert health["integrityCheck"]["status"] == "ok"
         assert health["integrityCheck"]["checkedAt"]
+        # The payload carries the reading the UI uses, not bookkeeping nothing reads.
+        assert set(health["integrityCheck"]) == {
+            "status",
+            "checkedAt",
+            "ageSeconds",
+            "result",
+            "error",
+            "running",
+        }
 
 
 def test_a_failed_verification_latches_the_store_and_names_the_reason(

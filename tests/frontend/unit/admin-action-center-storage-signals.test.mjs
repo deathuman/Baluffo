@@ -45,6 +45,19 @@ test("storage copy says when the file was last verified instead of only that the
     walMaintenance: { status: "busy", walBytes: 900000000 }
   });
   assert.match(never, /integrity not verified yet on this database/);
+
+  // A verified check with no age is still verified; `Number(null)` is 0, which used
+  // to date it as "just now".
+  const unaged = await storageSignalHtml({
+    healthy: true,
+    quickCheck: "deferred-large-database",
+    quickCheckDeferred: true,
+    databaseBytes: 272695296,
+    integrityCheck: { status: "ok", ageSeconds: null, checkedAt: "" },
+    walMaintenance: { status: "busy", walBytes: 900000000 }
+  });
+  assert.match(unaged, /integrity verified/);
+  assert.doesNotMatch(unaged, /integrity verified just now/);
 });
 
 test("storage copy names the recorded cause instead of guessing an integrity failure", async () => {

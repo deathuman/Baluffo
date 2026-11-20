@@ -363,13 +363,12 @@ test("admin registry controller renders registry buckets when the combined sourc
     active: [{ id: "active_ready", name: "Active Ready", jobsFound: 1 }],
     rejected: [{ id: "rejected_ready", name: "Rejected Ready", jobsFound: 1 }]
   }));
-  await flushMicrotasks(8);
-  fixture.renderScheduler.flush();
-
-  assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "Pending Ready");
+  // The discovery renderer is a lazy module now, so the load promise includes its
+  // import rather than resolving within a fixed number of microtasks.
   await loadPromise;
   fixture.renderScheduler.flush();
 
+  assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "Pending Ready");
   assert.equal(fixture.refs.adminActiveSourcesEl.innerHTML, "Active Ready");
   assert.equal(fixture.refs.adminRejectedSourcesEl.innerHTML, "Rejected Ready");
 });

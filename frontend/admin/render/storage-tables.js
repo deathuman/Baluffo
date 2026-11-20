@@ -448,12 +448,17 @@ function formatVerificationAge(seconds) {
 
 function integrityStatValue(integrityCheck) {
   if (!integrityCheck || typeof integrityCheck !== "object") return "Not reported";
+  // A run that is in flight is the current state, even while the previous record
+  // still says ok or never.
+  if (integrityCheck.running === true) return "Running now";
   const status = String(integrityCheck.status || "").trim();
-  const age = formatVerificationAge(Number(integrityCheck.ageSeconds));
+  // `Number(null)` is 0, which would date an unmeasured check as "just now".
+  const age = integrityCheck.ageSeconds == null
+    ? ""
+    : formatVerificationAge(Number(integrityCheck.ageSeconds));
   if (status === "ok") return age ? `Verified ${age}` : "Verified";
   if (status === "failed") return "Failed — see diagnostics";
   if (status === "incomplete") return "Stopped at its time budget";
-  if (integrityCheck.running === true) return "Running now";
   return "Never verified";
 }
 

@@ -43,6 +43,14 @@ test("admin render: alerts and kpis render healthy/critical states", () => {
   assert.doesNotMatch(kpisEl.innerHTML, /Pending Approvals/);
 });
 
+test("admin render: duration pending copy follows the median key", () => {
+  const el = makeEl();
+  const labels = { medianFetchDurationMs7d: "Median pending", avgFetchDurationMs7d: "Average pending" };
+  renderAdminOpsKpis(el, {}, "healthy", { fetchKpiPendingLabels: labels });
+  assert.match(el.innerHTML, /Median pending/);
+  assert.doesNotMatch(el.innerHTML, /Average pending/);
+});
+
 test("admin render: missing summary kpis remain pending instead of false zeros", () => {
   const kpisEl = makeEl();
   renderAdminOpsKpis(kpisEl, {

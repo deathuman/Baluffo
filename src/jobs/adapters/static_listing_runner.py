@@ -58,7 +58,6 @@ from src.jobs.adapters.static_listing_traversal import (
 )
 from src.jobs.adapters.static_runtime_support import (
     _MAX_STATIC_REDIRECT_HOPS,
-    browser_fallback_lane_cause,
     effective_timeout_for_remaining_budget,
     static_source_budget_exhausted,
 )
@@ -439,7 +438,7 @@ class StaticFetchRunner:
                 self.entry_report["browserFallbackUsed"] = True
             if fallback_error:
                 self.entry_report["browserFallbackAttemptError"] = clean_text(fallback_error)
-                fallback_cause = browser_fallback_lane_cause(result)
+                fallback_cause = getattr(result, "lane_cause", "")
                 if fallback_cause:
                     self.entry_report["browserFallbackLastError"] = fallback_cause
             self._log_playwright_fallback(url, reason, html, browser_budget_s, fallback_error)
@@ -791,7 +790,7 @@ class StaticFetchRunner:
         self.entry_report["browserFallbackAttempted"] = True
         if fallback_error:
             self.entry_report["browserFallbackAttemptError"] = clean_text(fallback_error)
-            fallback_cause = browser_fallback_lane_cause(result)
+            fallback_cause = getattr(result, "lane_cause", "")
             if fallback_cause:
                 self.entry_report["browserFallbackLastError"] = fallback_cause
         if html2:

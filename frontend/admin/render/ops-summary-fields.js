@@ -70,9 +70,9 @@ function probeLifecycleCount(receipt, key) {
 // verified-healthy one. Past this age the chip stops making a current claim.
 const PROBE_RECEIPT_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
-function probeReceiptFinishedMs(receipt) {
-  for (const key of ["finishedAt", "modifiedAt"]) {
-    const text = String(receipt?.[key] || "").trim();
+function probeReceiptFinishedMs(receipt, fallbackModifiedAt = "") {
+  for (const value of [receipt?.finishedAt, receipt?.modifiedAt, fallbackModifiedAt]) {
+    const text = String(value || "").trim();
     if (!text) continue;
     const parsed = Date.parse(text);
     if (Number.isFinite(parsed)) return parsed;
@@ -96,7 +96,7 @@ function probeReceiptWhen(ms, nowMs) {
  * work running, was any shared client left unclosed, and when did that wave actually run.
  * Returns "" when the receipt itself is absent.
  */
-function formatProbeLifecycleReceipt(receipt, nowMs = Date.now()) {
+function formatProbeLifecycleReceipt(receipt, fallbackModifiedAt = "", nowMs = Date.now()) {
   if (!hasOwnField(receipt, "fetchesStarted")) return "";
   const count = key => probeLifecycleCount(receipt, key) ?? 0;
   const bounded = count("fetchesBoundedOut");
@@ -104,11 +104,10 @@ function formatProbeLifecycleReceipt(receipt, nowMs = Date.now()) {
   const insideClient = count("clientFetchesOutstandingAtExit");
   const unclosed = count("clientsUnclosed");
   const deadlineExits = count("deadlineExits");
-  const rows = receipt && typeof receipt === "object" ? receipt : {};
-  const batches = probeLifecycleCount(rows, "batches");
-  const partial = PROBE_LIFECYCLE_DISPLAY_KEYS.some(key => probeLifecycleCount(rows, key) === null);
+  const batches = probeLifecycleCount(receipt, "batches");
+  const partial = PROBE_LIFECYCLE_DISPLAY_KEYS.some(key => probeLifecycleCount(receipt, key) === null);
   const attention = PROBE_LIFECYCLE_ATTENTION_KEYS.some(key => count(key) > 0) || partial;
-  const finishedMs = probeReceiptFinishedMs(rows);
+  const finishedMs = probeReceiptFinishedMs(receipt, fallbackModifiedAt);
   const undated = finishedMs === null;
   const stale = finishedMs !== null && (nowMs - finishedMs) > PROBE_RECEIPT_STALE_MS;
   const chipClass = unclosed > 0

@@ -16,7 +16,6 @@ import {
   ACTIVE_PIPELINE_SOURCE_TABLES_DELAYED_LABEL,
   BRIDGE_DEGRADED_SOURCE_TABLES_DELAYED_LABEL
 } from "./source-tables-state.js";
-import { runDiscoveryLoad } from "./discovery-render.js";
 
 const REGISTRY_REFRESH_RETRY_DELAY_MS = 5000;
 const REGISTRY_REFRESH_RETRY_MAX_DELAY_MS = 30000;
@@ -321,6 +320,9 @@ async function loadDiscoveryData(options = {}) {
       return state.discoveryLoadPromise || null;
     }
     state.discoveryLastLoadStartedAtMs = nowMs;
+    // Start the lazy discovery module while the placeholders and request setup run;
+    // it stays out of the admin shell so its renderer cannot push the entry over budget.
+    const discoveryRender = import("./discovery-render.js");
     const renderToken = ++registryRenderToken;
     setBusyFlag("discoveryLoad", true);
     setSourceTablesLoadState(
@@ -332,7 +334,7 @@ async function loadDiscoveryData(options = {}) {
       activeContext.reason
     );
 
-    state.discoveryLoadPromise = runDiscoveryLoad({
+    state.discoveryLoadPromise = discoveryRender.then(({ runDiscoveryLoad }) => runDiscoveryLoad({
       state,
       refs,
       getBridge,
@@ -365,7 +367,7 @@ async function loadDiscoveryData(options = {}) {
       renderSourceTablesDelayed,
       markSourceTablesDelayedForActiveWork,
       scheduleDeferredRender
-    });
+    }));
 
     return state.discoveryLoadPromise;
   }

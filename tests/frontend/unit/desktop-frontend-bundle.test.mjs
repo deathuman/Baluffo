@@ -121,7 +121,7 @@ test("the admin shell defers the ops, storage and inspector surfaces to lazy chu
     const source = await fs.readFile(file, "utf8");
     if (!staticallyImported.has(path.basename(chunk.asset))) lazyChunks.push(source);
   }
-  assert.equal(lazyChunks.length, 3, "exactly three admin chunks should load lazily");
+  assert.equal(lazyChunks.length, 4, "exactly four admin chunks should load lazily");
   // The shell's statically imported chunk is a serialized round trip after the
   // entry parses unless the page preloads it alongside the entry.
   const html = await fs.readFile(path.join(versionDir, admin.html), "utf8");
@@ -141,9 +141,13 @@ test("the admin shell defers the ops, storage and inspector surfaces to lazy chu
   assert.ok(lazyChunks.some(source => source.includes("/ops/task-failure-attempts")));
   assert.ok(lazyChunks.some(source => source.includes("Storage breakdown is deferred")));
   assert.ok(lazyChunks.some(source => source.includes("inspector-overlay-visible")));
+  // The discovery pass is only needed once a registry load runs, so it must not sit
+  // in the shell either.
+  assert.ok(lazyChunks.some(source => source.includes("domain_cap")));
   assert.ok(!entry.includes("/ops/task-failure-attempts"));
   assert.ok(!entry.includes("Storage breakdown is deferred"));
   assert.ok(!entry.includes("inspector-overlay-visible"));
+  assert.ok(!entry.includes("domain_cap"));
 
   assert.deepEqual(pagePayload(payload, "saved").chunks, [], "saved should stay a single asset");
 });

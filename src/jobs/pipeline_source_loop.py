@@ -227,7 +227,7 @@ def run_source_execution_stage(
             )
             if preflight_blocked:
                 browser_fallback_guard.mark_environment_blocked()
-                blocked_cause = clean_text(browser_fallback_guard.last_empty_cause)
+                blocked_cause = clean_text(browser_fallback_guard.last_error)
                 guarded_try_playwright = _environment_blocked_lane(blocked_cause)
                 guarded_try_playwright_json = _environment_blocked_capture_lane(blocked_cause)
                 pool.close()
@@ -591,28 +591,21 @@ def _stamp_browser_fallback_cause(
 
     A row whose own attempt came back empty is a different case: it has a per-row outcome and
     no cause, which is how the v8 replay's 988 of 1,032 refusals read as "cooldown active"
-    with nothing explaining the cooldown. Those rows also carry ``browserFallbackLastError``,
-    the contract's name for the environment cause that closed the breaker, so the refusal is
-    attributable from the row itself. A row that only *recommended* fallback and was never
-    tried keeps no row-level cause -- it has no attempt to explain.
+    with nothing explaining the cooldown. The lane that made the attempt writes the cause it
+    recorded beside ``browserFallbackAttemptError``; this pass copies it to
+    ``browserFallbackLastError`` only when that same error says the lane failed. A row that
+    only *recommended* fallback and was never tried keeps no row-level cause -- it has no
+    attempt to explain.
 
-    When the attempt recorded its own cause -- the static listing lane carries it on the
-    result and writes it beside the attempt -- that per-attempt cause wins, so two distinct
-    environment failures in one run leave each refused row quoting the cause that was live for
-    its own call. A row from a path that recorded none falls back to the run's captured copy;
-    that fallback is last-wins, so an older refusal can quote a later cause. DATA_CONTRACT
-    states which case a reader is looking at instead of presenting the fallback as per-row.
-
-    The cause comes from the breaker's captured copy, not its live `last_error`. A successful
-    render later in the same run clears `last_error` (the lane recovered), and reading it here
-    would erase the reason a row was refused an hour earlier.
+    The pass does not invent a row cause from the run's last failure. That value is last-wins,
+    so it is not evidence about a different attempt; a row whose lane recorded no cause stays
+    empty while `browserFallbackRunLastError` still describes the run.
     """
     if not source_reports or guard is None:
         return
     cause = clean_text(guard.last_error)
     refusal = clean_text(guard.last_refusal_reason)
-    empty_cause = clean_text(guard.last_empty_cause)
-    if not cause and not refusal and not empty_cause:
+    if not cause and not refusal:
         return
     for row in source_reports:
         if not isinstance(row, dict):
@@ -622,10 +615,10 @@ def _stamp_browser_fallback_cause(
             continue
         if cause:
             row["browserFallbackRunLastError"] = cause
-        if attempted and _row_browser_fallback_lane_error(row):
-            row_cause = _row_browser_fallback_attempt_cause(row) or empty_cause or cause
-            if row_cause:
-                row["browserFallbackLastError"] = row_cause
+        if attempted:
+            attempt_error, attempt_cause = _row_browser_fallback_attempt(row)
+            if attempt_cause and is_browser_fallback_environment_error(attempt_error):
+                row["browserFallbackLastError"] = attempt_cause
         if refusal:
             row["browserFallbackRunRefusalReason"] = refusal
 
@@ -646,50 +639,24 @@ def _row_attempted_browser_fallback(row: Mapping[str, Any]) -> bool:
     return False
 
 
-def _row_browser_fallback_lane_error(row: Mapping[str, Any]) -> bool:
-    """Whether the row's failed attempt says the *lane* broke, not the page.
+def _row_browser_fallback_attempt(row: Mapping[str, Any]) -> tuple[str, str]:
+    """The row's fallback error and the cause recorded for that same attempt.
 
-    A refusal, a blocked preflight and a launch failure all sit in the environment token
-    table (the first two read "browser fallback unavailable (...)", the third names its own
-    reason). "browser fallback returned empty content" is not in it: a page that rendered
-    with no jobs in it is a finding about the board. Stamping the run's launch error on that
-    row would call a page finding a browser failure -- the exact conflation the
-    `servedEmptyEnvironment`/`servedEmptyPage` split exists to prevent.
-    """
-    return is_browser_fallback_environment_error(_row_browser_fallback_attempt_error(row))
-
-
-def _row_browser_fallback_attempt_cause(row: Mapping[str, Any]) -> str:
-    """The cause recorded for the same attempt whose error the row reports.
-
-    The static listing lane writes it when the attempt fails at the lane, so two distinct
-    environment failures in one run no longer make an earlier refusal quote the later cause.
-    Rows from a path that did not record one return "" and the caller falls back to the run's
-    captured cause.
-    """
-    if clean_text(row.get("browserFallbackAttemptError")):
-        return clean_text(row.get("browserFallbackLastError"))
-    for detail in row.get("details") or []:
-        if isinstance(detail, dict) and clean_text(detail.get("browserFallbackAttemptError")):
-            return clean_text(detail.get("browserFallbackLastError"))
-    return ""
-
-
-def _row_browser_fallback_attempt_error(row: Mapping[str, Any]) -> str:
-    """The row's recorded fallback failure, top level first, then the detail row.
-
-    An empty string is the success case: an attempt that returned HTML never records an
-    error, which is what keeps a served row from inheriting a cause that was never its own.
+    The fields can be written on the row's **detail** during the fetch and hoisted later, so
+    both levels are read. A served attempt records no error and returns ``("", "")``; it has
+    no failure to explain. A lane failure and a page-empty finding both return their error,
+    and the caller checks which one it is before using the cause.
     """
     error = clean_text(row.get("browserFallbackAttemptError"))
     if error:
-        return error
+        return error, clean_text(row.get("browserFallbackLastError"))
     for detail in row.get("details") or []:
-        if isinstance(detail, dict):
-            error = clean_text(detail.get("browserFallbackAttemptError"))
-            if error:
-                return error
-    return ""
+        if not isinstance(detail, dict):
+            continue
+        error = clean_text(detail.get("browserFallbackAttemptError"))
+        if error:
+            return error, clean_text(detail.get("browserFallbackLastError"))
+    return "", ""
 
 
 def _row_recommends_browser_fallback(row: Mapping[str, Any]) -> bool:

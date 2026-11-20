@@ -250,7 +250,7 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Fetch Duration (7d)</div>
-      <div class="admin-total-value">${formatOptionalDuration(kpis, "medianFetchDurationMs7d", { pending: pendingLabelFor("avgFetchDurationMs7d") })}</div>
+      <div class="admin-total-value">${formatOptionalDuration(kpis, "medianFetchDurationMs7d", { pending: pendingLabelFor("medianFetchDurationMs7d") })}</div>
       ${fetchDurationDetail}
     </div>
     <div class="admin-total-card">

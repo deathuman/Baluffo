@@ -82,13 +82,12 @@ function formatDiscoveryAuditArtifacts(payload = {}) {
       ? ` warnings: ${row.warnings.map(value => escapeHtml(value)).join(", ")}`
       : "";
     // An artifact that carries a probe-wave receipt prints it in operator terms, so the abandoned
-    // fetches and any unclosed client are readable here instead of inside the artifact.
-    // The artifact row carries its own modification time; the receipt may carry none, and an
-    // undated receipt cannot be rendered as a current verdict.
-    const probeLifecycle = formatProbeLifecycleReceipt({
-      ...(row?.probeLifecycle || {}),
-      modifiedAt: row?.probeLifecycle?.modifiedAt || row?.modifiedAt || ""
-    });
+    // fetches and any unclosed client are readable here instead of inside the artifact. The receipt
+    // may carry no finish time; the artifact row's own modification time is the fallback.
+    const probeLifecycle = formatProbeLifecycleReceipt(
+      row?.probeLifecycle || {},
+      row?.modifiedAt || ""
+    );
     // The page-fetch receipt prints in operator terms too, so an abandoned directory/web-search
     // fetch is readable here instead of inside the tens-of-MB artifact it was summarized from.
     const pageFetchLifecycle = formatPageFetchLifecycleReceipt(row?.pageFetchLifecycle || {});

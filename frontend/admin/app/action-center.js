@@ -275,7 +275,8 @@ function integrityVerificationNote(storage) {
       : "";
   }
   const status = String(check.status || "").trim();
-  const ageSeconds = Number(check.ageSeconds);
+  // `Number(null)` is 0, which would date an unmeasured check as "just now".
+  const ageSeconds = check.ageSeconds == null ? NaN : Number(check.ageSeconds);
   // `formatAge` already ends in "ago".
   const when = Number.isFinite(ageSeconds) && ageSeconds >= 0
     ? (ageSeconds < 60 ? "just now" : formatAge(ageSeconds / 3600))

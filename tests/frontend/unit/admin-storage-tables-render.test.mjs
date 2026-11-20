@@ -48,6 +48,14 @@ test("renders the integrity verification age instead of a bare deferred check", 
     ageSeconds: null
   });
   assert.match(never, /Never verified/);
+
+  // A new run is the current state even while the previous record says ok.
+  const running = renderStorageTablesHtml(payload(), formatBytes, {
+    status: "ok",
+    ageSeconds: 6 * 3600,
+    running: true
+  });
+  assert.match(running, /Running now/);
 });
 
 test("renders estimated table sizes with share, row estimates, and pooled bytes", () => {

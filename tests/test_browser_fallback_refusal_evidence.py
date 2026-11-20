@@ -209,42 +209,6 @@ def test_a_refusal_reason_reaches_the_rows_too() -> None:
     assert rows[0]["browserFallbackRunRefusalReason"] == REFUSAL_COOLDOWN
 
 
-def test_a_refused_rows_own_record_carries_the_cause() -> None:
-    """The v8 replay's 988 refusals said "cooldown active" and nothing else.
-
-    The run-level field was already there; the row that actually hit the cooldown was not,
-    which left the refusal unattributable from the record it appears in.
-    """
-    breaker = _tripped()
-    breaker.wrap(lambda url, timeout: ("", ""))("https://x.test/jobs", 5)
-    rows: list[dict[str, Any]] = [
-        {
-            "name": "refused",
-            "browserFallbackRecommended": True,
-            "browserFallbackAttempted": True,
-            "browserFallbackAttemptError": "browser fallback unavailable (cooldown active)",
-        }
-    ]
-    _stamp_browser_fallback_cause(rows, breaker)
-    assert rows[0]["browserFallbackLastError"] == _ENVIRONMENT_ERROR
-    # The run-level fields keep their own meaning and are still written beside it.
-    assert rows[0]["browserFallbackRunLastError"] == _ENVIRONMENT_ERROR
-    assert rows[0]["browserFallbackRunRefusalReason"] == REFUSAL_COOLDOWN
-
-
-def test_an_attempted_row_that_never_recommended_still_gets_the_cause() -> None:
-    """Escalation paths attempt fallback without setting the recommendation flag."""
-    rows: list[dict[str, Any]] = [
-        {
-            "name": "escalated",
-            "browserFallbackAttempted": True,
-            "browserFallbackAttemptError": "browser fallback unavailable (environment blocked)",
-        }
-    ]
-    _stamp_browser_fallback_cause(rows, _tripped())
-    assert rows[0]["browserFallbackLastError"] == _ENVIRONMENT_ERROR
-
-
 def test_a_served_attempt_does_not_inherit_the_runs_cause() -> None:
     """An attempt that rendered records no error, so there is no per-row cause to carry."""
     rows: list[dict[str, Any]] = [
@@ -258,24 +222,6 @@ def test_a_served_attempt_does_not_inherit_the_runs_cause() -> None:
     _stamp_browser_fallback_cause(rows, _tripped())
     assert "browserFallbackLastError" not in rows[0]
     assert rows[0]["browserFallbackRunLastError"] == _ENVIRONMENT_ERROR
-
-
-def test_a_detail_level_attempt_error_is_enough_to_carry_the_cause() -> None:
-    rows: list[dict[str, Any]] = [
-        {
-            "name": "family",
-            "details": [
-                {
-                    "browserFallbackAttempted": True,
-                    "browserFallbackAttemptError": (
-                        "browser fallback unavailable (cooldown active)"
-                    ),
-                }
-            ],
-        }
-    ]
-    _stamp_browser_fallback_cause(rows, _tripped())
-    assert rows[0]["browserFallbackLastError"] == _ENVIRONMENT_ERROR
 
 
 def test_a_detail_level_recommendation_is_enough_to_stamp() -> None:
@@ -318,18 +264,11 @@ def test_no_guard_or_no_rows_is_not_an_error() -> None:
 _REFUSAL_TEXT = "browser fallback unavailable (cooldown active)"
 
 
-def test_the_refusal_cause_is_captured_at_the_refusal() -> None:
-    breaker = _tripped()
-    breaker.wrap(lambda url, timeout: ("", ""))("https://x.test/jobs", 5)
-    assert breaker.last_empty_cause == _ENVIRONMENT_ERROR
-
-
 def test_a_refused_row_keeps_its_cause_after_the_lane_recovers() -> None:
-    """The stamp runs after the source loop, so it must not read the breaker's live state.
+    """The row carries its own cause; a later recovery must not take it back.
 
-    The run trips the breaker at 09:00 and refuses 40 boards, a health probe reopens the lane,
-    and the same run then renders pages. Reading `last_error` at report time answers with the
-    recovered state and leaves every refused row saying "cooldown active" and nothing else.
+    A successful render clears the breaker's live error, so the stamp can no longer supply
+    this row's cause. The runner recorded it when the attempt was refused.
     """
     breaker = _tripped()
     breaker.wrap(lambda url, timeout: ("", ""))("https://x.test/1", 5)
@@ -346,23 +285,7 @@ def test_a_refused_row_keeps_its_cause_after_the_lane_recovers() -> None:
             "name": "refused",
             "browserFallbackAttempted": True,
             "browserFallbackAttemptError": _REFUSAL_TEXT,
-        }
-    ]
-    _stamp_browser_fallback_cause(rows, breaker)
-    assert rows[0]["browserFallbackLastError"] == _ENVIRONMENT_ERROR
-
-
-def test_a_mid_run_probe_success_does_not_erase_the_cause() -> None:
-    """The health probe reopens the breaker and clears its error; the cause stays stamped."""
-    breaker = BrowserFallbackCircuitBreaker()
-    breaker.mark_environment_blocked(_ENVIRONMENT_ERROR)
-    breaker.record_health_probe_success()
-    assert breaker.last_error == ""
-
-    rows: list[dict[str, Any]] = [
-        {
-            "browserFallbackAttempted": True,
-            "browserFallbackAttemptError": "browser fallback unavailable (environment blocked)",
+            "browserFallbackLastError": _ENVIRONMENT_ERROR,
         }
     ]
     _stamp_browser_fallback_cause(rows, breaker)
@@ -373,8 +296,8 @@ def test_an_empty_page_row_is_not_given_the_runs_launch_error() -> None:
     """A page with no jobs in it is a finding about the board, not the browser.
 
     The two empties are split into `servedEmptyPage` and `servedEmptyEnvironment` precisely
-    so one is not read as the other. Stamping the run's later launch error on the page-empty
-    row put the conflation straight back into the per-row field.
+    so one is not read as the other. A page-empty error is not a lane failure, so the stamp
+    does not give the row the run's launch error.
     """
     breaker = BrowserFallbackCircuitBreaker()
     breaker.wrap(lambda url, timeout: ("", _EMPTY_PAGE_TEXT))("https://x.test/1", 5)
@@ -409,23 +332,9 @@ def test_a_refused_row_beside_an_empty_page_row_keeps_its_cause() -> None:
             "name": "refused",
             "browserFallbackAttempted": True,
             "browserFallbackAttemptError": _REFUSAL_TEXT,
+            "browserFallbackLastError": _ENVIRONMENT_ERROR,
         },
     ]
     _stamp_browser_fallback_cause(rows, breaker)
     assert "browserFallbackLastError" not in rows[0]
     assert rows[1]["browserFallbackLastError"] == _ENVIRONMENT_ERROR
-
-
-def test_the_captured_cause_is_not_persisted_into_the_next_run() -> None:
-    """Persisted, it would explain a run that never had a fallback failure."""
-    breaker = _tripped()
-    breaker.wrap(lambda url, timeout: ("", ""))("https://x.test/jobs", 5)
-    row = breaker.to_state_row()
-    assert "browserFallbackLastEmptyCause" not in row
-
-    restored = BrowserFallbackCircuitBreaker.from_state(
-        {BROWSER_FALLBACK_STATE_KEY: row}, cooldown_minutes=30
-    )
-    assert restored.last_empty_cause == ""
-    # The persisted breach itself still explains a refusal in the new run.
-    assert restored.last_error == _ENVIRONMENT_ERROR

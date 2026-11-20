@@ -168,7 +168,7 @@ led instead; it is not missing, and could not land until **A** was fixed.
 | — | Drain the curated queue behind `domain_cap` 259 / `adapter_cap` 412 | 482 boards / 4,533 openings **DONE**, `deferredByCap` 662 → 0 |
 | **T** | `BALUFFO_STATIC_SOURCE_TIME_BUDGET_S` default 25s → **90s** | 134 live rows time out; locally 11 of 14 converted **DONE**, plus `coerce_int` on three numeric static vars |
 | **BF** | `browserFallbackRecommendedSources` reads the top-level field; the flag is written to `details[0]` | health reported **0** while **199** rows needed fallback **DONE** |
-| **BF2** | Persist `browserFallbackLastError` into report rows | **DONE:** empty attempts carry the breaker's cause, captured at refusal so a mid-run recovery cannot erase it; untried rows claim none |
+| **BF2** | Persist `browserFallbackLastError` into report rows | **DONE:** the static lane carries the cause on the attempt result; cause-less rows claim none |
 | **DG** | Measured 2026-10-06: **94 openings / 20 boards** in EU, **2,324 / 147** in ANY | **24 boards confirmed collecting, 149 game jobs**; role gate shipped — see below |
 | — | Provider boards queue as one family (greenhouse missing from the multi-tenant map) | 43 candidates deferred per run — **shipped in v0.3.012** |
 | — | Game row filter on every source path; 39 verified greenhouse boards registered | **shipped in v0.3.012** — [snapshot](../snapshots/greenhouse-zeros-2026-10-06.md) |

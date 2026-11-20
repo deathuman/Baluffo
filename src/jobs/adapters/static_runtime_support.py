@@ -29,7 +29,6 @@ from src.jobs.common.taxonomy import (
     map_error_to_failure_bucket,
 )
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
-from src.shared.browser_fallback_tokens import matches_browser_fallback_environment_error
 from src.shared.utils import coerce_int, env_flag
 
 from ..common import config as common_config
@@ -751,20 +750,6 @@ def effective_timeout_for_remaining_budget(
     if remaining < 1.0:
         return 0
     return max(1, min(max(1, int(timeout_s or 1)), int(math.ceil(remaining))))
-
-
-def browser_fallback_lane_cause(result: Any) -> str:
-    """The cause this attempt recorded, when its error is a lane failure.
-
-    ``BrowserFallbackResult`` carries the cause for the call itself, so a later failure in
-    the same run cannot rewrite this row's attribution. A page that rendered with no jobs
-    carries no cause even if the breaker is closed: that empty is a finding about the board.
-    """
-    cause = clean_text(getattr(result, "cause", ""))
-    if not cause:
-        return ""
-    error = clean_text(result[1]) if isinstance(result, tuple) and len(result) > 1 else ""
-    return cause if matches_browser_fallback_environment_error(error.lower()) else ""
 
 
 def build_static_entry_report(
