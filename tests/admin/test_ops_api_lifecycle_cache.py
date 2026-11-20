@@ -578,4 +578,8 @@ def test_ops_fetch_kpis_summary_uses_history_during_active_pipeline(tmp_path) ->
     assert payload["fetchKpisStaleDuringActiveRun"] is True
     assert payload["activePipeline"]["stage"] == "fetch"
     assert "sevenDayFetchSuccessRate" in payload["kpis"]
+    # The rate keeps its numeric type when no run happened; the count is what separates
+    # an unmeasured window from a measured 0%.
+    assert payload["kpis"]["sevenDayFetchSuccessRate"] == 0.0
+    assert payload["kpis"]["fetchRunCount7d"] == 0
     assert payload["kpis"]["pendingSourcesCount"] == 3

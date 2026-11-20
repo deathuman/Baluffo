@@ -72,6 +72,7 @@ export function maskDeferredFetchKpisForRender(kpis = {}, health = {}) {
     "lastSuccessfulFetchAge",
     "lastSuccessfulFetchAt",
     "sevenDayFetchSuccessRate",
+    "fetchRunCount7d",
     "avgFetchDurationMs7d",
     "medianFetchDurationMs7d",
     "p90FetchDurationMs7d",

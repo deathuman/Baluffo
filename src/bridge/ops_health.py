@@ -345,6 +345,9 @@ def collect_fetch_history_metrics(
     return {
         "fetchRows": fetch_rows,
         "successRate7d": success_rate,
+        # The denominator the rate was taken over. "Every run failed" and "no run
+        # happened" both produce 0.0, and only the count separates the two readings.
+        "fetchRunCount7d": len(fetch_7d),
         # The mean stays for payload compatibility, but nothing should decide from it:
         # one slow run moves it, which is how the live container read ~50 min beside
         # 2.5 h runs. The Admin card reports the median and its p90 instead.
@@ -1113,7 +1116,10 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
                 deps.parse_iso,
                 deps.now_utc,
             ),
+            # The rate stays numeric when the window is empty for payload
+            # compatibility; the run count says whether 0.0 was measured or unobserved.
             "sevenDayFetchSuccessRate": round(float(metrics["successRate7d"]), 4),
+            "fetchRunCount7d": int(metrics["fetchRunCount7d"]),
             "avgFetchDurationMs7d": int(metrics["avgDurationMs7d"]),
             "medianFetchDurationMs7d": int(metrics["medianDurationMs7d"]),
             "p90FetchDurationMs7d": int(metrics["p90DurationMs7d"]),

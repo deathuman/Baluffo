@@ -382,6 +382,7 @@ class OpsApiHealthMixin(OpsApiState):
             failed_sources = int(latest_summary.get("failedSources") or 0)
             kpis: dict[str, Any] = {
                 "sevenDayFetchSuccessRate": round(float(metrics["successRate7d"]), 4),
+                "fetchRunCount7d": int(metrics["fetchRunCount7d"]),
                 "avgFetchDurationMs7d": int(metrics["avgDurationMs7d"]),
                 "medianFetchDurationMs7d": int(metrics["medianDurationMs7d"]),
                 "p90FetchDurationMs7d": int(metrics["p90DurationMs7d"]),
