@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from src.bridge.api import BridgeApi, RuntimeConfigLike
+from src.bridge.api import BridgeApi, RuntimeConfigLike, browser_probe_not_available
 from src.bridge.server import make_handler, run_http_server
 
 
@@ -96,6 +96,7 @@ def build_bridge_api(
     load_registry_conflict_adjudication: Callable[[], dict[str, Any]] | None = None,
     compute_ops_dashboard_health_summary: Callable[[], dict[str, Any]] | None = None,
     compute_ops_fetch_kpis_summary: Callable[[], dict[str, Any]] | None = None,
+    probe_browser_fallback_health: Callable[..., dict[str, Any]] = browser_probe_not_available,
     get_current_task_state_summary_payload: Callable[[], dict[str, Any]] | None = None,
     abort_task: Callable[[dict[str, Any] | None], tuple[int, dict[str, Any]]] | None = None,
     abort_task_async: Callable[[dict[str, Any] | None], tuple[int, dict[str, Any]]] | None = None,
@@ -183,6 +184,7 @@ def build_bridge_api(
         compute_ops_fetch_kpis_summary=(
             compute_ops_fetch_kpis_summary or _empty_fetch_kpis_summary
         ),
+        probe_browser_fallback_health=probe_browser_fallback_health,
         get_storage_health_payload=get_storage_health_payload,
         get_storage_maintenance_preview=get_storage_maintenance_preview
         or (lambda: {"ok": False, "error": "not_implemented"}),

@@ -7,7 +7,10 @@ from typing import Any
 
 import pytest
 
-from src.bridge.routes.get_ops_diagnostics import handle_ops_diagnostic_routes
+from src.bridge.routes.get_ops_diagnostics import (
+    handle_ops_browser_probe_route,
+    handle_ops_diagnostic_routes,
+)
 from tests.helpers.bridge_api import FakeHandler
 
 
@@ -27,6 +30,9 @@ class MinimalOpsDiagnosticsRouteApi:
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]:
         return {"ok": True, "windowRuns": window_runs}
+
+    def probe_browser_fallback_health(self, *, timeout_s: int = 10) -> dict[str, Any]:
+        return {"ok": True, "timeoutS": timeout_s}
 
     def get_storage_health_payload(self) -> dict[str, Any]:
         return {"ok": True, "health": "ok"}
@@ -58,6 +64,22 @@ class MinimalOpsDiagnosticsRouteApi:
             return dict(default) if isinstance(default, dict) else {}
         payload = json.loads(target.read_text(encoding="utf-8"))
         return payload if isinstance(payload, dict) else {}
+
+
+def test_ops_browser_probe_route_accepts_minimal_capability_object(tmp_path: Path) -> None:
+    api = MinimalOpsDiagnosticsRouteApi(tmp_path)
+    handler = FakeHandler()
+
+    assert (
+        handle_ops_browser_probe_route(
+            handler,
+            api=api,
+            path="/ops/browser-probe",
+            query={"timeoutS": ["3"]},
+        )
+        is True
+    )
+    assert handler.sent[-1] == {"status": 200, "payload": {"ok": True, "timeoutS": 3}}
 
 
 def test_ops_diagnostic_routes_accept_minimal_capability_object(tmp_path: Path) -> None:

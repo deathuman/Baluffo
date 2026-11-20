@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused ops API tests.
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -42,6 +43,9 @@ from src.shared.utils import coerce_non_negative_int as _safe_int
 # that declared staleness; the active-run probe, alerts, and generatedAt stay
 # per-call.
 _OPS_FETCH_KPIS_ACTIVE_STABLE_TTL_S = 15.0
+# One on-demand probe at a time: each probe launches its own Chromium, so a
+# second concurrent request must not add a second browser to the measurement.
+_BROWSER_PROBE_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -493,6 +497,43 @@ class OpsApiHealthMixin(OpsApiState):
                 ),
                 "kpis": kpis,
             }
+
+    def probe_browser_fallback_health(self, *, timeout_s: int = 10) -> dict[str, Any]:
+        """Run one bounded browser health probe for the admin diagnostic route.
+
+        The probe gets a transient pool, so it never borrows or disturbs a fetch
+        run's browser. The lock admits one probe at a time; a concurrent request
+        returns ``busy`` instead of launching a second Chromium. The result is
+        compacted with the same helper the fetch KPI uses, keeping stage, error,
+        duration, and forensics bounded.
+        """
+        from src.jobs.browser_fallback_pool import BrowserFallbackPool
+
+        if not _BROWSER_PROBE_LOCK.acquire(blocking=False):
+            return {"ok": False, "busy": True, "error": "browser probe already running"}
+        pool: Any = None
+        result: dict[str, Any] = {}
+        try:
+            pool = BrowserFallbackPool()
+            result = pool.health_probe(timeout_s=timeout_s)
+        except Exception as exc:  # the route reports probe failures instead of raising
+            return {
+                "ok": False,
+                "error": f"browser probe failed: {exc}",
+                "errorType": type(exc).__name__,
+            }
+        finally:
+            try:
+                if pool is not None:
+                    pool.close()
+            except Exception:
+                pass
+            _BROWSER_PROBE_LOCK.release()
+        return {
+            "ok": True,
+            "probedAt": self._deps.now_iso(),
+            "browserFallbackHealth": compact_browser_fallback_health(result),
+        }
 
     def compute_ops_health_ready(self) -> dict[str, Any]:
         with time_operation("ops.health.ready.total"):

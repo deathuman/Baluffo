@@ -23,6 +23,7 @@ from src.bridge.routes.get_fetch_report import _FetchReportRouteApi, handle_fetc
 from src.bridge.routes.get_local_data import _LocalDataGetRouteApi, handle_local_data_get_routes
 from src.bridge.routes.get_ops_diagnostics import (
     _OpsDiagnosticsRouteApi,
+    handle_ops_browser_probe_route,
     handle_ops_diagnostic_routes,
 )
 from src.bridge.routes.get_ops_status import _OpsStatusRouteApi, handle_ops_status_routes
@@ -74,6 +75,7 @@ _GET_ROUTE_HANDLERS: tuple[Callable[..., bool], ...] = (
     handle_fetch_report_routes,
     handle_ops_status_routes,
     handle_ops_diagnostic_routes,
+    handle_ops_browser_probe_route,
     handle_source_policy_routes,
     handle_registry_conflict_routes,
     handle_sync_routes,

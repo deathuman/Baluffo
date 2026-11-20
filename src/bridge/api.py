@@ -133,6 +133,11 @@ def _not_started_sync_push(*, dry_run: bool = False) -> JsonObject:
     return _not_started_result()
 
 
+def browser_probe_not_available(*, timeout_s: int = 10) -> JsonObject:
+    _ = timeout_s
+    return {"ok": False, "error": "browser_probe_not_available"}
+
+
 def _not_started_noarg() -> JsonObject:
     return _not_started_result()
 
@@ -449,6 +454,7 @@ class BridgeApi:
     compute_ops_dashboard_health: Callable[[], JsonObject] = _ok_payload
     compute_ops_dashboard_health_summary: Callable[[], JsonObject] = _ok_payload
     compute_ops_fetch_kpis_summary: Callable[[], JsonObject] = _ok_payload
+    probe_browser_fallback_health: Callable[..., JsonObject] = browser_probe_not_available
     get_storage_health_payload: Callable[[], JsonObject] = _ok_payload
     get_storage_maintenance_preview: Callable[[], JsonObject] = _not_started_noarg
     start_storage_diagnostic: Callable[[str], JsonObject] = _not_started_mode

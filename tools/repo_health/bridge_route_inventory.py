@@ -481,6 +481,21 @@ BRIDGE_ROUTES: tuple[BridgeRoute, ...] = (
     ),
     _route(
         "GET",
+        "/ops/browser-probe",
+        EXACT,
+        GET_OPS_DIAGNOSTICS_HANDLER,
+        "support",
+        rationale=(
+            "On-demand bounded browser health probe for container diagnosis; "
+            "the Admin UI does not poll it."
+        ),
+        verification=(
+            "python -m pytest tests/bridge/test_routes_get.py "
+            "tests/bridge/test_ops_browser_probe.py -q"
+        ),
+    ),
+    _route(
+        "GET",
         "/ops/fetch-report",
         EXACT,
         GET_FETCH_REPORT_HANDLER,

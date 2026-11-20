@@ -166,3 +166,31 @@ def test_summary_health_reports_an_absent_probe_lifecycle_as_empty(admin_bridge_
     api = admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG)
 
     assert api.compute_ops_dashboard_health_summary()["kpis"]["probeLifecycle"] == {}
+
+
+def test_bridge_startup_wires_and_invokes_the_supplied_browser_probe(
+    admin_bridge_entrypoint_root, monkeypatch
+) -> None:
+    """The startup path hands the ops probe to the API, and the API calls that probe.
+
+    Building through `admin_bridge.build_bridge_api` is the original regression: before
+    `bridge_bootstrap.build_bridge_api` accepted the callback, startup raised
+    `TypeError: ... unexpected keyword argument 'probe_browser_fallback_health'`. The
+    earlier assertion only checked `callable`, which `BridgeApi`'s
+    `browser_probe_not_available` default also satisfies, so a dropped callback passed.
+    """
+    calls: list[int] = []
+
+    def supplied_probe(*, timeout_s: int = 10) -> dict[str, Any]:
+        calls.append(timeout_s)
+        return {"ok": True, "stage": "supplied"}
+
+    ops_api = admin_bridge._get_ops_api()
+    monkeypatch.setattr(ops_api, "probe_browser_fallback_health", supplied_probe)
+    monkeypatch.setattr(admin_bridge, "_get_ops_api", lambda: ops_api)
+
+    api = admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG)
+
+    assert api.probe_browser_fallback_health is supplied_probe
+    assert api.probe_browser_fallback_health(timeout_s=7) == {"ok": True, "stage": "supplied"}
+    assert calls == [7], "the supplied probe ran with the requested timeout, not a default"

@@ -34,6 +34,8 @@ class _OpsDiagnosticsRouteApi(Protocol):
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]: ...
 
+    def probe_browser_fallback_health(self, *, timeout_s: int = 10) -> dict[str, Any]: ...
+
     def get_storage_health_payload(self) -> dict[str, Any]: ...
 
     def get_storage_maintenance_preview(self) -> dict[str, Any]: ...
@@ -104,6 +106,26 @@ def _handle_storage_get_routes(
         return True
     if path == "/ops/storage-rebuild":
         handler.send_json(api.get_storage_rebuild_payload())
+        return True
+    return False
+
+
+def handle_ops_browser_probe_route(
+    handler: BridgeResponseWriter,
+    *,
+    api: _OpsDiagnosticsRouteApi,
+    path: str,
+    query: dict[str, list[str]],
+) -> bool:
+    """Handle the one on-demand browser probe, clamping its timeout to 1-30s."""
+    if path == "/ops/browser-probe":
+        timeout_raw = str((query.get("timeoutS") or ["10"])[0] or "").strip()
+        try:
+            timeout_s = max(1, min(30, int(timeout_raw)))
+        except ValueError:
+            timeout_s = 10
+        payload = api.probe_browser_fallback_health(timeout_s=timeout_s)
+        handler.send_json(payload, status=409 if payload.get("busy") else 200)
         return True
     return False
 

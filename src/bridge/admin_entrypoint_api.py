@@ -96,6 +96,7 @@ def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
         compute_ops_dashboard_health=root_mod.compute_ops_dashboard_health,
         compute_ops_dashboard_health_summary=ops_api.compute_ops_dashboard_health_summary,
         compute_ops_fetch_kpis_summary=ops_api.compute_ops_fetch_kpis_summary,
+        probe_browser_fallback_health=ops_api.probe_browser_fallback_health,
         get_storage_health_payload=lambda: storage_health_mod.get_storage_health_payload(
             Path(config.data_dir).resolve()
         ),

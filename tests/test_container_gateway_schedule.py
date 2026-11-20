@@ -372,6 +372,8 @@ def test_proxy_timeout_for_covers_heavy_registry_and_dedup_routes() -> None:
     assert container_gateway._proxy_timeout_for("GET", "/registry/conflicts?view=summary") == heavy
     assert container_gateway._proxy_timeout_for("GET", "/admin/ops-tab-counts") == heavy
     assert container_gateway._proxy_timeout_for("GET", "/source-policy/recommendations") == heavy
+    # the on-demand probe may launch a browser for up to 30 s plus close
+    assert container_gateway._proxy_timeout_for("GET", "/ops/browser-probe") == heavy
     # hot paths stay default
     assert container_gateway._proxy_timeout_for("GET", "/app/ready") == default
     assert container_gateway._proxy_timeout_for("GET", "/registry/summary") == default
