@@ -3,6 +3,9 @@ import { hasUsefulValue, isPlainObject } from "./ops-shape-utils.js";
 const FETCH_KPI_ZERO_CAN_BE_PLACEHOLDER = new Set([
   "sevenDayFetchSuccessRate",
   "avgFetchDurationMs7d",
+  "medianFetchDurationMs7d",
+  "p90FetchDurationMs7d",
+  "fetchDurationSampleCount7d",
   "failedSourceRatioLatest"
 ]);
 

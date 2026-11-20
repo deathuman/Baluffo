@@ -12,6 +12,9 @@ export function hasFetchKpiValues(kpis = {}) {
     "lastSuccessfulFetchAge",
     "sevenDayFetchSuccessRate",
     "avgFetchDurationMs7d",
+    "medianFetchDurationMs7d",
+    "p90FetchDurationMs7d",
+    "fetchDurationSampleCount7d",
     "failedSourceRatioLatest"
   ].some(key => hasUsefulValue(kpis?.[key]));
 }
@@ -31,6 +34,9 @@ export function buildFetchKpiPendingLabels(health = {}, _activePipelineOrFetch =
       lastSuccessfulFetchAt: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
       sevenDayFetchSuccessRate: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
       avgFetchDurationMs7d: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
+      medianFetchDurationMs7d: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
+      p90FetchDurationMs7d: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
+      fetchDurationSampleCount7d: ACTIVE_PIPELINE_KPI_DELAYED_LABEL,
       failedSourceRatioLatest: ACTIVE_PIPELINE_KPI_DELAYED_LABEL
     };
   }
@@ -42,6 +48,9 @@ export function buildFetchKpiPendingLabels(health = {}, _activePipelineOrFetch =
       lastSuccessfulFetchAt: fetchNeverRun ? FETCH_KPI_NO_SUCCESS_LABEL : generic,
       sevenDayFetchSuccessRate: generic,
       avgFetchDurationMs7d: generic,
+      medianFetchDurationMs7d: generic,
+      p90FetchDurationMs7d: generic,
+      fetchDurationSampleCount7d: generic,
       failedSourceRatioLatest: generic
     };
   }
@@ -64,6 +73,9 @@ export function maskDeferredFetchKpisForRender(kpis = {}, health = {}) {
     "lastSuccessfulFetchAt",
     "sevenDayFetchSuccessRate",
     "avgFetchDurationMs7d",
+    "medianFetchDurationMs7d",
+    "p90FetchDurationMs7d",
+    "fetchDurationSampleCount7d",
     "failedSourceRatioLatest",
     "sourceOutcomeSummary",
     "pendingSourcesCount",

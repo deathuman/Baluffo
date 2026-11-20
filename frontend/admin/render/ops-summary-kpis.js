@@ -114,7 +114,9 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
     sevenDayFetchSuccessRate: hasOwnField(kpis, "sevenDayFetchSuccessRate") ? kpis?.sevenDayFetchSuccessRate : "__pending__",
     failedSourceRatioLatest: hasOwnField(kpis, "failedSourceRatioLatest") ? kpis?.failedSourceRatioLatest : "__pending__",
     pendingSourcesCount: hasOwnField(kpis, "pendingSourcesCount") ? kpis?.pendingSourcesCount : (hasOwnField(kpis, "pendingApprovalsCount") ? kpis?.pendingApprovalsCount : "__pending__"),
-    avgFetchDurationMs7d: hasOwnField(kpis, "avgFetchDurationMs7d") ? kpis?.avgFetchDurationMs7d : "__pending__",
+    medianFetchDurationMs7d: hasOwnField(kpis, "medianFetchDurationMs7d") ? kpis?.medianFetchDurationMs7d : "__pending__",
+    p90FetchDurationMs7d: hasOwnField(kpis, "p90FetchDurationMs7d") ? kpis?.p90FetchDurationMs7d : "__pending__",
+    fetchDurationSampleCount7d: hasOwnField(kpis, "fetchDurationSampleCount7d") ? kpis?.fetchDurationSampleCount7d : "__pending__",
     lastSuccessfulFetchAge: hasOwnField(kpis, "lastSuccessfulFetchAge") ? String(kpis?.lastSuccessfulFetchAge || "") : "__pending__",
     registrySync: kpis?.registrySync || {},
     providerCoverage: kpis?.providerCoverage || {},
@@ -221,6 +223,18 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
       </div>
     </details>
   `;
+  // The median answers "how long will a run take"; the mean it replaced answered
+  // "what does one 2.5 h run and nine fast aborts average to", which read ~50 min on the
+  // live container. p90 and the sample count travel with it so the operator can see the
+  // tail and how much evidence the figure rests on.
+  const fetchDurationSampleCount = Number(kpis?.fetchDurationSampleCount7d);
+  const fetchDurationDetail = (
+    hasOwnField(kpis, "fetchDurationSampleCount7d")
+    && Number.isFinite(fetchDurationSampleCount)
+    && fetchDurationSampleCount > 0
+  )
+    ? `<div class="admin-total-detail">p90 ${formatOptionalDuration(kpis, "p90FetchDurationMs7d", { pending: "not measured" })} · ${fetchDurationSampleCount} ${fetchDurationSampleCount === 1 ? "run" : "runs"}</div>`
+    : "";
   kpisEl.innerHTML = `
     <div class="admin-total-card">
       <div class="admin-total-label">Ops Status</div>
@@ -235,8 +249,9 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
       <div class="admin-total-value">${formatOptionalPercent(kpis, "sevenDayFetchSuccessRate", { pending: pendingLabelFor("sevenDayFetchSuccessRate") })}</div>
     </div>
     <div class="admin-total-card">
-      <div class="admin-total-label">Avg Fetch Duration (7d)</div>
-      <div class="admin-total-value">${formatOptionalDuration(kpis, "avgFetchDurationMs7d", { pending: pendingLabelFor("avgFetchDurationMs7d") })}</div>
+      <div class="admin-total-label">Fetch Duration (7d)</div>
+      <div class="admin-total-value">${formatOptionalDuration(kpis, "medianFetchDurationMs7d", { pending: pendingLabelFor("avgFetchDurationMs7d") })}</div>
+      ${fetchDurationDetail}
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Failed Source Ratio</div>

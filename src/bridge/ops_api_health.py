@@ -383,6 +383,9 @@ class OpsApiHealthMixin(OpsApiState):
             kpis: dict[str, Any] = {
                 "sevenDayFetchSuccessRate": round(float(metrics["successRate7d"]), 4),
                 "avgFetchDurationMs7d": int(metrics["avgDurationMs7d"]),
+                "medianFetchDurationMs7d": int(metrics["medianDurationMs7d"]),
+                "p90FetchDurationMs7d": int(metrics["p90DurationMs7d"]),
+                "fetchDurationSampleCount7d": int(metrics["durationSampleCount7d"]),
             }
             if last_success:
                 finished_at = str(last_success.get("finishedAt") or "")

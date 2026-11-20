@@ -25,12 +25,20 @@ test("admin render: alerts and kpis render healthy/critical states", () => {
     sevenDayFetchSuccessRate: 0.91,
     failedSourceRatioLatest: 0.12,
     pendingApprovalsCount: 4,
-    avgFetchDurationMs7d: 12345,
+    avgFetchDurationMs7d: 3031504,
+    medianFetchDurationMs7d: 12345,
+    p90FetchDurationMs7d: 180000,
+    fetchDurationSampleCount7d: 3,
     lastSuccessfulFetchAge: "12m ago"
   }, "critical");
   assert.match(kpisEl.innerHTML, /admin-status-chip critical/);
   assert.match(kpisEl.innerHTML, /91\.0%/);
+  assert.match(kpisEl.innerHTML, /Fetch Duration \(7d\)/);
   assert.match(kpisEl.innerHTML, /12\.3s/);
+  assert.match(kpisEl.innerHTML, /p90 3\.0m/);
+  assert.match(kpisEl.innerHTML, /3 runs/);
+  // The mean is still in the payload for compatibility; it must not be the headline.
+  assert.doesNotMatch(kpisEl.innerHTML, /50\.5m/);
   assert.match(kpisEl.innerHTML, /Pending Sources/);
   assert.doesNotMatch(kpisEl.innerHTML, /Pending Approvals/);
 });

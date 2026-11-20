@@ -294,7 +294,7 @@ not this payload.
 |---|---|---|
 | `quickCheck` never runs on this database | `deferred-large-database` against a 67 108 864 cap on 272 695 296 bytes | **Fixed:** a background verification runs on its own connection once a day, `integrityCheck` reports its result and age, and the panel says when the file was last verified |
 | `tableSizes` leaves 106.9 MB (39 %) unattributed | 12 tables listed, `truncated: true`, `otherBytes: 106876001` | The breakdown cannot show what grew. `job_sources` (186 526 rows, 93 985 788 B, 34.5 %) is the largest measured table and is in the current generation, so reclaim cannot see it |
-| `avgFetchDurationMs7d: 3031504` | `collect_fetch_history_metrics` divides a sum by run count | A plain mean (50 min); do not decide from it |
+| `avgFetchDurationMs7d: 3031504` | `collect_fetch_history_metrics` divided a sum by run count | **Fixed:** the KPI now reports a median, its p90 and the sample count over measured runs, and the Admin card shows the median. The mean stays in the payload for compatibility only |
 | `pendingApprovalsCount: 865`, `duplicatePendingCount: 1` | `/ops/dashboard-health` | Normal registry queue; drain through the approval path, never a bulk state edit |
 | `probeLifecycle` dated 2026-11-02 | `/ops/dashboard-health` | A stale artifact, not a live signal |
 | `sync.runtime.lastPull`/`lastPush` are empty objects | `lastPullAt`/`lastResult` are set | Known cosmetic projection gap; not an Action Center signal |

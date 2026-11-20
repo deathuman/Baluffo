@@ -285,6 +285,40 @@ def format_age(
     return f"{hours // 24}d"
 
 
+def _measured_durations(fetch_rows: list[dict[str, Any]]) -> list[int]:
+    """Wall-clock durations of the runs that finished, sorted ascending.
+
+    A run that finished still spent the operator's time when it failed, so failures
+    stay in the sample; the 7-day success rate reports them separately. A row with no
+    positive duration is not a sample at all — counting it as 0 s would pull every
+    percentile toward zero, which is how an unmeasured run reads as a fast one.
+    """
+    return sorted(
+        duration
+        for duration in (_safe_int(row.get("durationMs"), 0) for row in fetch_rows)
+        if duration > 0
+    )
+
+
+def _duration_percentile(durations: list[int], percentile: float) -> int:
+    """A percentile of the measured durations, interpolated between neighbours.
+
+    Interpolation keeps ``0.5`` equal to the median, which a nearest-rank rule over
+    an even count does not. A single sample returns itself at any percentile, so a
+    young install reads one real duration instead of a synthesized zero.
+    """
+    if not durations:
+        return 0
+    rank = (len(durations) - 1) * percentile
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return durations[int(lower)]
+    weight = rank - lower
+    span = durations[int(upper)] - durations[int(lower)]
+    return int(round(durations[int(lower)] + span * weight))
+
+
 def collect_fetch_history_metrics(
     history: list[dict[str, Any]],
     parse_iso: Callable[[Any], datetime | None],
@@ -305,12 +339,19 @@ def collect_fetch_history_metrics(
         if fetch_7d
         else 0
     )
+    durations = _measured_durations(fetch_7d)
     latest_fetch = fetch_rows[-1] if fetch_rows else None
     last_success = next((row for row in reversed(fetch_rows) if _successful_task(row)), None)
     return {
         "fetchRows": fetch_rows,
         "successRate7d": success_rate,
+        # The mean stays for payload compatibility, but nothing should decide from it:
+        # one slow run moves it, which is how the live container read ~50 min beside
+        # 2.5 h runs. The Admin card reports the median and its p90 instead.
         "avgDurationMs7d": avg_duration,
+        "medianDurationMs7d": _duration_percentile(durations, 0.5),
+        "p90DurationMs7d": _duration_percentile(durations, 0.9),
+        "durationSampleCount7d": len(durations),
         "latestFetch": latest_fetch,
         "lastSuccessFetch": last_success,
     }
@@ -1074,6 +1115,9 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             ),
             "sevenDayFetchSuccessRate": round(float(metrics["successRate7d"]), 4),
             "avgFetchDurationMs7d": int(metrics["avgDurationMs7d"]),
+            "medianFetchDurationMs7d": int(metrics["medianDurationMs7d"]),
+            "p90FetchDurationMs7d": int(metrics["p90DurationMs7d"]),
+            "fetchDurationSampleCount7d": int(metrics["durationSampleCount7d"]),
             "failedSourceRatioLatest": round(float(failed_ratio_latest), 4),
             "pendingApprovalsCount": (
                 _safe_int(registry_summary.get("pendingCount"))

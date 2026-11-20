@@ -120,6 +120,12 @@ h2.admin-section-title {
   font-weight: 700;
 }
 
+.admin-total-detail {
+  color: var(--admin-total-label);
+  font-size: 0.72rem;
+  margin-top: 0.2rem;
+}
+
 .admin-storage-tables {
   margin: 0 0 0.9rem;
   border: 1px solid var(--surface-11);
