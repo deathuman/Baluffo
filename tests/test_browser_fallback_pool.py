@@ -185,18 +185,29 @@ def test_browser_pool_enabled_defaults_on_and_respects_kill_switch():
     assert browser_pool_enabled({"BALUFFO_BROWSER_POOL": "1"})
 
 
-def test_browser_fallback_chromium_args_keep_gpu_in_process_on_linux():
-    args = browser_fallback_chromium_args(platform="linux")
-    assert "--in-process-gpu" in args
-    assert "--disable-gpu" in args
-    assert "--disable-dev-shm-usage" in args
-    assert "--single-process" not in args
-
-
-def test_browser_fallback_chromium_args_leave_non_linux_gpu_path_unchanged():
-    args = browser_fallback_chromium_args(platform="win32")
+@pytest.mark.parametrize(
+    ("is_root", "is_container"),
+    [(True, False), (False, True)],
+    ids=["root", "container"],
+)
+def test_browser_fallback_chromium_args_skip_zygote_on_root_or_container_linux(
+    is_root, is_container
+):
+    args = browser_fallback_chromium_args(
+        platform="linux", is_root=is_root, is_container=is_container
+    )
+    assert "--no-zygote" in args
     assert "--in-process-gpu" not in args
-    assert "--disable-gpu" in args
+
+
+def test_browser_fallback_chromium_args_keep_zygote_for_non_root_linux():
+    args = browser_fallback_chromium_args(platform="linux", is_root=False, is_container=False)
+    assert "--no-zygote" not in args, "desktop Linux keeps the zygote that carries the sandbox"
+
+
+def test_browser_fallback_chromium_args_leave_non_linux_zygote_path_unchanged():
+    args = browser_fallback_chromium_args(platform="win32", is_root=True, is_container=True)
+    assert "--no-zygote" not in args
 
 
 @pytest.mark.slow  # launches a real headless Chromium; excluded from CI/quick runs

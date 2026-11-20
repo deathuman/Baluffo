@@ -8,15 +8,13 @@ AI boundary verify: `python -m pytest tests/test_browser_fallback_pool.py -q`.
 
 from __future__ import annotations
 
+import os
 import sys
 
-# Umbrel's container policy cannot launch Chromium's GPU helper. The pooled
-# headless shell logs `GPU process launch failed: error_code=1002` repeatedly
-# and exits through `FATAL:gpu_data_manager_impl_private.cc ... GPU process
-# isn't usable` (SIGTRAP) before the first context. `--disable-gpu` alone still
-# asks Chromium to launch that helper, so keep the GPU service in the browser
-# process on Linux. This is the documented WSL/container workaround; unlike
-# `--single-process`, renderer isolation remains intact.
+# Umbrel's container cannot launch Chromium's GPU helper through the zygote
+# (SIGTRAP before the first context); `--in-process-gpu` traded that for a
+# browser-process SIGSEGV at the first `new_page`. Bypass the zygote on root or
+# container Linux only: desktop Linux keeps the zygote that carries the sandbox.
 _FALLBACK_CHROMIUM_ARGS: tuple[str, ...] = (
     "--disable-dev-shm-usage",
     "--disable-gpu",
@@ -25,14 +23,33 @@ _FALLBACK_CHROMIUM_ARGS: tuple[str, ...] = (
     "--disable-background-networking",
     "--mute-audio",
 )
-_LINUX_IN_PROCESS_GPU_ARG = "--in-process-gpu"
+_LINUX_NO_ZYGOTE_ARG = "--no-zygote"
 
 
-def browser_fallback_chromium_args(platform: str | None = None) -> list[str]:
+def _running_as_root() -> bool:
+    geteuid = getattr(os, "geteuid", None)
+    return bool(geteuid and geteuid() == 0)
+
+
+def _running_in_container() -> bool:
+    return os.path.exists("/.dockerenv")
+
+
+def browser_fallback_chromium_args(
+    platform: str | None = None,
+    *,
+    is_root: bool | None = None,
+    is_container: bool | None = None,
+) -> list[str]:
     """Return the launch flags for headless Chromium used by fallback fetches."""
     args = list(_FALLBACK_CHROMIUM_ARGS)
-    if (platform if platform is not None else sys.platform).startswith("linux"):
-        args.append(_LINUX_IN_PROCESS_GPU_ARG)
+    resolved_platform = platform if platform is not None else sys.platform
+    if not resolved_platform.startswith("linux"):
+        return args
+    root = _running_as_root() if is_root is None else is_root
+    container = _running_in_container() if is_container is None else is_container
+    if root or container:
+        args.append(_LINUX_NO_ZYGOTE_ARG)
     return args
 
 

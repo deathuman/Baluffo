@@ -166,7 +166,7 @@ next report repeats this one's ambiguity.
 any pool-state bug. Read-only checks on the host: the container's cgroup `memory.max` and
 `memory.events` (`oom`/`oom_kill`), `docker logs` for `chrome_crashpad`/`GPU process launch
 failed`, and `/dev/shm` size. The flags already shipped
-(`--disable-dev-shm-usage`, `--in-process-gpu` on Linux, `--renderer-process-limit=2`,
+(`--disable-dev-shm-usage`, `--no-zygote` on root/container Linux, `--renderer-process-limit=2`,
 `--js-flags=--max-old-space-size=512`, `src/shared/browser_launch_args.py`) cover the documented
 container failures; a cgroup OOM kill is the remaining candidate. Do not add flags before that
 evidence exists.
