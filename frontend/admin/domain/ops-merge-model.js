@@ -9,14 +9,6 @@ const FETCH_KPI_ZERO_CAN_BE_PLACEHOLDER = new Set([
   "failedSourceRatioLatest"
 ]);
 
-function measuredNoFetchRuns(incoming) {
-  if (!isPlainObject(incoming) || !Object.prototype.hasOwnProperty.call(incoming, "fetchRunCount7d")) {
-    return false;
-  }
-  const count = Number(incoming.fetchRunCount7d);
-  return Number.isFinite(count) && count === 0;
-}
-
 function mergeKpis(existing = {}, incoming = {}, { preserveExisting = false } = {}) {
   const result = isPlainObject(existing) ? { ...existing } : {};
   if (!isPlainObject(incoming)) return result;
@@ -46,14 +38,7 @@ function mergeKpis(existing = {}, incoming = {}, { preserveExisting = false } = 
       && hasUsefulValue(result[key])
       && (
         !hasUsefulValue(value)
-        || (
-          FETCH_KPI_ZERO_CAN_BE_PLACEHOLDER.has(key)
-          && Number(value) === 0
-          // Zero runs in the window is a measurement, not a placeholder: its 0.0 rate
-          // must land so the merged state cannot carry a previous week's rate beside a
-          // run count that says nothing ran.
-          && !(key === "sevenDayFetchSuccessRate" && measuredNoFetchRuns(incoming))
-        )
+        || (FETCH_KPI_ZERO_CAN_BE_PLACEHOLDER.has(key) && Number(value) === 0)
       )
     ) {
       return;

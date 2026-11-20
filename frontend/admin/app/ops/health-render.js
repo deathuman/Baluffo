@@ -2,7 +2,8 @@ import { deriveFetcherFailureSummary } from "../../domain.js";
 import {
   FETCH_KPI_LOADING_LABEL,
   buildFetchKpiPendingLabels,
-  maskDeferredFetchKpisForRender
+  maskDeferredFetchKpisForRender,
+  maskUnmeasuredFetchSuccessRate
 } from "../../domain/ops-fetch-kpi-model.js";
 import { renderOpsTabBadges } from "./health-badges.js";
 
@@ -304,9 +305,8 @@ export function createOpsRenderHub({
     }
     const fetchKpiPendingLabels = buildFetchKpiPendingLabels(health, activePipelineOrFetch);
     const fetchKpiPendingLabel = String(fetchKpiPendingLabels.default || FETCH_KPI_LOADING_LABEL);
-    const renderKpis = maskDeferredFetchKpisForRender(
-      health?.kpis || {},
-      health || {}
+    const renderKpis = maskUnmeasuredFetchSuccessRate(
+      maskDeferredFetchKpisForRender(health?.kpis || {}, health || {})
     );
 
     renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {

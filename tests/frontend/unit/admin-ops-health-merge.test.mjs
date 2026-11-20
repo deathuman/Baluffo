@@ -169,33 +169,3 @@ test("admin merge: a summary poll carrying one source keeps the other source's r
     "a source absent from the summary poll is preserved, not erased"
   );
 });
-
-/**
- * The 7-day success rate's zero placeholder.
- *
- * A summary poll's 0.0 is normally a placeholder and must not overwrite a detailed
- * reading, but a run count of zero says the poll actually measured an empty window.
- * In that case the 0.0 lands, so the merged state cannot carry a previous week's rate
- * beside a run count that says nothing ran.
- */
-test("admin merge: a summary poll that measured zero fetch runs clears a stale success rate", () => {
-  const detail = { kpis: { sevenDayFetchSuccessRate: 0.91, fetchRunCount7d: 4 } };
-  const summary = {
-    summaryView: true,
-    kpis: { sevenDayFetchSuccessRate: 0, fetchRunCount7d: 0 }
-  };
-
-  const merged = mergeOpsHealth(detail, summary, { summary: true });
-
-  assert.equal(merged.kpis.sevenDayFetchSuccessRate, 0);
-  assert.equal(merged.kpis.fetchRunCount7d, 0);
-});
-
-test("admin merge: a zero rate without a run count is still treated as a placeholder", () => {
-  const detail = { kpis: { sevenDayFetchSuccessRate: 0.91 } };
-  const summary = { summaryView: true, kpis: { sevenDayFetchSuccessRate: 0 } };
-
-  const merged = mergeOpsHealth(detail, summary, { summary: true });
-
-  assert.equal(merged.kpis.sevenDayFetchSuccessRate, 0.91);
-});

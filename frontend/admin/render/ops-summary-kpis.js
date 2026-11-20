@@ -18,9 +18,6 @@ import {
 import { formatDedupReviewStateSummary } from "./ops-summary-dedup.js";
 import { hasOwnField, formatOptionalDuration, formatOptionalNumber, formatOptionalPercent, formatOptionalText, formatPendingField, formatPageFetchLifecycleReceipt, formatProbeLifecycleReceipt } from "./ops-summary-fields.js";
 
-const FETCH_KPI_NOT_MEASURED_LABEL = "Not measured";
-const FETCH_KPI_NO_RUNS_DETAIL = "no fetch finished in the last 7 days";
-
 function formatRegistryCountBasis(summary) {
   const basis = String(summary?.countBasis || "").toLowerCase();
   if (summary?.summaryExact === true || basis === "normalized") {
@@ -115,7 +112,6 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
     fetchKpiPendingLabel,
     fetchKpiPendingLabels,
     sevenDayFetchSuccessRate: hasOwnField(kpis, "sevenDayFetchSuccessRate") ? kpis?.sevenDayFetchSuccessRate : "__pending__",
-    fetchRunCount7d: hasOwnField(kpis, "fetchRunCount7d") ? kpis?.fetchRunCount7d : "__pending__",
     failedSourceRatioLatest: hasOwnField(kpis, "failedSourceRatioLatest") ? kpis?.failedSourceRatioLatest : "__pending__",
     pendingSourcesCount: hasOwnField(kpis, "pendingSourcesCount") ? kpis?.pendingSourcesCount : (hasOwnField(kpis, "pendingApprovalsCount") ? kpis?.pendingApprovalsCount : "__pending__"),
     medianFetchDurationMs7d: hasOwnField(kpis, "medianFetchDurationMs7d") ? kpis?.medianFetchDurationMs7d : "__pending__",
@@ -239,19 +235,6 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
   )
     ? `<div class="admin-total-detail">p90 ${formatOptionalDuration(kpis, "p90FetchDurationMs7d", { pending: "not measured" })} · ${fetchDurationSampleCount} ${fetchDurationSampleCount === 1 ? "run" : "runs"}</div>`
     : "";
-  // A zero rate says two different things: every run failed, or no run happened at all.
-  // The payload's run count separates them — without it an unmeasured week rendered as a
-  // total failure. Older payloads omit the count, so the rate still renders as before.
-  const fetchRunCount = Number(kpis?.fetchRunCount7d);
-  const fetchUnmeasured = hasOwnField(kpis, "fetchRunCount7d")
-    && Number.isFinite(fetchRunCount)
-    && fetchRunCount === 0;
-  const fetchSuccessValue = fetchUnmeasured
-    ? formatPendingField(FETCH_KPI_NOT_MEASURED_LABEL)
-    : formatOptionalPercent(kpis, "sevenDayFetchSuccessRate", { pending: pendingLabelFor("sevenDayFetchSuccessRate") });
-  const fetchSuccessDetail = fetchUnmeasured
-    ? `<div class="admin-total-detail">${FETCH_KPI_NO_RUNS_DETAIL}</div>`
-    : "";
   kpisEl.innerHTML = `
     <div class="admin-total-card">
       <div class="admin-total-label">Ops Status</div>
@@ -263,8 +246,7 @@ function renderAdminOpsKpis(kpisEl, kpis, status, options = {}) {
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Fetch Success (7d)</div>
-      <div class="admin-total-value">${fetchSuccessValue}</div>
-      ${fetchSuccessDetail}
+      <div class="admin-total-value">${formatOptionalPercent(kpis, "sevenDayFetchSuccessRate", { pending: pendingLabelFor("sevenDayFetchSuccessRate") })}</div>
     </div>
     <div class="admin-total-card">
       <div class="admin-total-label">Fetch Duration (7d)</div>
