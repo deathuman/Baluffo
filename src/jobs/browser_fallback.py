@@ -34,6 +34,23 @@ REFUSAL_ERROR_TEXT = "browser fallback unavailable (cooldown active)"
 ENVIRONMENT_BLOCKED_ERROR_TEXT = "browser fallback unavailable (environment blocked)"
 
 
+class BrowserFallbackResult(tuple):
+    """A fallback call's result tuple plus the lane cause captured for this attempt.
+
+    A tuple subclass, so every caller that unpacks ``html, error`` (or the capture
+    three-tuple) keeps working. The cause travels on the result instead of being read back
+    from the breaker: concurrent attempts share the breaker, and a later failure must not
+    overwrite an earlier refusal's cause before its row records it.
+    """
+
+    cause: str
+
+    def __new__(cls, values: tuple[Any, ...], cause: str = "") -> BrowserFallbackResult:
+        result: BrowserFallbackResult = super().__new__(cls, values)
+        result.cause = clean_text(cause)
+        return result
+
+
 def is_browser_fallback_environment_error(error_text: str) -> bool:
     return matches_browser_fallback_environment_error(clean_text(error_text).lower())
 
@@ -110,11 +127,13 @@ class BrowserFallbackCircuitBreaker:
         current = now or datetime.now(UTC)
         return until <= current
 
-    def _refusal_error(self, now_dt: datetime) -> str:
-        """Record an attempt; return the refusal error, or "" when it may proceed.
+    def _refusal_error(self, now_dt: datetime) -> tuple[str, str]:
+        """Record an attempt; return ``(refusal error, cause)``, empty when it may proceed.
 
         Split out because the capture lane goes through the same gate: a refusal has to be
-        counted, timestamped and explained once, whatever was being asked for.
+        counted, timestamped and explained once, whatever was being asked for. The cause is
+        read under the same lock as the refusal so this attempt's result carries the cause
+        that was live for it, not whichever failure a concurrent attempt records next.
         """
         stamp = now_iso()
         with self._lock:
@@ -126,11 +145,12 @@ class BrowserFallbackCircuitBreaker:
                 self.last_refusal_reason = REFUSAL_COOLDOWN
                 # Captured now, not read after the source loop: a later success clears
                 # `last_error` and would take the refusal's reason with it.
-                self.last_empty_cause = clean_text(self.last_error)
-                return REFUSAL_ERROR_TEXT
+                cause = clean_text(self.last_error)
+                self.last_empty_cause = cause
+                return REFUSAL_ERROR_TEXT, cause
             self.last_attempt_at = stamp
             self.demand_pages += 1
-        return ""
+        return "", ""
 
     def _record_served_html(self, stamp: str) -> None:
         with self._lock:
@@ -190,13 +210,13 @@ class BrowserFallbackCircuitBreaker:
             self.last_refusal_reason = ""
             self.last_success_at = now_iso()
 
-    def wrap(self, try_playwright: TryPlaywrightFn) -> TryPlaywrightFn:
-        def _wrapped(url: str, timeout_s: int) -> tuple[str, str]:
+    def wrap(self, try_playwright: TryPlaywrightFn) -> Callable[[str, int], BrowserFallbackResult]:
+        def _wrapped(url: str, timeout_s: int) -> BrowserFallbackResult:
             now_dt = datetime.now(UTC)
             stamp = now_iso()
-            refusal = self._refusal_error(now_dt)
+            refusal, refusal_cause = self._refusal_error(now_dt)
             if refusal:
-                return "", refusal
+                return BrowserFallbackResult(("", refusal), refusal_cause)
             try:
                 html, error = try_playwright(url, timeout_s)
             except (OSError, RuntimeError, ValueError) as exc:
@@ -204,13 +224,17 @@ class BrowserFallbackCircuitBreaker:
                 error = str(exc)
             if html and not clean_text(error):
                 self._record_served_html(stamp)
-                return html, ""
-            self._record_served_empty(stamp, now_dt, error)
-            return html, clean_text(error)
+                return BrowserFallbackResult((html, ""), "")
+            clean_error = clean_text(error)
+            self._record_served_empty(stamp, now_dt, clean_error)
+            cause = clean_error if is_browser_fallback_environment_error(clean_error) else ""
+            return BrowserFallbackResult((html, clean_error), cause)
 
         return _wrapped
 
-    def wrap_capture(self, try_capture: TryPlaywrightCaptureFn) -> TryPlaywrightCaptureFn:
+    def wrap_capture(
+        self, try_capture: TryPlaywrightCaptureFn
+    ) -> Callable[[str, int], BrowserFallbackResult]:
         """Guard a capture callable: HTML plus the JSON the render fetched.
 
         Same gate, cooldown and counters as :meth:`wrap` -- the capture lane is the same
@@ -219,12 +243,12 @@ class BrowserFallbackCircuitBreaker:
         *page*, because the browser demonstrably worked.
         """
 
-        def _wrapped(url: str, timeout_s: int) -> tuple[str, str, list[tuple[str, str]]]:
+        def _wrapped(url: str, timeout_s: int) -> BrowserFallbackResult:
             now_dt = datetime.now(UTC)
             stamp = now_iso()
-            refusal = self._refusal_error(now_dt)
+            refusal, refusal_cause = self._refusal_error(now_dt)
             if refusal:
-                return "", refusal, []
+                return BrowserFallbackResult(("", refusal, []), refusal_cause)
             try:
                 html, error, payloads = try_capture(url, timeout_s)
             except (OSError, RuntimeError, ValueError) as exc:
@@ -234,12 +258,13 @@ class BrowserFallbackCircuitBreaker:
             clean_error = clean_text(error)
             if payloads:
                 self._record_served_html(stamp)
-                return html, "", list(payloads)
+                return BrowserFallbackResult((html, "", list(payloads)), "")
             if clean_error:
                 self._record_served_empty(stamp, now_dt, clean_error)
-                return html, clean_error, []
+                cause = clean_error if is_browser_fallback_environment_error(clean_error) else ""
+                return BrowserFallbackResult((html, clean_error, []), cause)
             self._record_served_empty(stamp, now_dt, "")
-            return html, "", []
+            return BrowserFallbackResult((html, "", []), "")
 
         return _wrapped
 

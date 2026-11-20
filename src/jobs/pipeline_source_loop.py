@@ -21,6 +21,7 @@ from src.jobs.browser_fallback import (
     ENVIRONMENT_BLOCKED_ERROR_TEXT,
     REFUSAL_ERROR_TEXT,
     BrowserFallbackCircuitBreaker,
+    BrowserFallbackResult,
     is_browser_fallback_environment_error,
 )
 from src.jobs.browser_fallback_pool import BrowserFallbackPool, browser_pool_enabled
@@ -226,8 +227,9 @@ def run_source_execution_stage(
             )
             if preflight_blocked:
                 browser_fallback_guard.mark_environment_blocked()
-                guarded_try_playwright = _environment_blocked_try_playwright
-                guarded_try_playwright_json = _environment_blocked_try_playwright_json
+                blocked_cause = clean_text(browser_fallback_guard.last_empty_cause)
+                guarded_try_playwright = _environment_blocked_lane(blocked_cause)
+                guarded_try_playwright_json = _environment_blocked_capture_lane(blocked_cause)
                 pool.close()
                 pool = None
                 if runtime_payload is not None:
@@ -425,15 +427,22 @@ def _run_browser_preflight(
     return health, health is not None and not bool(health.get("ok")), attempts
 
 
-def _environment_blocked_try_playwright(_url: str, _timeout_s: int) -> tuple[str, str]:
-    """A browser lane that answers without touching the pool or the breaker."""
-    return "", ENVIRONMENT_BLOCKED_ERROR_TEXT
+def _environment_blocked_lane(cause: str) -> Callable[[str, int], tuple[str, str]]:
+    """A blocked lane that carries the preflight's captured cause on each result."""
+
+    def _lane(_url: str, _timeout_s: int) -> tuple[str, str]:
+        return BrowserFallbackResult(("", ENVIRONMENT_BLOCKED_ERROR_TEXT), cause)
+
+    return _lane
 
 
-def _environment_blocked_try_playwright_json(
-    _url: str, _timeout_s: int
-) -> tuple[str, str, list[tuple[str, str]]]:
-    return "", ENVIRONMENT_BLOCKED_ERROR_TEXT, []
+def _environment_blocked_capture_lane(
+    cause: str,
+) -> Callable[[str, int], tuple[str, str, list[tuple[str, str]]]]:
+    def _lane(_url: str, _timeout_s: int) -> tuple[str, str, list[tuple[str, str]]]:
+        return BrowserFallbackResult(("", ENVIRONMENT_BLOCKED_ERROR_TEXT, []), cause)
+
+    return _lane
 
 
 class _MidRunBrowserProbe:
@@ -513,9 +522,9 @@ def _with_mid_run_recovery(
     """
 
     def _wrapped(url: str, timeout_s: int) -> tuple[str, str]:
-        html, error = try_playwright(url, timeout_s)
-        if not _is_browser_fallback_refusal(error) or not probe.maybe_recover():
-            return html, error
+        result = try_playwright(url, timeout_s)
+        if not _is_browser_fallback_refusal(result[1]) or not probe.maybe_recover():
+            return result
         return try_playwright(url, timeout_s)
 
     return _wrapped
@@ -533,9 +542,9 @@ def _with_mid_run_recovery_capture(
     """
 
     def _wrapped(url: str, timeout_s: int) -> tuple[str, str, list[tuple[str, str]]]:
-        html, error, payloads = try_capture(url, timeout_s)
-        if not _is_browser_fallback_refusal(error) or not probe.maybe_recover():
-            return html, error, payloads
+        result = try_capture(url, timeout_s)
+        if not _is_browser_fallback_refusal(result[1]) or not probe.maybe_recover():
+            return result
         return try_capture(url, timeout_s)
 
     return _wrapped
@@ -587,6 +596,13 @@ def _stamp_browser_fallback_cause(
     attributable from the row itself. A row that only *recommended* fallback and was never
     tried keeps no row-level cause -- it has no attempt to explain.
 
+    When the attempt recorded its own cause -- the static listing lane carries it on the
+    result and writes it beside the attempt -- that per-attempt cause wins, so two distinct
+    environment failures in one run leave each refused row quoting the cause that was live for
+    its own call. A row from a path that recorded none falls back to the run's captured copy;
+    that fallback is last-wins, so an older refusal can quote a later cause. DATA_CONTRACT
+    states which case a reader is looking at instead of presenting the fallback as per-row.
+
     The cause comes from the breaker's captured copy, not its live `last_error`. A successful
     render later in the same run clears `last_error` (the lane recovered), and reading it here
     would erase the reason a row was refused an hour earlier.
@@ -607,7 +623,7 @@ def _stamp_browser_fallback_cause(
         if cause:
             row["browserFallbackRunLastError"] = cause
         if attempted and _row_browser_fallback_lane_error(row):
-            row_cause = empty_cause or cause
+            row_cause = _row_browser_fallback_attempt_cause(row) or empty_cause or cause
             if row_cause:
                 row["browserFallbackLastError"] = row_cause
         if refusal:
@@ -641,6 +657,22 @@ def _row_browser_fallback_lane_error(row: Mapping[str, Any]) -> bool:
     `servedEmptyEnvironment`/`servedEmptyPage` split exists to prevent.
     """
     return is_browser_fallback_environment_error(_row_browser_fallback_attempt_error(row))
+
+
+def _row_browser_fallback_attempt_cause(row: Mapping[str, Any]) -> str:
+    """The cause recorded for the same attempt whose error the row reports.
+
+    The static listing lane writes it when the attempt fails at the lane, so two distinct
+    environment failures in one run no longer make an earlier refusal quote the later cause.
+    Rows from a path that did not record one return "" and the caller falls back to the run's
+    captured cause.
+    """
+    if clean_text(row.get("browserFallbackAttemptError")):
+        return clean_text(row.get("browserFallbackLastError"))
+    for detail in row.get("details") or []:
+        if isinstance(detail, dict) and clean_text(detail.get("browserFallbackAttemptError")):
+            return clean_text(detail.get("browserFallbackLastError"))
+    return ""
 
 
 def _row_browser_fallback_attempt_error(row: Mapping[str, Any]) -> str:

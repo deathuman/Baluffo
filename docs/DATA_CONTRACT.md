@@ -1093,10 +1093,15 @@ error on it would count the two opposite findings as one. A row that only recomm
 was never tried does not carry it either: it has no attempt to explain, and the run-level
 `browserFallbackRunLastError` still describes the run. This is what makes a refusal attributable
 from the row itself: `browserFallbackAttemptError` names the cooldown, and this field names the
-cause beside it. The cause is captured when the failure is recorded, not read
-from the breaker at report time: a render that succeeds later in the same run clears the breaker's
-live error (the lane recovered), and that must not erase the reason an earlier row was refused.
-The captured cause is run-scoped and is not persisted into the next run's breaker state.
+cause beside it. When the attempt records its own cause — the static listing lane carries it on
+the attempt result and writes it to the row — that per-attempt cause is the one on the row, so two
+different environment failures in one run leave each refused row quoting the cause that was live
+for its own call. Rows from a path that did not record a per-attempt cause fall back to the run's
+captured cause, which is last-wins: an older refusal can then quote the later failure. The cause
+is captured when the failure is recorded, not read from the breaker at report time: a render that
+succeeds later in the same run clears the breaker's live error (the lane recovered), and that must
+not erase the reason an earlier row was refused. The captured cause is run-scoped and is not
+persisted into the next run's breaker state.
 
 Compact source-health rows use only existing source-report fields: `name`, `adapter`, `status`,
 `keptCount`, `fetchedCount`, `durationMs`, `failureBucket`, `classification`,

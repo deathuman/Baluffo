@@ -239,7 +239,7 @@ def test_emit_browser_fallback_status_reports_environment_blocked(
 
     pipeline_source_loop._emit_browser_fallback_status(
         True,
-        pipeline_source_loop._environment_blocked_try_playwright,
+        pipeline_source_loop._environment_blocked_lane(""),
         SimpleNamespace(max_workers=4),
         environment_blocked=True,
     )
