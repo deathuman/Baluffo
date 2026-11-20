@@ -296,7 +296,7 @@ not this payload.
 | `tableSizes` leaves 106.9 MB (39 %) unattributed | 12 tables listed, `truncated: true`, `otherBytes: 106876001` | The breakdown cannot show what grew. `job_sources` (186 526 rows, 93 985 788 B, 34.5 %) is the largest measured table and is in the current generation, so reclaim cannot see it |
 | `avgFetchDurationMs7d: 3031504` | `collect_fetch_history_metrics` divided a sum by run count | **Fixed:** the KPI now reports a median, its p90 and the sample count over measured runs, and the Admin card shows the median. The mean stays in the payload for compatibility only |
 | `pendingApprovalsCount: 865`, `duplicatePendingCount: 1` | `/ops/dashboard-health` | Normal registry queue; drain through the approval path, never a bulk state edit |
-| `probeLifecycle` dated 2026-11-02 | `/ops/dashboard-health` | A stale artifact, not a live signal |
+| `probeLifecycle` dated 2026-11-02 | `/ops/dashboard-health` | **Fixed:** the row prints the wave's finish time, and a stale or undated receipt renders as a warning instead of “clean” |
 | `sync.runtime.lastPull`/`lastPush` are empty objects | `lastPullAt`/`lastResult` are set | Known cosmetic projection gap; not an Action Center signal |
 
 ## Slices

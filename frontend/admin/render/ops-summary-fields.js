@@ -64,12 +64,39 @@ function probeLifecycleCount(receipt, key) {
   return Number.isFinite(value) ? value : null;
 }
 
+// A receipt measures one probe wave, not the lane right now. The panel used to print a
+// `clean` chip from whatever receipt sat on disk: the 0.3.064 container rendered "clean"
+// from a wave that had run 16 days earlier, so a lane nobody had exercised since read as a
+// verified-healthy one. Past this age the chip stops making a current claim.
+const PROBE_RECEIPT_STALE_MS = 7 * 24 * 60 * 60 * 1000;
+
+function probeReceiptFinishedMs(receipt) {
+  for (const key of ["finishedAt", "modifiedAt"]) {
+    const text = String(receipt?.[key] || "").trim();
+    if (!text) continue;
+    const parsed = Date.parse(text);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function probeReceiptWhen(ms, nowMs) {
+  const date = new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+  const ageMs = Math.max(0, nowMs - ms);
+  const age = ageMs < 3_600_000
+    ? `${Math.max(1, Math.round(ageMs / 60_000))}m ago`
+    : ageMs < 86_400_000
+      ? `${Math.round(ageMs / 3_600_000)}h ago`
+      : `${Math.round(ageMs / 86_400_000)}d ago`;
+  return `${date} UTC (${age})`;
+}
+
 /**
  * One line an operator can read without opening the audit artifact: did the probe wave leave
- * work running, and was any shared client left unclosed. Returns "" when the receipt itself is
- * absent.
+ * work running, was any shared client left unclosed, and when did that wave actually run.
+ * Returns "" when the receipt itself is absent.
  */
-function formatProbeLifecycleReceipt(receipt) {
+function formatProbeLifecycleReceipt(receipt, nowMs = Date.now()) {
   if (!hasOwnField(receipt, "fetchesStarted")) return "";
   const count = key => probeLifecycleCount(receipt, key) ?? 0;
   const bounded = count("fetchesBoundedOut");
@@ -81,10 +108,23 @@ function formatProbeLifecycleReceipt(receipt) {
   const batches = probeLifecycleCount(rows, "batches");
   const partial = PROBE_LIFECYCLE_DISPLAY_KEYS.some(key => probeLifecycleCount(rows, key) === null);
   const attention = PROBE_LIFECYCLE_ATTENTION_KEYS.some(key => count(key) > 0) || partial;
-  const chipClass = unclosed > 0 ? "critical" : attention ? "warning" : "healthy";
+  const finishedMs = probeReceiptFinishedMs(rows);
+  const undated = finishedMs === null;
+  const stale = finishedMs !== null && (nowMs - finishedMs) > PROBE_RECEIPT_STALE_MS;
+  const chipClass = unclosed > 0
+    ? "critical"
+    : attention || undated || stale ? "warning" : "healthy";
   const chipLabel = unclosed > 0
     ? "client left unclosed"
-    : attention ? "probe attention" : "clean";
+    : attention
+      ? "probe attention"
+      : undated
+        ? "receipt undated"
+        : stale ? "stale receipt" : "clean";
+  // An undated receipt cannot be aged, so it cannot be read as current either.
+  const receiptAge = undated
+    ? "; the receipt carries no finish time, so its age is unknown"
+    : `; last probe wave finished ${probeReceiptWhen(finishedMs, nowMs)}`;
   const settledAfterBound = Math.max(0, bounded - outstanding);
   const settledText = settledAfterBound > 0
     ? ` (${settledAfterBound.toLocaleString()} settled before the batch left)`
@@ -96,7 +136,7 @@ function formatProbeLifecycleReceipt(receipt) {
       ${bounded.toLocaleString()} hit their per-call timeout${settledText},
       ${outstanding.toLocaleString()} still running when the batch left (${insideClient.toLocaleString()} inside the shared client),
       ${unclosed.toLocaleString()} clients unclosed,
-      ${deadlineExits.toLocaleString()} deadline exits${partial ? ", receipt fields incomplete" : ""}.
+      ${deadlineExits.toLocaleString()} deadline exits${partial ? ", receipt fields incomplete" : ""}${escapeHtml(receiptAge)}.
     `;
 }
 

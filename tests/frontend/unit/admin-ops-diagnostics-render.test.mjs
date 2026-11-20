@@ -326,7 +326,9 @@ test("admin render: probe lifecycle KPI says so when no receipt is published, an
       fetchesOutstandingAtExit: 0,
       clientFetchesOutstandingAtExit: 0,
       clientsUnclosed: 0,
-      deadlineExits: 0
+      deadlineExits: 0,
+      // A receipt with no date is no longer rendered as clean; a fresh wave is.
+      finishedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString()
     }
   }, "healthy", {});
 
@@ -346,7 +348,8 @@ test("admin render: a probe that hit its bound but settled is clean, not attenti
       fetchesOutstandingAtExit: 0,
       clientFetchesOutstandingAtExit: 0,
       clientsUnclosed: 0,
-      deadlineExits: 0
+      deadlineExits: 0,
+      finishedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString()
     }
   }, "healthy", {});
 
