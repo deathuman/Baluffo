@@ -21,6 +21,7 @@ from src.jobs.browser_fallback import (
     ENVIRONMENT_BLOCKED_ERROR_TEXT,
     REFUSAL_ERROR_TEXT,
     BrowserFallbackCircuitBreaker,
+    is_browser_fallback_environment_error,
 )
 from src.jobs.browser_fallback_pool import BrowserFallbackPool, browser_pool_enabled
 from src.jobs.common import config as common_config
@@ -577,22 +578,86 @@ def _stamp_browser_fallback_cause(
     actually happened to it. Neither was visible beside the other, so the 8 ashby boards that
     errored with "no jobs extracted from ashby board html" and `browserFallbackRecommended:
     true` looked like boards that were never given a chance. The fields are named ``Run*``
-    because the cause is the run's, not the row's -- writing a per-row reason here would be the
-    same false precision this change exists to remove.
+    because the cause is the run's, not the row's.
+
+    A row whose own attempt came back empty is a different case: it has a per-row outcome and
+    no cause, which is how the v8 replay's 988 of 1,032 refusals read as "cooldown active"
+    with nothing explaining the cooldown. Those rows also carry ``browserFallbackLastError``,
+    the contract's name for the environment cause that closed the breaker, so the refusal is
+    attributable from the row itself. A row that only *recommended* fallback and was never
+    tried keeps no row-level cause -- it has no attempt to explain.
+
+    The cause comes from the breaker's captured copy, not its live `last_error`. A successful
+    render later in the same run clears `last_error` (the lane recovered), and reading it here
+    would erase the reason a row was refused an hour earlier.
     """
     if not source_reports or guard is None:
         return
     cause = clean_text(guard.last_error)
     refusal = clean_text(guard.last_refusal_reason)
-    if not cause and not refusal:
+    empty_cause = clean_text(guard.last_empty_cause)
+    if not cause and not refusal and not empty_cause:
         return
     for row in source_reports:
-        if not isinstance(row, dict) or not _row_recommends_browser_fallback(row):
+        if not isinstance(row, dict):
+            continue
+        attempted = _row_attempted_browser_fallback(row)
+        if not attempted and not _row_recommends_browser_fallback(row):
             continue
         if cause:
             row["browserFallbackRunLastError"] = cause
+        if attempted and _row_browser_fallback_lane_error(row):
+            row_cause = empty_cause or cause
+            if row_cause:
+                row["browserFallbackLastError"] = row_cause
         if refusal:
             row["browserFallbackRunRefusalReason"] = refusal
+
+
+def _row_attempted_browser_fallback(row: Mapping[str, Any]) -> bool:
+    """Whether a report row actually asked the browser lane for a page.
+
+    The breaker counts a refusal as an attempt, so a refused row is in this set -- which is
+    the point: it tried and got an error, and that error deserves a cause. Like the
+    recommendation flag, the attempt can be written on the row's **detail** during the fetch
+    and only hoisted later, so both levels are read.
+    """
+    if bool(row.get("browserFallbackAttempted")):
+        return True
+    for detail in row.get("details") or []:
+        if isinstance(detail, dict) and bool(detail.get("browserFallbackAttempted")):
+            return True
+    return False
+
+
+def _row_browser_fallback_lane_error(row: Mapping[str, Any]) -> bool:
+    """Whether the row's failed attempt says the *lane* broke, not the page.
+
+    A refusal, a blocked preflight and a launch failure all sit in the environment token
+    table (the first two read "browser fallback unavailable (...)", the third names its own
+    reason). "browser fallback returned empty content" is not in it: a page that rendered
+    with no jobs in it is a finding about the board. Stamping the run's launch error on that
+    row would call a page finding a browser failure -- the exact conflation the
+    `servedEmptyEnvironment`/`servedEmptyPage` split exists to prevent.
+    """
+    return is_browser_fallback_environment_error(_row_browser_fallback_attempt_error(row))
+
+
+def _row_browser_fallback_attempt_error(row: Mapping[str, Any]) -> str:
+    """The row's recorded fallback failure, top level first, then the detail row.
+
+    An empty string is the success case: an attempt that returned HTML never records an
+    error, which is what keeps a served row from inheriting a cause that was never its own.
+    """
+    error = clean_text(row.get("browserFallbackAttemptError"))
+    if error:
+        return error
+    for detail in row.get("details") or []:
+        if isinstance(detail, dict):
+            error = clean_text(detail.get("browserFallbackAttemptError"))
+            if error:
+                return error
+    return ""
 
 
 def _row_recommends_browser_fallback(row: Mapping[str, Any]) -> bool:

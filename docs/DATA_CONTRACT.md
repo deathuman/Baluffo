@@ -1084,6 +1084,20 @@ tombstone, suppress, reject, or delete sources.
 | `topFailureBuckets` | `array` | `{key,count,examples}` rows derived from source `failureBucket`. |
 | `topClassifications` | `array` | `{key,count,examples}` rows derived from source `classification`. |
 
+`browserFallbackLastError` is the environment cause that closed the fallback breaker, and it is
+carried on every report row whose own fallback attempt failed at the lane — refused by the
+cooldown, blocked by the run's preflight, or unable to launch — and on that row's compact
+source-health projection. A row whose browser rendered a page with no jobs in it does not carry
+it: that empty is a finding about the board, not about the lane, and stamping the run's launch
+error on it would count the two opposite findings as one. A row that only recommends fallback and
+was never tried does not carry it either: it has no attempt to explain, and the run-level
+`browserFallbackRunLastError` still describes the run. This is what makes a refusal attributable
+from the row itself: `browserFallbackAttemptError` names the cooldown, and this field names the
+cause beside it. The cause is captured when the failure is recorded, not read
+from the breaker at report time: a render that succeeds later in the same run clears the breaker's
+live error (the lane recovered), and that must not erase the reason an earlier row was refused.
+The captured cause is run-scoped and is not persisted into the next run's breaker state.
+
 Compact source-health rows use only existing source-report fields: `name`, `adapter`, `status`,
 `keptCount`, `fetchedCount`, `durationMs`, `failureBucket`, `classification`,
 `zeroKeptClassification`, `browserFallbackRecommended`, `error`, and `exclusionReason`.

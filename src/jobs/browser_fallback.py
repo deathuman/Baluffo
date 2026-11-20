@@ -49,6 +49,12 @@ class BrowserFallbackCircuitBreaker:
     failure_count: int = 0
     last_refused_at: str = ""
     last_refusal_reason: str = ""
+    # Run-scoped diagnostic, captured when the last empty outcome is recorded. `last_error` is
+    # breaker state: a successful render clears it, because the environment problem is gone.
+    # A row refused before that success does not stop having been refused, so the report needs
+    # the cause that was live *then*. Kept out of `to_state_row()` on purpose -- persisted, it
+    # would stamp a cause on a later run that never had a failure.
+    last_empty_cause: str = ""
     # Per-run demand accounting (saturation visibility, 2026-09-15): every
     # wrapped call is an attempt; the breaker refusing one in cooldown is
     # refused demand that used to surface only as a silent got_html=False
@@ -118,6 +124,9 @@ class BrowserFallbackCircuitBreaker:
                 self.demand_refused += 1
                 self.last_refused_at = stamp
                 self.last_refusal_reason = REFUSAL_COOLDOWN
+                # Captured now, not read after the source loop: a later success clears
+                # `last_error` and would take the refusal's reason with it.
+                self.last_empty_cause = clean_text(self.last_error)
                 return REFUSAL_ERROR_TEXT
             self.last_attempt_at = stamp
             self.demand_pages += 1
@@ -142,6 +151,7 @@ class BrowserFallbackCircuitBreaker:
             self.failure_count += 1
             self.last_failure_at = stamp
             self.last_error = clean_text(error)
+            self.last_empty_cause = clean_text(error)
             self.last_refusal_reason = ""
             if cooldown_minutes > 0:
                 self.disabled_until_at = (now_dt + timedelta(minutes=cooldown_minutes)).isoformat()
@@ -157,6 +167,7 @@ class BrowserFallbackCircuitBreaker:
         """
         with self._lock:
             self.last_error = clean_text(error)
+            self.last_empty_cause = clean_text(error)
             self.last_failure_at = now_iso()
             self.last_refused_at = ""
             self.last_refusal_reason = ""

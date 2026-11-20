@@ -111,6 +111,9 @@ def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
         "browserFallbackAttempted": bool(row.get("browserFallbackAttempted")),
         "browserFallbackUsed": bool(row.get("browserFallbackUsed")),
         "browserFallbackAttemptError": clean_text(row.get("browserFallbackAttemptError")),
+        # The environment cause that closed the breaker, copied so a triage row explains its
+        # own refused attempt instead of quoting "cooldown active" with no reason beside it.
+        "browserFallbackLastError": clean_text(row.get("browserFallbackLastError")),
         "browserFallbackSkippedReason": clean_text(row.get("browserFallbackSkippedReason")),
         "error": clean_text(row.get("error")),
         "exclusionReason": clean_text(row.get("exclusionReason")),
