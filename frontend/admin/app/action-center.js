@@ -481,6 +481,32 @@ function browserFallbackDemandCopy(demand) {
   );
 }
 
+// Source rows, not calls, and the buckets overlap: `blocked` rows are failed rows too,
+// and both are subsets of `attempted`. Printed unlabelled, one dead browser read as
+// "186 attempted" beside "8 need fallback" — i.e. 186 source failures with no cause.
+// Each count is named, and the failure count is split so the browser's share is told
+// apart from the boards' own failures.
+function browserFallbackSourceCopy(outcome = {}) {
+  const read = key => Math.max(0, Number(outcome?.[key] ?? 0) || 0);
+  const recommended = read("browserFallbackRecommendedSources");
+  const blocked = read("browserFallbackEnvironmentBlockedSources");
+  // A blocked row returned no HTML, so a payload carrying only that narrower count must
+  // not read as zero failures; likewise `attempted` is at least `failed`.
+  const failed = Math.max(read("browserFallbackFailedSources"), blocked);
+  const attempted = Math.max(read("browserFallbackAttemptedSources"), failed);
+  // "35 failed" sat beside the row's own "391 sources failed in the last fetch", so the
+  // same word carried two scopes. "Of them" ties the failure to the attempted sources;
+  // the parenthetical keeps blocked vs other causes separate.
+  const failureCopy = blocked > 0
+    ? `${formatCount(failed)} of them failed (${formatCount(blocked)} blocked by the browser environment, ${formatCount(failed - blocked)} for other reasons)`
+    : `${formatCount(failed)} of them failed`;
+  return [
+    recommended > 0 && `${formatCount(recommended)} source${recommended === 1 ? " needs" : "s need"} browser fallback`,
+    attempted > 0 && `${formatCount(attempted)} source${attempted === 1 ? "" : "s"} attempted fallback`,
+    failed > 0 && failureCopy
+  ].filter(Boolean).join("; ");
+}
+
 function evaluateFailedSources(healthData) {
   if (!healthData) return null;
   const kpis = healthData.kpis || {};
@@ -503,16 +529,12 @@ function evaluateFailedSources(healthData) {
     : zeroReviewFallback;
   if (failedRatio <= 0 && failedSources <= 0 && zeroReview <= 0) return null;
 
-  const browserFallback = Number(outcome.browserFallbackRecommendedSources || 0);
-  const browserAttempted = Number(outcome.browserFallbackAttemptedSources || 0);
   const details = [];
   if (failedSources > 0 && zeroReview > 0) {
     details.push(`${formatCount(zeroReview)} other zero-kept sources need review`);
   }
-  if (browserFallback > 0) {
-    const attempted = browserAttempted > 0 ? ` (${formatCount(browserAttempted)} attempted)` : "";
-    details.push(`${formatCount(browserFallback)} need browser fallback${attempted}`);
-  }
+  const browserFallbackCopy = browserFallbackSourceCopy(outcome);
+  if (browserFallbackCopy) details.push(browserFallbackCopy);
   const demandCopy = browserFallbackDemandCopy(kpis.browserFallbackDemand);
   if (demandCopy) details.push(demandCopy);
   const breakdown = details.length ? `; ${details.join("; ")}` : "";
@@ -547,7 +569,7 @@ function evaluateBrowserFallbackHealth(healthData) {
   const failed = rawHealth === false || health.ok === false;
   const rawBlocked = kpis.browserFallbackEnvironmentBlockedSources
     ?? kpis.sourceOutcomeSummary?.browserFallbackEnvironmentBlockedSources;
-  const blocked = Math.max(0, Number(rawBlocked));
+  const blocked = Math.max(0, Number(rawBlocked) || 0);
   const environmentBlocked = kpis.browserFallbackEnvironmentBlocked === true
     || (Number.isFinite(blocked) && blocked > 0);
   if (!failed && !environmentBlocked) return null;
@@ -562,16 +584,16 @@ function evaluateBrowserFallbackHealth(healthData) {
   const failureCopy = failureMs
     ? `; last failure ${formatFailureTimestamp(failureMs)} (${formatElapsedAge(failureMs)})`
     : "";
-  const rawNeeded = kpis.sourceOutcomeSummary?.browserFallbackRecommendedSources;
-  const needed = Math.max(0, Number(rawNeeded));
-  const neededCopy = rawNeeded != null && Number.isFinite(needed)
-    ? `; ${formatCount(needed)} source${needed === 1 ? " needs" : "s need"} browser fallback`
-    : "";
-  const blockedCopy = Number.isFinite(blocked) && blocked > 0
-    ? `; ${formatCount(blocked)} source${blocked === 1 ? "" : "s"} environment-blocked`
-    : environmentBlocked
-      ? "; browser environment blocked"
-      : "";
+  // The source counts travel together: the run-level blocked total is the authority for
+  // `blocked` (the outcome can lag it), and the other three come from the outcome.
+  const outcome = kpis.sourceOutcomeSummary || {};
+  const sourceCopy = browserFallbackSourceCopy({
+    ...outcome,
+    browserFallbackEnvironmentBlockedSources: Math.max(
+      blocked,
+      Math.max(0, Number(outcome.browserFallbackEnvironmentBlockedSources || 0) || 0)
+    )
+  });
   const demandCopy = browserFallbackDemandCopy(kpis.browserFallbackDemand);
   const stageLabel = BROWSER_STAGE_LABELS[stage] || stage;
   const headline = environmentBlocked
@@ -580,7 +602,7 @@ function evaluateBrowserFallbackHealth(healthData) {
   return {
     id: "browser_fallback_health",
     severity: "warning",
-    summary: `${headline}${errorType ? ` (${errorType})` : ""}${clipped ? `: ${clipped}` : ""}${neededCopy}${blockedCopy}${failureCopy}${demandCopy ? `; ${demandCopy}` : ""}`,
+    summary: `${headline}${errorType ? ` (${errorType})` : ""}${clipped ? `: ${clipped}` : ""}${sourceCopy ? `; ${sourceCopy}` : ""}${failureCopy}${demandCopy ? `; ${demandCopy}` : ""}`,
     actions: ["review", "copy_diagnostics", "dismiss"]
   };
 }

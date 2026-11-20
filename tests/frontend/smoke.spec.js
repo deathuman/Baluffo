@@ -823,7 +823,9 @@ test("admin smoke: Action Center shows a failed browser fallback probe", async (
   const expectedFailureAt = `${lastFailureAt.slice(0, 19).replace("T", " ")} UTC`;
   const sourceHealth = {
     browserFallbackRecommendedSources: 206,
-    browserFallbackAttemptedSources: 35
+    browserFallbackAttemptedSources: 48,
+    browserFallbackFailedSources: 35,
+    browserFallbackEnvironmentBlockedSources: 12
   };
   const failedHealth = {
     ok: false,
@@ -853,8 +855,14 @@ test("admin smoke: Action Center shows a failed browser fallback probe", async (
     await expect(actionCenter).toBeVisible();
     await expect(signal).toBeVisible({ timeout: 20000 });
     await expect(signal).toContainText("Browser fallback health needs attention");
-    await expect(signal).toContainText("Probe failed at launch (executable_does_not_exist): browserType.launch");
+    await expect(signal).toContainText(
+      "Browser environment blocked at launch (executable_does_not_exist): browserType.launch"
+    );
     await expect(signal).toContainText("206 sources need browser fallback");
+    await expect(signal).toContainText("48 sources attempted fallback");
+    await expect(signal).toContainText(
+      "35 of them failed (12 blocked by the browser environment, 23 for other reasons)"
+    );
     await expect(signal).toContainText(`last failure ${expectedFailureAt} (3h ago)`);
     await expect(signal).toContainText("Copy diagnostics");
   } finally {
@@ -868,7 +876,9 @@ test("admin smoke: a passing browser fallback probe clears the Action Center sig
   const lastFailureAt = new Date(Date.now() - (2 * 60 * 60 * 1000)).toISOString();
   const sourceHealth = {
     browserFallbackRecommendedSources: 206,
-    browserFallbackAttemptedSources: 35
+    browserFallbackAttemptedSources: 48,
+    browserFallbackFailedSources: 35,
+    browserFallbackEnvironmentBlockedSources: 12
   };
   const failedHealth = {
     ok: false,
@@ -895,6 +905,9 @@ test("admin smoke: a passing browser fallback probe clears the Action Center sig
     // Navigate while that failure payload is cached, so the initial Action
     // Center render is fed by the real bridge rather than an intercepted route.
     await page.goto(`/admin.html?actionCenterPollMs=${ACTION_CENTER_TEST_POLL_MS}`);
+    // The Action Center pauses its interval while the document is hidden; keep the
+    // recovery poll running when this test follows another admin page in the same run.
+    await page.bringToFront();
     await expect(page.locator("#admin-content")).toBeVisible();
 
     const actionCenter = page.locator("#admin-action-center");
@@ -903,8 +916,14 @@ test("admin smoke: a passing browser fallback probe clears the Action Center sig
     await expect(actionCenter).toBeVisible();
     await expect(signal).toBeVisible({ timeout: 20000 });
     await expect(signal).toContainText("Browser fallback health needs attention");
-    await expect(signal).toContainText("Probe failed at launch (executable_does_not_exist): browserType.launch");
+    await expect(signal).toContainText(
+      "Browser environment blocked at launch (executable_does_not_exist): browserType.launch"
+    );
     await expect(signal).toContainText("206 sources need browser fallback");
+    await expect(signal).toContainText("48 sources attempted fallback");
+    await expect(signal).toContainText(
+      "35 of them failed (12 blocked by the browser environment, 23 for other reasons)"
+    );
     const initialPollSequence = Number(await actionCenterItems.getAttribute("data-poll-sequence") || 0);
 
     // The probe recovers on disk. The next poll (sped up by the test-only
@@ -923,7 +942,15 @@ test("admin smoke: a passing browser fallback probe clears the Action Center sig
       },
       { timeout: 50000 }
     );
-    writeBrowserFallbackSidecar(passingHealth, { sourceHealth });
+    // The recovered run has no blocked sources either, so the environment-blocked
+    // signal clears instead of staying on the previous outcome counts.
+    writeBrowserFallbackSidecar(passingHealth, {
+      sourceHealth: {
+        ...sourceHealth,
+        browserFallbackFailedSources: 0,
+        browserFallbackEnvironmentBlockedSources: 0
+      }
+    });
     const passingResponse = await passingPoll;
     expect((await passingResponse.json()).kpis.browserFallbackHealth).toMatchObject(passingHealth);
     // Wait for the Action Center to complete its own poll, not for a wall-clock

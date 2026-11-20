@@ -86,7 +86,8 @@ test("failed-source copy separates zero-yield and browser-fallback counts", asyn
               zeroKeptNeedsReviewSources: 1598,
               zeroKeptNeedsReviewNonFailedSources: 1207,
               browserFallbackRecommendedSources: 206,
-              browserFallbackAttemptedSources: 35
+              browserFallbackAttemptedSources: 48,
+              browserFallbackFailedSources: 35
             }
           }
         };
@@ -101,7 +102,10 @@ test("failed-source copy separates zero-yield and browser-fallback counts", asyn
   const html = refs.actionCenterItemsEl.innerHTML;
   assert.match(html, /391 sources failed in the last fetch/);
   assert.match(html, /1,207 other zero-kept sources need review/);
-  assert.match(html, /206 need browser fallback \(35 attempted\)/);
+  assert.match(
+    html,
+    /391 sources failed in the last fetch; 1,207 other zero-kept sources need review; 206 sources need browser fallback; 48 sources attempted fallback; 35 of them failed/
+  );
   assert.doesNotMatch(html, /2,055 kept zero jobs/);
   assert.equal((html.match(/class="action-center-signal /g) || []).length, 1);
 });
@@ -211,7 +215,11 @@ test("environment-blocked browser fallback reports a warning and a source count"
             },
             browserFallbackEnvironmentBlocked: true,
             browserFallbackEnvironmentBlockedSources: 12,
-            sourceOutcomeSummary: { browserFallbackRecommendedSources: 206 }
+            sourceOutcomeSummary: {
+              browserFallbackRecommendedSources: 206,
+              browserFallbackAttemptedSources: 48,
+              browserFallbackFailedSources: 35
+            }
           }
         };
       }
@@ -226,7 +234,13 @@ test("environment-blocked browser fallback reports a warning and a source count"
   const html = refs.actionCenterItemsEl.innerHTML;
   assert.match(html, /data-signal="browser_fallback_health"/);
   assert.match(html, /Browser environment blocked at launch/);
-  assert.match(html, /12 sources environment-blocked/);
+  // The browser never ran for 12 of the 35 attempted sources, so the row names each
+  // count and scopes the failure to the fallback sources: 12 because of the
+  // environment and 23 on their own.
+  assert.match(
+    html,
+    /206 sources need browser fallback; 48 sources attempted fallback; 35 of them failed \(12 blocked by the browser environment, 23 for other reasons\)/
+  );
   assert.doesNotMatch(html, /All systems operational/);
   assert.doesNotMatch(html, /Healthy/);
   assert.match(refs.actionCenterStatusChipEl.innerHTML, /1 issue/);
@@ -359,5 +373,8 @@ test("a context-stage browser failure names context creation, not navigation", a
   const html = refs.actionCenterItemsEl.innerHTML;
   assert.match(html, /Browser environment blocked at context creation/);
   assert.doesNotMatch(html, /blocked at navigation/);
-  assert.match(html, /239 sources environment-blocked/);
+  assert.match(
+    html,
+    /61 sources need browser fallback; 239 sources attempted fallback; 239 of them failed \(239 blocked by the browser environment, 0 for other reasons\)/
+  );
 });
