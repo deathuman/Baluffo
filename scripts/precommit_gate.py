@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
-"""Run pre-commit in either a changed-files or full-repo mode."""
+"""Run pre-commit against the staged tree, or against the whole repository.
+
+Changed mode validates the **index**, not the working tree. A commit contains
+only what was staged, so an unstaged edit is not part of it; measuring the
+working tree instead made a partial slice fail on whatever later slice happened
+to be sitting in the tree, which is how six commits in a row ended up needing
+`--no-verify`. The staged tree is materialised into a throwaway worktree and
+every stage runs there.
+"""
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
+import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+import uuid
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -57,12 +68,40 @@ EXCLUDED_ROOT_PREFIXES = (
     "tmp",
 )
 MAX_PRECOMMIT_FILES_PER_COMMAND = 200
+# Where changed mode materialises the index. `.tmp` is ignored and excluded from
+# tracked-file discovery, so the snapshot can live inside the repository and
+# still resolve the repo's `node_modules` by walking up from it.
+STAGED_TREE_DIR = Path(".tmp") / "precommit-staged-tree"
+# Variables git exports to a commit hook to point at the repository being
+# committed. They resolve relative to the repo root, so inside the snapshot they
+# name paths that do not exist (`.git` is a file in a worktree) -- and a
+# `read-tree` that inherited one would write the parent's index.
+_GIT_LOCATION_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_PREFIX")
 
 
-def _git_lines(*args: str) -> list[str]:
+def _env_without_git_location() -> dict[str, str]:
+    return {name: value for name, value in os.environ.items() if name not in _GIT_LOCATION_VARS}
+
+
+def _snapshot_env() -> dict[str, str]:
+    """Environment for a stage that runs in the staged tree.
+
+    The snapshot's own index *is* the staged tree, so the hook's `GIT_INDEX_FILE`
+    is dropped rather than translated. `MYPY_CACHE_DIR` keeps mypy warm: its
+    cache is keyed by module, not by checkout path (1.5s against 22.6s cold),
+    and a seeded type error is still reported.
+    """
+    env = _env_without_git_location()
+    env["MYPY_CACHE_DIR"] = str(ROOT / ".mypy_cache")
+    return env
+
+
+def _git_at(root: Path, *args: str, env: Mapping[str, str] | None = None) -> list[str]:
+    """Run git in ``root`` and return its non-empty output lines."""
     completed = subprocess.run(
-        ["git", "-C", str(ROOT), *args],
-        cwd=ROOT,
+        ["git", "-C", str(root), *args],
+        cwd=root,
+        env=dict(env) if env is not None else None,
         check=False,
         capture_output=True,
         text=True,
@@ -75,6 +114,10 @@ def _git_lines(*args: str) -> list[str]:
             f"git {' '.join(args)} failed with exit code {completed.returncode}: {details}"
         )
     return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _git_lines(*args: str) -> list[str]:
+    return _git_at(ROOT, *args)
 
 
 def _top_level_component(rel_path: str) -> str:
@@ -92,26 +135,20 @@ def _is_excluded_root(rel_path: str, extra_roots: tuple[str, ...] = ()) -> bool:
     return any(root_name == prefix for prefix in normalized_roots if prefix)
 
 
-def collect_changed_files() -> list[str]:
-    """Return changed, staged, and untracked files relative to the repo root."""
+def collect_staged_files() -> list[str]:
+    """Return the files the next commit would add, modify, or rename.
+
+    Only the index is read. An unstaged edit is not part of the commit, so it
+    must not decide whether the commit passes: a partial slice has to be
+    committable while the next slice is still being written in the same files.
+    """
     files: list[str] = []
     seen: set[str] = set()
-    git_queries = (
-        ("diff", "--cached", "--name-only", "--diff-filter=ACMRTUXB"),
-        ("diff", "--name-only", "--diff-filter=ACMRTUXB"),
-        ("ls-files", "--others", "--exclude-standard"),
-    )
-    for query in git_queries:
-        for rel_path in _git_lines(*query):
-            if rel_path in seen:
-                continue
-            if _is_excluded_root(rel_path):
-                continue
-            abs_path = ROOT / rel_path
-            if not abs_path.exists() or abs_path.is_dir():
-                continue
-            seen.add(rel_path)
-            files.append(rel_path)
+    for rel_path in _git_lines("diff", "--cached", "--name-only", "--diff-filter=ACMRTUXB"):
+        if rel_path in seen or _is_excluded_root(rel_path):
+            continue
+        seen.add(rel_path)
+        files.append(rel_path)
     return files
 
 
@@ -128,6 +165,171 @@ def collect_repo_files(exclude_roots: tuple[str, ...] = ()) -> list[str]:
     return files
 
 
+def _git_worktree_add(root: Path, tree: Path) -> None:
+    completed = subprocess.run(
+        ["git", "-C", str(root), "worktree", "add", "--detach", "--quiet", str(tree), "HEAD"],
+        cwd=root,
+        env=_env_without_git_location(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        details = completed.stderr.strip() or completed.stdout.strip() or "no git output"
+        raise RuntimeError(f"git worktree add failed: {details}")
+
+
+def _link_node_modules(tree: Path, root: Path) -> None:
+    """Expose the repo's ``node_modules`` inside the staged tree.
+
+    ``npm run lint:js`` runs ``node ./node_modules/eslint/bin/eslint.js``, a path
+    relative to the package root, so the eslint hook needs an entry at the
+    snapshot root. Node would resolve imports by walking up to the repo's
+    ``node_modules``, but the literal path in the script would not.
+    """
+    source = root / "node_modules"
+    link = tree / "node_modules"
+    if not source.is_dir() or link.exists() or link.is_symlink():
+        return
+    try:
+        link.symlink_to(source, target_is_directory=True)
+        return
+    except OSError:
+        if os.name != "nt":
+            raise
+    # Windows needs a directory junction: a symlink requires Developer Mode or
+    # an elevated shell, while `mklink /J` works for the current user.
+    subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(source)],
+        check=False,
+        capture_output=True,
+    )
+
+
+def _unlink_node_modules(tree: Path) -> None:
+    """Remove the link itself, never the repo's modules it points at."""
+    link = tree / "node_modules"
+    if not link.is_symlink() and not link.exists():
+        return
+    try:
+        link.unlink()
+        return
+    except OSError:
+        pass
+    with contextlib.suppress(OSError):
+        link.rmdir()
+
+
+def _remove_staged_tree(root: Path, tree: Path) -> None:
+    _unlink_node_modules(tree)
+    completed = subprocess.run(
+        ["git", "-C", str(root), "worktree", "remove", "--force", str(tree)],
+        cwd=root,
+        env=_env_without_git_location(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode == 0:
+        return
+    # A locked file (an editor, an antivirus scan) can defeat `worktree remove`
+    # on Windows. Drop the directory and prune the metadata so the next commit
+    # does not trip over a worktree git still lists.
+    shutil.rmtree(tree, ignore_errors=True)
+    subprocess.run(
+        ["git", "-C", str(root), "worktree", "prune"],
+        cwd=root,
+        env=_env_without_git_location(),
+        check=False,
+        capture_output=True,
+    )
+
+
+def _create_staged_tree(root: Path) -> Path:
+    """Materialise the index as a detached worktree and return its path."""
+    tree_sha = _git_at(root, "write-tree")[0]
+    tree = root / STAGED_TREE_DIR / uuid.uuid4().hex[:12]
+    tree.parent.mkdir(parents=True, exist_ok=True)
+    _git_worktree_add(root, tree)
+    try:
+        # HEAD stays at the real commit and the index becomes the staged tree, so
+        # `git diff --cached` inside the snapshot is exactly the commit's change.
+        _git_at(tree, "read-tree", "--reset", "-u", tree_sha, env=_env_without_git_location())
+    except RuntimeError:
+        _remove_staged_tree(root, tree)
+        raise
+    _link_node_modules(tree, root)
+    return tree
+
+
+@contextlib.contextmanager
+def staged_tree(root: Path | None = None) -> Iterator[Path]:
+    """Yield a worktree holding exactly the staged tree, then remove it."""
+    base = ROOT if root is None else root
+    tree = _create_staged_tree(base)
+    try:
+        yield tree
+    finally:
+        _remove_staged_tree(base, tree)
+
+
+@contextlib.contextmanager
+def validation_tree() -> Iterator[Path]:
+    """Yield the tree changed mode validates: the staged tree when available.
+
+    A repository whose index cannot be materialised (an unborn HEAD, an unmerged
+    index, a missing `git`) falls back to the working tree and says so. The gate
+    still runs and can still block; it just loses the isolation.
+    """
+    try:
+        tree = _create_staged_tree(ROOT)
+    except RuntimeError as exc:
+        print(f"pre-commit gate: staged tree unavailable ({exc}); validating the working tree")
+        yield ROOT
+        return
+    print(f"pre-commit gate: validating the staged tree ({tree.relative_to(ROOT).as_posix()})")
+    try:
+        yield tree
+    finally:
+        _remove_staged_tree(ROOT, tree)
+
+
+def _read_tree_bytes(tree: Path, files: list[str]) -> dict[str, bytes]:
+    contents: dict[str, bytes] = {}
+    for rel_path in files:
+        path = tree / rel_path
+        if path.is_file():
+            contents[rel_path] = path.read_bytes()
+    return contents
+
+
+def _restore_hook_fixes(tree: Path, before: Mapping[str, bytes], files: list[str]) -> None:
+    """Copy a fixer hook's edit from the staged tree into the working tree.
+
+    Hooks run against the staged tree, so `ruff-check --fix` and
+    `end-of-file-fixer` no longer edit the working tree by themselves. Copying
+    the result back keeps the fix-and-restage workflow. A file whose working
+    copy already diverged from what was staged is skipped: that edit belongs to
+    the developer, and overwriting it would destroy unstaged work.
+    """
+    restored: list[str] = []
+    for rel_path in files:
+        original = before.get(rel_path)
+        if original is None:
+            continue
+        staged_now = tree / rel_path
+        working = ROOT / rel_path
+        if not staged_now.is_file() or not working.is_file():
+            continue
+        fixed = staged_now.read_bytes()
+        if fixed == original or working.read_bytes() != original:
+            continue
+        working.write_bytes(fixed)
+        restored.append(rel_path)
+    if restored:
+        print(f"pre-commit gate: copied hook fixes into the working tree: {', '.join(restored)}")
+
+
 def _precommit_base_command() -> list[str]:
     return [
         PYTHON,
@@ -139,11 +341,16 @@ def _precommit_base_command() -> list[str]:
     ]
 
 
-def _run_precommit_command(command: list[str]) -> int:
-    env = os.environ.copy()
-    pre_commit_home = Path(env.setdefault("PRE_COMMIT_HOME", str(PRE_COMMIT_HOME)))
+def _run_precommit_command(
+    command: list[str],
+    *,
+    cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> int:
+    run_env = dict(env) if env is not None else os.environ.copy()
+    pre_commit_home = Path(run_env.setdefault("PRE_COMMIT_HOME", str(PRE_COMMIT_HOME)))
     pre_commit_home.mkdir(parents=True, exist_ok=True)
-    completed = subprocess.run(command, cwd=ROOT, env=env)
+    completed = subprocess.run(command, cwd=cwd or ROOT, env=run_env)
     return completed.returncode
 
 
@@ -218,8 +425,14 @@ def should_run_repo_guardrails(files: list[str]) -> bool:
 
 
 def run_repo_guardrails(
-    groups: tuple[str, ...] = (), *, pending_container_version_gate: bool = False
+    groups: tuple[str, ...] = (),
+    *,
+    pending_container_version_gate: bool = False,
+    cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> int:
+    # The script is invoked by relative path so a staged-tree run executes the
+    # staged copy of the guardrails against the staged copy of the repository.
     command = [PYTHON, "tools/repo_health/repo_guardrails.py"]
     for group in groups:
         command.extend(["--group", group])
@@ -235,14 +448,19 @@ def run_repo_guardrails(
     # tests, or tools commit does not discharge it. A bump-first window closes on a
     # shipped commit declaring `Release-tag: v<current>`, which is valid while that
     # version is untagged -- see docs/RELEASE.md.
-    completed = subprocess.run(command, cwd=ROOT, check=False)
+    completed = subprocess.run(
+        command, cwd=cwd or ROOT, env=dict(env) if env is not None else None, check=False
+    )
     return completed.returncode
 
 
-def run_complexity_baseline() -> int:
+def run_complexity_baseline(
+    *, cwd: Path | None = None, env: Mapping[str, str] | None = None
+) -> int:
     completed = subprocess.run(
         [PYTHON, "scripts/check_complexity_baseline.py"],
-        cwd=ROOT,
+        cwd=cwd or ROOT,
+        env=dict(env) if env is not None else None,
         check=False,
     )
     return completed.returncode
@@ -301,54 +519,74 @@ def _report_summary(failures: list[_StageFailure]) -> int:
 
 
 def run_changed() -> int:
-    files = collect_changed_files()
+    files = collect_staged_files()
     if not files:
-        print("No changed files found for pre-commit; skipping.")
+        print("No staged files found for pre-commit; skipping.")
         return 0
     failures: list[_StageFailure] = []
-    command = build_changed_command(files)
-    _run_stage("pre-commit", lambda: _run_precommit_command(command), failures, command=command)
-    # The pre-push-stage hooks used to run only in the all-files path, so a
-    # commit could be green with a mypy error, an eslint finding, or a dead-code
-    # finding and the operator hit it seconds later at push time. They are
-    # whole-repo scans, so the cost is the same whether one file or the tree
-    # changed. Measured on this tree: the hooks cost 2.5s (vulture) / 1.0s (mypy)
-    # / 3.1s (eslint) in isolation, but the commit gate as a whole moved from
-    # 24.4s to 34.1/33.5/37.0s across three runs, so ~+10.5s end to end. That is
-    # higher than the 6.6s sum of the parts because each hook is a separate
-    # `pre-commit` process. Against a ~108s push gate that already runs them,
-    # this is cheap enough to close the hole at its source.
-    for hook_command in _pre_push_hook_commands():
+    with validation_tree() as tree:
+        staged = tree != ROOT
+        env = _snapshot_env() if staged else None
+        before = _read_tree_bytes(tree, files) if staged else {}
+        command = build_changed_command(files)
         _run_stage(
-            "pre-commit --hook-stage pre-push",
-            lambda hook_command=hook_command: _run_precommit_command(hook_command),
+            "pre-commit",
+            lambda: _run_precommit_command(command, cwd=tree, env=env),
             failures,
-            command=hook_command,
+            command=command,
         )
-    if should_run_repo_guardrails(files):
-        # Local commit: judge the staged change against the released version so the
-        # offending commit never lands. The full post-bump window stays a pre-push
-        # and CI check (run_all()), which also catches a run with hooks disabled.
+        if staged:
+            # `ruff-check --fix` and `end-of-file-fixer` edit the tree they run
+            # in, which is now the snapshot. Carry their edits back so the
+            # developer only has to re-stage, as before.
+            _restore_hook_fixes(tree, before, files)
+        # The pre-push-stage hooks used to run only in the all-files path, so a
+        # commit could be green with a mypy error, an eslint finding, or a dead-code
+        # finding and the operator hit it seconds later at push time. They are
+        # whole-repo scans, so the cost is the same whether one file or the tree
+        # changed. Measured on this tree: the hooks cost 2.5s (vulture) / 1.0s (mypy)
+        # / 3.1s (eslint) in isolation, but the commit gate as a whole moved from
+        # 24.4s to 34.1/33.5/37.0s across three runs, so ~+10.5s end to end. That is
+        # higher than the 6.6s sum of the parts because each hook is a separate
+        # `pre-commit` process. Against a ~108s push gate that already runs them,
+        # this is cheap enough to close the hole at its source.
+        for hook_command in _pre_push_hook_commands():
+            _run_stage(
+                "pre-commit --hook-stage pre-push",
+                lambda hook_command=hook_command: _run_precommit_command(
+                    hook_command, cwd=tree, env=env
+                ),
+                failures,
+                command=hook_command,
+            )
+        if should_run_repo_guardrails(files):
+            # Local commit: judge the staged change against the released version so the
+            # offending commit never lands. The full post-bump window stays a pre-push
+            # and CI check (run_all()), which also catches a run with hooks disabled.
+            _run_stage(
+                "repo-guardrails",
+                lambda: run_repo_guardrails(pending_container_version_gate=True, cwd=tree, env=env),
+                failures,
+            )
+        elif has_staged_changes():
+            # The watched-root filter exists to keep the full guardrail run cheap. It
+            # does not cover every shipped path -- `Dockerfile`, `styles/`, and the
+            # runtime `data/` files are outside it -- so a commit touching only those
+            # would otherwise skip the container version gate entirely. The release
+            # group is the one check every commit needs.
+            _run_stage(
+                "repo-guardrails --group release",
+                lambda: run_repo_guardrails(
+                    groups=("release",), pending_container_version_gate=True, cwd=tree, env=env
+                ),
+                failures,
+            )
+        # The C901 baseline belongs to the commit path too, not just the all-files
+        # pass: a new or grown hotspot is visible in the changed file long before the
+        # push, and the check costs under a second.
         _run_stage(
-            "repo-guardrails",
-            lambda: run_repo_guardrails(pending_container_version_gate=True),
-            failures,
+            "complexity-baseline", lambda: run_complexity_baseline(cwd=tree, env=env), failures
         )
-    elif has_staged_changes():
-        # The watched-root filter exists to keep the full guardrail run cheap. It
-        # does not cover every shipped path -- `Dockerfile`, `styles/`, and the
-        # runtime `data/` files are outside it -- so a commit touching only those
-        # would otherwise skip the container version gate entirely. The release
-        # group is the one check every commit needs.
-        _run_stage(
-            "repo-guardrails --group release",
-            lambda: run_repo_guardrails(groups=("release",), pending_container_version_gate=True),
-            failures,
-        )
-    # The C901 baseline belongs to the commit path too, not just the all-files
-    # pass: a new or grown hotspot is visible in the changed file long before the
-    # push, and the check costs under a second.
-    _run_stage("complexity-baseline", lambda: run_complexity_baseline(), failures)
     return _report_summary(failures)
 
 

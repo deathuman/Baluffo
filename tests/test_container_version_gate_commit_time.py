@@ -20,6 +20,7 @@ from tests.test_container_version_policy import (
     _run,
     _write_version_files,
 )
+from tests.test_precommit_gate import _working_tree_validation
 from tools.repo_health import repo_guardrails
 from tools.repo_health.container_version_policy import (
     check_pending_shipped_code_version_gate,
@@ -152,19 +153,24 @@ def test_commit_gate_runs_the_pending_check_for_unwatched_shipped_paths(
     calls: list[tuple[tuple[str, ...], bool]] = []
 
     def fake_guardrails(
-        groups: tuple[str, ...] = (), *, pending_container_version_gate: bool = False
+        groups: tuple[str, ...] = (),
+        *,
+        pending_container_version_gate: bool = False,
+        cwd=None,
+        env=None,
     ) -> int:
         calls.append((groups, pending_container_version_gate))
         return 1
 
-    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["styles/admin.css"])
-    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command: 0)
+    monkeypatch.setattr(precommit_gate, "collect_staged_files", lambda: ["styles/admin.css"])
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command, **_: 0)
+    monkeypatch.setattr(precommit_gate, "validation_tree", _working_tree_validation)
     monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: False)
     monkeypatch.setattr(precommit_gate, "has_staged_changes", lambda: True)
     monkeypatch.setattr(precommit_gate, "run_repo_guardrails", fake_guardrails)
     # The gate no longer stops at the first failing stage, so the complexity
     # baseline runs after the guardrails; stub it rather than shelling out to ruff.
-    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda: 0)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda **_: 0)
 
     assert precommit_gate.run_changed() == 1
     assert calls == [(("release",), True)]

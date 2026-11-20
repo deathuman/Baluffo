@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Any
 
 from scripts import precommit_gate
@@ -28,37 +29,26 @@ def _expected_pre_push_commands() -> list[list[str]]:
     ]
 
 
-def test_collect_changed_files_includes_changed_and_untracked_files(tmp_path, monkeypatch) -> None:
-    staged = ["docs/changed.md", "src/changed.py", "src/changed.py"]
-    unstaged = ["src/changed.py", "tests/changed_test.py"]
-    untracked = ["new_file.txt", "docs/missing.md"]
+@contextmanager
+def _working_tree_validation():
+    """Stand in for the staged worktree so a test never materialises one."""
+    yield precommit_gate.ROOT
+
+
+def test_collect_staged_files_ignores_unstaged_and_untracked_work(tmp_path, monkeypatch) -> None:
+    """Only the index becomes the commit, so only the index decides the gate."""
+    staged = ["docs/staged.md", "src/staged.py", "src/staged.py"]
 
     def fake_git_lines(*args: str) -> list[str]:
         query = tuple(args)
         if query == ("diff", "--cached", "--name-only", "--diff-filter=ACMRTUXB"):
             return staged
-        if query == ("diff", "--name-only", "--diff-filter=ACMRTUXB"):
-            return unstaged
-        if query == ("ls-files", "--others", "--exclude-standard"):
-            return untracked
         raise AssertionError(f"Unexpected git query: {query}")
 
     monkeypatch.setattr(precommit_gate, "ROOT", tmp_path)
     monkeypatch.setattr(precommit_gate, "_git_lines", fake_git_lines)
 
-    for rel_path in ("docs/changed.md", "src/changed.py", "tests/changed_test.py", "new_file.txt"):
-        path = tmp_path / rel_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("x", encoding="utf-8")
-
-    collected = precommit_gate.collect_changed_files()
-
-    assert collected == [
-        "docs/changed.md",
-        "src/changed.py",
-        "tests/changed_test.py",
-        "new_file.txt",
-    ]
+    assert precommit_gate.collect_staged_files() == ["docs/staged.md", "src/staged.py"]
 
 
 def test_collect_repo_files_excludes_requested_roots(tmp_path, monkeypatch) -> None:
@@ -80,8 +70,8 @@ def test_collect_repo_files_excludes_requested_roots(tmp_path, monkeypatch) -> N
     assert precommit_gate.collect_repo_files(("data",)) == ["docs/readme.md", "src/app.py"]
 
 
-def test_collect_changed_files_excludes_generated_fetch_reports(tmp_path, monkeypatch) -> None:
-    changed = [
+def test_collect_staged_files_excludes_generated_fetch_reports(tmp_path, monkeypatch) -> None:
+    staged = [
         "data/jobs-fetch-report.json",
         "data/jobs-fetch-tasks.json",
         "docs/readme.md",
@@ -91,22 +81,13 @@ def test_collect_changed_files_excludes_generated_fetch_reports(tmp_path, monkey
     def fake_git_lines(*args: str) -> list[str]:
         query = tuple(args)
         if query == ("diff", "--cached", "--name-only", "--diff-filter=ACMRTUXB"):
-            return changed
-        if query == ("diff", "--name-only", "--diff-filter=ACMRTUXB"):
-            return []
-        if query == ("ls-files", "--others", "--exclude-standard"):
-            return []
+            return staged
         raise AssertionError(f"Unexpected git query: {query}")
 
     monkeypatch.setattr(precommit_gate, "ROOT", tmp_path)
     monkeypatch.setattr(precommit_gate, "_git_lines", fake_git_lines)
 
-    for rel_path in changed[2:]:
-        path = tmp_path / rel_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("x", encoding="utf-8")
-
-    assert precommit_gate.collect_changed_files() == ["docs/readme.md", "src/app.py"]
+    assert precommit_gate.collect_staged_files() == ["docs/readme.md", "src/app.py"]
 
 
 def test_run_all_executes_precommit_and_vulture_commands(monkeypatch) -> None:
@@ -336,10 +317,10 @@ def test_run_all_reports_every_failing_stage(monkeypatch, capsys) -> None:
 
 
 def test_run_changed_skips_when_no_files(monkeypatch, capsys) -> None:
-    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: [])
+    monkeypatch.setattr(precommit_gate, "collect_staged_files", lambda: [])
     called = False
 
-    def fake_run(command: list[str]) -> int:
+    def fake_run(command: list[str], **_: Any) -> int:
         nonlocal called
         called = True
         return 0
@@ -348,7 +329,7 @@ def test_run_changed_skips_when_no_files(monkeypatch, capsys) -> None:
 
     assert precommit_gate.run_changed() == 0
     assert called is False
-    assert "No changed files found for pre-commit; skipping." in capsys.readouterr().out
+    assert "No staged files found for pre-commit; skipping." in capsys.readouterr().out
 
 
 def test_run_changed_runs_pre_push_hooks(monkeypatch) -> None:
@@ -360,15 +341,16 @@ def test_run_changed_runs_pre_push_hooks(monkeypatch) -> None:
     """
     seen: list[list[str]] = []
 
-    def fake_run(command: list[str]) -> int:
+    def fake_run(command: list[str], **_: Any) -> int:
         seen.append(command)
         return 0
 
-    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
+    monkeypatch.setattr(precommit_gate, "collect_staged_files", lambda: ["src/app.py"])
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
+    monkeypatch.setattr(precommit_gate, "validation_tree", _working_tree_validation)
     monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: False)
     monkeypatch.setattr(precommit_gate, "has_staged_changes", lambda: False)
-    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda: 0)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda **_: 0)
     assert precommit_gate.run_changed() == 0
 
     staged = [c for c in seen if "--hook-stage" in c]
@@ -384,11 +366,14 @@ def test_run_changed_runs_pre_push_hooks(monkeypatch) -> None:
 
 def test_run_changed_fails_when_a_pre_push_hook_fails(monkeypatch, capsys) -> None:
     """A pre-push hook failure must block the commit, and name the stage."""
-    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
-    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda c: 1 if "mypy" in c else 0)
+    monkeypatch.setattr(precommit_gate, "collect_staged_files", lambda: ["src/app.py"])
+    monkeypatch.setattr(
+        precommit_gate, "_run_precommit_command", lambda c, **_: 1 if "mypy" in c else 0
+    )
+    monkeypatch.setattr(precommit_gate, "validation_tree", _working_tree_validation)
     monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: True)
     monkeypatch.setattr(precommit_gate, "run_repo_guardrails", lambda *args, **kwargs: 0)
-    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda: 0)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda **_: 0)
 
     assert precommit_gate.run_changed() == 1
     out = capsys.readouterr().out
@@ -400,12 +385,17 @@ def test_run_changed_fails_when_a_pre_push_hook_fails(monkeypatch, capsys) -> No
 def test_run_changed_runs_repo_guardrails_for_policy_sensitive_files(monkeypatch) -> None:
     guardrails_called = False
 
-    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
-    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command: 0)
-    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda: 0)
+    monkeypatch.setattr(precommit_gate, "collect_staged_files", lambda: ["src/app.py"])
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command, **_: 0)
+    monkeypatch.setattr(precommit_gate, "validation_tree", _working_tree_validation)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda **_: 0)
 
     def fake_guardrails(
-        groups: tuple[str, ...] = (), *, pending_container_version_gate: bool = False
+        groups: tuple[str, ...] = (),
+        *,
+        pending_container_version_gate: bool = False,
+        cwd=None,
+        env=None,
     ) -> int:
         nonlocal guardrails_called
         assert groups == ()
@@ -425,13 +415,14 @@ def test_run_changed_runs_complexity_baseline(monkeypatch) -> None:
     """The C901 baseline belongs to the commit path, not only the all-files pass."""
     complexity_called = False
 
-    def fake_complexity() -> int:
+    def fake_complexity(**_: Any) -> int:
         nonlocal complexity_called
         complexity_called = True
         return 0
 
-    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
-    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command: 0)
+    monkeypatch.setattr(precommit_gate, "collect_staged_files", lambda: ["src/app.py"])
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command, **_: 0)
+    monkeypatch.setattr(precommit_gate, "validation_tree", _working_tree_validation)
     monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: True)
     monkeypatch.setattr(precommit_gate, "run_repo_guardrails", lambda *args, **kwargs: 0)
     monkeypatch.setattr(precommit_gate, "run_complexity_baseline", fake_complexity)
@@ -441,11 +432,12 @@ def test_run_changed_runs_complexity_baseline(monkeypatch) -> None:
 
 
 def test_run_changed_blocks_on_complexity_failure(monkeypatch, capsys) -> None:
-    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
-    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command: 0)
+    monkeypatch.setattr(precommit_gate, "collect_staged_files", lambda: ["src/app.py"])
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command, **_: 0)
+    monkeypatch.setattr(precommit_gate, "validation_tree", _working_tree_validation)
     monkeypatch.setattr(precommit_gate, "should_run_repo_guardrails", lambda files: True)
     monkeypatch.setattr(precommit_gate, "run_repo_guardrails", lambda *args, **kwargs: 0)
-    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda: 1)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", lambda **_: 1)
 
     assert precommit_gate.run_changed() == 1
     out = capsys.readouterr().out
