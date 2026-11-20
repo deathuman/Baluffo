@@ -92,19 +92,22 @@ test("admin render: non-dismissible alerts omit dismiss control", () => {
   assert.doesNotMatch(alertsEl.innerHTML, /Dismiss/i);
 });
 
-test("admin render: ops alerts defer Action Center-owned fetch alerts", () => {
+test("admin render: ops alerts defer Action Center-owned fetch and storage alerts", () => {
+  // storage_unhealthy and browser_fallback_health come only from the fetch-KPI summary,
+  // so an unfiltered banner flashed until the next history-only dashboard poll.
   const alertsEl = makeEl();
-  renderAdminOpsAlerts(alertsEl, [
-    { id: "stale_fetch", severity: "warning", message: "Last successful fetch is older than 12h." },
-    { id: "fetch_never_run", severity: "warning", message: "No successful fetch has run yet." },
-    { id: "pipeline_never_run", severity: "warning", message: "No successful full pipeline has run yet." }
-  ]);
+  const alerts = [
+    ["stale_fetch", "Last successful fetch is older than 12h."],
+    ["fetch_never_run", "No successful fetch has run yet."],
+    ["browser_fallback_health", "Browser fallback environment blocked at context creation for 186 sources."],
+    ["storage_unhealthy", "WAL checkpoint could not finish — 883.4 MB WAL on 519.8 MB database."],
+    ["pipeline_never_run", "No successful full pipeline has run yet."]
+  ].map(([id, message]) => ({ id, severity: "warning", message }));
+  renderAdminOpsAlerts(alertsEl, alerts);
 
-  // The fetch-overdue conditions belong to the Action Center; only the Ops-specific
-  // pipeline alert renders here.
-  assert.doesNotMatch(alertsEl.innerHTML, /older than 12h/i);
-  assert.doesNotMatch(alertsEl.innerHTML, /No successful fetch has run yet/i);
-  assert.match(alertsEl.innerHTML, /No successful full pipeline has run yet/i);
+  // Only the Ops-owned alert survives; the four Action Center conditions are suppressed.
+  const renderedIds = new Set([...alertsEl.innerHTML.matchAll(/data-alert-id="([^"]+)"/g)].map(m => m[1]));
+  assert.deepEqual([...renderedIds], ["pipeline_never_run"]);
 });
 
 test("admin render: suppressing every alert still clears the container", () => {

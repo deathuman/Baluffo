@@ -173,20 +173,25 @@ def _fetch_kpis_sidecar_cache_key(api: _OpsStatusRouteApi) -> tuple[int, int, st
 
 
 def _dashboard_health_sidecar_cache_key(api: _OpsStatusRouteApi) -> tuple[Any, ...] | None:
-    """Content identity for the two receipts the dashboard summary payload embeds.
+    """Content identity for the sidecars the dashboard summary payload embeds.
 
-    `compute_ops_dashboard_health_summary` reads the probe-wave receipt and the
-    page-fetch lifecycle sidecar beside the discovery report on every compute,
-    so a republished, removed or recreated receipt must invalidate the TTL entry
-    instead of waiting out the window.
+    `compute_ops_dashboard_health_summary` reads the probe-wave receipt, the
+    page-fetch lifecycle sidecar and the fetch-report summary (the browser
+    alert's source) on every compute, so a republished, removed or recreated
+    sidecar must invalidate the TTL entry instead of waiting out the window.
+    Storage health is a live cached read, not a file, so it is not keyed here.
     """
     discovery_report = getattr(api, "DISCOVERY_REPORT_PATH", None)
     if not discovery_report:
         return None
     data_dir = Path(discovery_report).parent
-    signatures: list[tuple[int, int, str] | None] = []
+    signatures: list[Any] = []
     for filename in (PROBE_LIFECYCLE_RECEIPT_FILENAME, PAGE_FETCH_LIFECYCLE_SIDECAR_FILENAME):
         signatures.append(_sidecar_signature(data_dir / filename))
+    report_path = getattr(api, "JOBS_FETCH_REPORT_PATH", None)
+    signatures.append(
+        _sidecar_signature(fetch_report_summary_path(report_path)) if report_path else None
+    )
     return tuple(signatures)
 
 

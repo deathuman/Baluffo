@@ -29,18 +29,23 @@ function formatRegistryCountBasis(summary) {
   return "registry counts";
 }
 
-// Alerts the Action Center already owns. The Action Center is the page's single
-// place for "is a fetch overdue" — it renders the same condition as a signal row
-// with the age spelled out and its own Review / Run Jobs Fetcher / Dismiss
-// actions. Rendering the backend's version here too printed the same fact twice in
-// two different visual languages, so Ops now shows only Ops-specific alerts
-// (pipeline and social conditions) and defers these two to the Action Center.
+// Alerts the Action Center owns. It is the page's single place for fetch and
+// storage health: it renders the same conditions as signal rows with the age
+// spelled out and its own Review / Run fetcher / Dismiss actions, so repeating
+// them here printed one fact in two visual languages. Ops keeps only its own
+// alert, `pipeline_never_run`.
 //
-// Suppression happens at render time, not in `state.latestOpsHealthCache`: that
-// cache is the authoritative health record other code reads, and
-// `admin-ops-kpis-controller.test.mjs` asserts a lightweight summary poll cannot
-// downgrade it.
-const ACTION_CENTER_OWNED_ALERT_IDS = new Set(["stale_fetch", "fetch_never_run"]);
+// Suppression is at render time because `state.latestOpsHealthCache` is the
+// authoritative record other code reads; a lightweight summary poll must not
+// downgrade it. The last two ids come only from `/ops/fetch-kpis`, which the
+// history-only dashboard summary cannot see, so before this a fetch-KPI poll
+// painted the banner and the next dashboard poll erased it.
+const ACTION_CENTER_OWNED_ALERT_IDS = new Set([
+  "stale_fetch",
+  "fetch_never_run",
+  "browser_fallback_health",
+  "storage_unhealthy"
+]);
 
 function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
   if (!alertsEl) return;

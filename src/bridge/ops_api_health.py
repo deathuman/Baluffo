@@ -43,6 +43,10 @@ from src.shared.utils import coerce_non_negative_int as _safe_int
 # that declared staleness; the active-run probe, alerts, and generatedAt stay
 # per-call.
 _OPS_FETCH_KPIS_ACTIVE_STABLE_TTL_S = 15.0
+# The dashboard summary sits behind the gateway's 0.75s control cutoff. Storage
+# health can take seconds on a busy Pi; wait only a slice of that budget, then
+# answer from the last good/fallback reading while the worker finishes and caches.
+_OPS_DASHBOARD_STORAGE_WAIT_S = 0.25
 # One on-demand probe at a time: each probe launches its own Chromium, so a
 # second concurrent request must not add a second browser to the measurement.
 _BROWSER_PROBE_LOCK = threading.Lock()
@@ -83,6 +87,18 @@ class OpsHealthDeps:
     )
     app_version: str = ""
     startup_ready: bool = False
+
+
+@dataclass(frozen=True)
+class _SummarySidecarInputs:
+    """Fetch-report sidecar facts both summary polls project."""
+
+    source_outcome: dict[str, Any]
+    browser_health: dict[str, Any]
+    browser_demand: dict[str, Any]
+    queue_pages: int
+    environment_blocked: bool
+    environment_blocked_sources: int
 
 
 class OpsApiHealthMixin(OpsApiState):
@@ -207,6 +223,91 @@ class OpsApiHealthMixin(OpsApiState):
             "historyCount": 0,
         }
 
+    def _summary_sidecar_inputs(self) -> _SummarySidecarInputs:
+        """Read the bounded fetch-report sidecar once for both summary polls.
+
+        The dashboard summary used to evaluate history only, so it could not see
+        the storage or browser alerts the fetch-KPI payload appends. Both routes
+        now derive those alerts from this one read.
+        """
+        source_artifact = load_fetch_report_summary_artifact(self._paths.jobs_fetch_report)
+        source_outcome = compact_source_health_summary(source_artifact.get("sourceHealth"))
+        source_runtime = as_json_object(source_artifact.get("runtime"))
+        raw_browser_health = source_runtime.get("browserFallbackHealth")
+        browser_health = compact_browser_fallback_health(raw_browser_health)
+        if raw_browser_health is False:
+            browser_health["ok"] = False
+        environment_blocked_sources = max(
+            _safe_int(source_outcome.get("browserFallbackEnvironmentBlockedSources"), 0),
+            _safe_int(source_runtime.get("browserFallbackEnvironmentBlockedSources"), 0),
+        )
+        environment_blocked = (
+            bool(source_runtime.get("browserFallbackEnvironmentBlocked"))
+            or environment_blocked_sources > 0
+        )
+        return _SummarySidecarInputs(
+            source_outcome=source_outcome,
+            browser_health=browser_health,
+            browser_demand=compact_browser_fallback_demand(
+                source_runtime.get("browserFallbackDemand")
+            ),
+            queue_pages=max(0, _safe_int(source_runtime.get("browserFallbackQueueCount"), 0)),
+            environment_blocked=environment_blocked,
+            environment_blocked_sources=environment_blocked_sources,
+        )
+
+    def _summary_alerts(
+        self,
+        *,
+        history: list[dict[str, Any]],
+        pending_count: int,
+        sidecar: _SummarySidecarInputs,
+        op_prefix: str,
+        storage_timeout_s: float | None = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Evaluate history alerts and append the shared storage/browser alerts.
+
+        Both summary routes use this one path, so the Ops chip and Overview badge
+        cannot disagree about storage or browser fallback. A stalled or
+        unavailable storage read adds no alert rather than inventing a verdict.
+        ``storage_timeout_s`` lets the dashboard wait less than the storage
+        route's own bound; leaving it None keeps that bound.
+        """
+        alert_result = _ops_health.evaluate_alerts_summary(
+            history=history,
+            pending_count=pending_count,
+            load_alert_state_fn=self.load_alert_state,
+            save_alert_state_fn=self.save_alert_state,
+            parse_iso=self._deps.parse_iso,
+            now_iso=self._deps.now_iso,
+            now_utc=self._deps.now_utc,
+            state_lock=self._deps.ops_state_lock,
+        )
+        alerts = list(alert_result.get("alerts") or [])
+        with time_operation(f"{op_prefix}.storage"):
+            try:
+                data_dir = self._paths.jobs_fetch_report.parent
+                if storage_timeout_s is None:
+                    storage_payload = _storage_health.get_storage_health_payload(data_dir)
+                else:
+                    storage_payload = _storage_health.get_storage_health_payload(
+                        data_dir, timeout_s=storage_timeout_s
+                    )
+            except (OSError, TypeError, ValueError):
+                storage_payload = {}
+        storage_alert = _ops_health.storage_health_alert(storage_payload)
+        if storage_alert:
+            alerts.append(storage_alert)
+        browser_alert = _ops_health.browser_fallback_health_alert(
+            sidecar.browser_health,
+            environment_blocked=sidecar.environment_blocked,
+            environment_blocked_sources=sidecar.environment_blocked_sources,
+            now_iso=self._deps.now_iso(),
+        )
+        if browser_alert:
+            alerts.append(browser_alert)
+        return alerts, int(alert_result.get("suppressedCount") or 0)
+
     def compute_ops_dashboard_health_summary(self) -> dict[str, Any]:
         with time_operation("ops.dashboard_health.summary.total"):
             active_summary = self._active_pipeline_or_fetch_summary()
@@ -276,17 +377,14 @@ class OpsApiHealthMixin(OpsApiState):
                     page_fetch_lifecycle = {}
             pending_count = int(registry_summary.get("pendingCount") or 0)
             sync_ready = bool(as_json_object(sync_status.get("config")).get("ready", True))
-            alert_result = _ops_health.evaluate_alerts_summary(
+            sidecar = self._summary_sidecar_inputs()
+            alerts, suppressed_alerts_count = self._summary_alerts(
                 history=history,
                 pending_count=pending_count,
-                load_alert_state_fn=self.load_alert_state,
-                save_alert_state_fn=self.save_alert_state,
-                parse_iso=self._deps.parse_iso,
-                now_iso=self._deps.now_iso,
-                now_utc=self._deps.now_utc,
-                state_lock=self._deps.ops_state_lock,
+                sidecar=sidecar,
+                op_prefix="ops.dashboard_health.summary",
+                storage_timeout_s=_OPS_DASHBOARD_STORAGE_WAIT_S,
             )
-            alerts = list(alert_result.get("alerts") or [])
             severity = _ops_health.derive_ops_severity(alerts)
             if not sync_ready and severity == "healthy":
                 severity = "warning"
@@ -311,7 +409,7 @@ class OpsApiHealthMixin(OpsApiState):
                 "summaryView": True,
                 "detailLevel": "summary",
                 "alertsEvaluated": True,
-                "alertBasis": "history",
+                "alertBasis": "history+storage+browser",
                 "kpis": {
                     "pendingApprovalsCount": pending_count,
                     "sourcePolicyRecommendationExport": {},
@@ -321,7 +419,7 @@ class OpsApiHealthMixin(OpsApiState):
                 },
                 "schedule": schedule,
                 "alerts": alerts,
-                "suppressedAlertsCount": int(alert_result.get("suppressedCount") or 0),
+                "suppressedAlertsCount": suppressed_alerts_count,
                 "historyCount": len(history),
                 "updater": {
                     "currentVersion": str(self._deps.app_version or ""),
@@ -405,73 +503,31 @@ class OpsApiHealthMixin(OpsApiState):
             # Read the bounded sidecar, never the full report: this runs on the
             # cached fetch-kpis poll. Omit the key when the sidecar is absent so a
             # bootstrap/first-run payload keeps its previous shape.
-            source_artifact = load_fetch_report_summary_artifact(self._paths.jobs_fetch_report)
-            source_outcome = compact_source_health_summary(source_artifact.get("sourceHealth"))
-            if source_outcome:
-                kpis["sourceOutcomeSummary"] = source_outcome
-            source_runtime = as_json_object(source_artifact.get("runtime"))
-            raw_browser_health = source_runtime.get("browserFallbackHealth")
-            browser_health = compact_browser_fallback_health(raw_browser_health)
-            if raw_browser_health is False:
-                browser_health = {**browser_health, "ok": False}
-            if browser_health:
-                kpis["browserFallbackHealth"] = browser_health
-            browser_demand = compact_browser_fallback_demand(
-                source_runtime.get("browserFallbackDemand")
-            )
-            if browser_demand:
-                kpis["browserFallbackDemand"] = browser_demand
-            queue_pages = max(0, _safe_int(source_runtime.get("browserFallbackQueueCount"), 0))
-            if queue_pages:
-                kpis["browserFallbackQueuePages"] = queue_pages
-            environment_blocked_sources = max(
-                _safe_int(source_outcome.get("browserFallbackEnvironmentBlockedSources"), 0),
-                _safe_int(source_runtime.get("browserFallbackEnvironmentBlockedSources"), 0),
-            )
-            environment_blocked = (
-                bool(source_runtime.get("browserFallbackEnvironmentBlocked"))
-                or environment_blocked_sources > 0
-            )
-            if environment_blocked:
+            sidecar = self._summary_sidecar_inputs()
+            if sidecar.source_outcome:
+                kpis["sourceOutcomeSummary"] = sidecar.source_outcome
+            if sidecar.browser_health:
+                kpis["browserFallbackHealth"] = sidecar.browser_health
+            if sidecar.browser_demand:
+                kpis["browserFallbackDemand"] = sidecar.browser_demand
+            if sidecar.queue_pages:
+                kpis["browserFallbackQueuePages"] = sidecar.queue_pages
+            if sidecar.environment_blocked:
                 kpis["browserFallbackEnvironmentBlocked"] = True
-            if environment_blocked or environment_blocked_sources:
-                kpis["browserFallbackEnvironmentBlockedSources"] = environment_blocked_sources
+            if sidecar.environment_blocked or sidecar.environment_blocked_sources:
+                kpis["browserFallbackEnvironmentBlockedSources"] = (
+                    sidecar.environment_blocked_sources
+                )
+            pending_count = int(registry_summary.get("pendingCount") or 0)
             if "pendingCount" in registry_summary:
-                pending_sources_count = int(registry_summary.get("pendingCount") or 0)
-                kpis["pendingSourcesCount"] = pending_sources_count
-                kpis["pendingApprovalsCount"] = pending_sources_count
-            # S1.4: one storage verdict across both surfaces. Read the same bounded,
-            # cached payload the storage route serves; a stalled or unavailable read
-            # adds no alert rather than inventing a verdict the Action Center lacks.
-            with time_operation("ops.fetch_kpis.summary.storage"):
-                try:
-                    storage_payload = _storage_health.get_storage_health_payload(
-                        self._paths.jobs_fetch_report.parent
-                    )
-                except (OSError, TypeError, ValueError):
-                    storage_payload = {}
-            alert_result = _ops_health.evaluate_alerts_summary(
+                kpis["pendingSourcesCount"] = pending_count
+                kpis["pendingApprovalsCount"] = pending_count
+            alerts, suppressed_alerts_count = self._summary_alerts(
                 history=history,
-                pending_count=int(registry_summary.get("pendingCount") or 0),
-                load_alert_state_fn=self.load_alert_state,
-                save_alert_state_fn=self.save_alert_state,
-                parse_iso=self._deps.parse_iso,
-                now_iso=self._deps.now_iso,
-                now_utc=self._deps.now_utc,
-                state_lock=self._deps.ops_state_lock,
+                pending_count=pending_count,
+                sidecar=sidecar,
+                op_prefix="ops.fetch_kpis.summary",
             )
-            alerts = list(alert_result.get("alerts") or [])
-            storage_alert = _ops_health.storage_health_alert(storage_payload)
-            if storage_alert:
-                alerts.append(storage_alert)
-            browser_alert = _ops_health.browser_fallback_health_alert(
-                browser_health,
-                environment_blocked=environment_blocked,
-                environment_blocked_sources=environment_blocked_sources,
-                now_iso=self._deps.now_iso(),
-            )
-            if browser_alert:
-                alerts.append(browser_alert)
             return {
                 "ok": True,
                 "summaryView": True,
@@ -479,7 +535,7 @@ class OpsApiHealthMixin(OpsApiState):
                 "generatedAt": self._deps.now_iso(),
                 "status": _ops_health.derive_ops_severity(alerts),
                 "alerts": alerts,
-                "suppressedAlertsCount": int(alert_result.get("suppressedCount") or 0),
+                "suppressedAlertsCount": suppressed_alerts_count,
                 "alertsEvaluated": True,
                 "alertBasis": (
                     "history-active-run+storage+browser"

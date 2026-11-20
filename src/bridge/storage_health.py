@@ -610,15 +610,29 @@ def _fallback_storage_payload(resolved: Path, *, reason: str) -> dict[str, Any]:
     return _stalled_storage_payload(resolved, reason=reason)
 
 
-def get_storage_health_payload(data_dir: Path | str) -> dict[str, Any]:
-    """Return a storage reading within HEALTH_COMPUTE_TIMEOUT_S, always.
+def _storage_wait_seconds(timeout_s: float | None) -> float:
+    """Clamp a caller's wait to the health compute bound; None keeps the bound."""
+    if timeout_s is None:
+        return HEALTH_COMPUTE_TIMEOUT_S
+    try:
+        return max(0.0, min(float(timeout_s), HEALTH_COMPUTE_TIMEOUT_S))
+    except (TypeError, ValueError):
+        return HEALTH_COMPUTE_TIMEOUT_S
+
+
+def get_storage_health_payload(
+    data_dir: Path | str, *, timeout_s: float | None = None
+) -> dict[str, Any]:
+    """Return a storage reading within ``timeout_s``, always.
 
     This route is polled while a fetch writes. The store reads it needs scale with
     database size, so the compute runs in a daemon worker: the caller gets the
     finished payload, the last good reading (marked stale), or a stalled payload,
     but never an HTTP thread parked behind a slow read. The worker keeps going and
-    refreshes the cache for the next poll.
+    refreshes the cache for the next poll. ``timeout_s`` defaults to
+    HEALTH_COMPUTE_TIMEOUT_S; a caller on a tighter budget can wait less.
     """
+    wait_s = _storage_wait_seconds(timeout_s)
     resolved = _resolve_data_dir(data_dir)
     cached = _read_cached_health(resolved)
     now = time.monotonic()
@@ -649,7 +663,7 @@ def get_storage_health_payload(data_dir: Path | str) -> dict[str, Any]:
         name="baluffo-storage-health",
         daemon=True,
     ).start()
-    if done.wait(HEALTH_COMPUTE_TIMEOUT_S):
+    if done.wait(wait_s):
         payload = result.get("payload")
         if isinstance(payload, dict):
             if payload["storage"].get("healthStalled"):
@@ -663,7 +677,7 @@ def get_storage_health_payload(data_dir: Path | str) -> dict[str, Any]:
         )
     return _fallback_storage_payload(
         resolved,
-        reason=f"storage health read still running after {HEALTH_COMPUTE_TIMEOUT_S:.1f}s",
+        reason=f"storage health read still running after {wait_s:.2f}s",
     )
 
 

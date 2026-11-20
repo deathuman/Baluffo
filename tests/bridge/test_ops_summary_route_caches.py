@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, cast
 
@@ -234,6 +235,16 @@ def _dashboard_from_sidecars(api: Any) -> dict[str, Any]:
     }
 
 
+def _dashboard_from_fetch_report_summary(api: Any) -> dict[str, Any]:
+    """The browser alert receipt the real dashboard summary embeds."""
+    artifact = load_fetch_report_summary_artifact(api.JOBS_FETCH_REPORT_PATH)
+    runtime = artifact.get("runtime")
+    health = compact_browser_fallback_health(
+        runtime.get("browserFallbackHealth") if isinstance(runtime, dict) else None
+    )
+    return {"ok": True, "summaryView": True, "browserFallbackHealth": health}
+
+
 def test_dashboard_health_summary_refreshes_when_sidecar_changes(tmp_path: Path) -> None:
     api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
     api.compute_ops_dashboard_health_summary = lambda: _dashboard_from_sidecars(api)
@@ -277,6 +288,37 @@ def test_dashboard_health_summary_refreshes_when_sidecar_changes(tmp_path: Path)
     )
     recreated = _drive(api, "/ops/dashboard-health", "summary")
     assert recreated["probeLifecycle"]["runId"] == "probe-3"
+
+
+def test_dashboard_health_summary_refreshes_when_fetch_report_summary_republished(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    sidecar_path = fetch_report_summary_path(api.JOBS_FETCH_REPORT_PATH)
+    calls: list[int] = []
+
+    def _compute() -> dict[str, Any]:
+        calls.append(1)
+        return _dashboard_from_fetch_report_summary(api)
+
+    api.compute_ops_dashboard_health_summary = _compute
+
+    _write_browser_health(sidecar_path, {"ok": True, "stage": "launch", "durationMs": 120})
+    first = _drive(api, "/ops/dashboard-health", "summary")
+    assert first["browserFallbackHealth"]["durationMs"] == 120
+    assert len(calls) == 1
+
+    # Same size, same mtime, one changed byte: only the content digest can
+    # tell the republished sidecar from the cached one inside the 10s TTL.
+    first_stat = sidecar_path.stat()
+    _write_browser_health(sidecar_path, {"ok": True, "stage": "launch", "durationMs": 121})
+    os.utime(sidecar_path, ns=(first_stat.st_atime_ns, first_stat.st_mtime_ns))
+    assert sidecar_path.stat().st_size == first_stat.st_size
+    assert sidecar_path.stat().st_mtime_ns == first_stat.st_mtime_ns
+
+    second = _drive(api, "/ops/dashboard-health", "summary")
+    assert second["browserFallbackHealth"]["durationMs"] == 121
+    assert len(calls) == 2
 
 
 def test_active_run_bypasses_caches_and_is_never_served_idle() -> None:
