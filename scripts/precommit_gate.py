@@ -199,11 +199,15 @@ def _link_node_modules(tree: Path, root: Path) -> None:
             raise
     # Windows needs a directory junction: a symlink requires Developer Mode or
     # an elevated shell, while `mklink /J` works for the current user.
-    subprocess.run(
+    completed = subprocess.run(
         ["cmd", "/c", "mklink", "/J", str(link), str(source)],
         check=False,
         capture_output=True,
+        text=True,
     )
+    if completed.returncode != 0:
+        details = completed.stderr.strip() or completed.stdout.strip() or "no output"
+        raise OSError(f"mklink /J failed: {details}")
 
 
 def _unlink_node_modules(tree: Path) -> None:
@@ -230,12 +234,15 @@ def _remove_staged_tree(root: Path, tree: Path) -> None:
         capture_output=True,
         text=True,
     )
-    if completed.returncode == 0:
+    if completed.returncode == 0 and not tree.exists():
         return
     # A locked file (an editor, an antivirus scan) can defeat `worktree remove`
-    # on Windows. Drop the directory and prune the metadata so the next commit
-    # does not trip over a worktree git still lists.
+    # on Windows, and a junction it cannot unlink leaves the directory behind
+    # even when git reports success. Drop the directory and prune the metadata
+    # so the next commit does not trip over a worktree git still lists.
     shutil.rmtree(tree, ignore_errors=True)
+    if tree.exists():
+        print(f"pre-commit gate: could not remove the staged tree at {tree}", file=sys.stderr)
     subprocess.run(
         ["git", "-C", str(root), "worktree", "prune"],
         cwd=root,
@@ -250,15 +257,19 @@ def _create_staged_tree(root: Path) -> Path:
     tree_sha = _git_at(root, "write-tree")[0]
     tree = root / STAGED_TREE_DIR / uuid.uuid4().hex[:12]
     tree.parent.mkdir(parents=True, exist_ok=True)
-    _git_worktree_add(root, tree)
     try:
+        _git_worktree_add(root, tree)
         # HEAD stays at the real commit and the index becomes the staged tree, so
         # `git diff --cached` inside the snapshot is exactly the commit's change.
         _git_at(tree, "read-tree", "--reset", "-u", tree_sha, env=_env_without_git_location())
     except RuntimeError:
         _remove_staged_tree(root, tree)
         raise
-    _link_node_modules(tree, root)
+    try:
+        _link_node_modules(tree, root)
+    except OSError as exc:
+        _remove_staged_tree(root, tree)
+        raise RuntimeError(f"unable to expose node_modules in the staged tree: {exc}") from exc
     return tree
 
 
@@ -278,12 +289,12 @@ def validation_tree() -> Iterator[Path]:
     """Yield the tree changed mode validates: the staged tree when available.
 
     A repository whose index cannot be materialised (an unborn HEAD, an unmerged
-    index, a missing `git`) falls back to the working tree and says so. The gate
-    still runs and can still block; it just loses the isolation.
+    index, or an unwritable `.tmp` directory) falls back to the working tree and
+    says so. The gate still runs and can still block; it just loses the isolation.
     """
     try:
         tree = _create_staged_tree(ROOT)
-    except RuntimeError as exc:
+    except (OSError, RuntimeError) as exc:
         print(f"pre-commit gate: staged tree unavailable ({exc}); validating the working tree")
         yield ROOT
         return

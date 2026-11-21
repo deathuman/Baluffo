@@ -10,8 +10,11 @@ reason. These tests pin the staged-tree snapshot and the gate that uses it.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
+
+import pytest
 
 from scripts import precommit_gate
 from tools.repo_health import loc_budget
@@ -111,6 +114,162 @@ def test_node_modules_link_never_removes_the_repo_modules(tmp_path: Path) -> Non
         assert (tree / "node_modules" / "eslint" / "bin" / "eslint.js").is_file()
 
     assert (repo / "node_modules" / "eslint" / "bin" / "eslint.js").is_file()
+
+
+def test_node_modules_junction_fallback_never_removes_the_repo_modules(
+    tmp_path, monkeypatch
+) -> None:
+    """Without symlink privilege the gate falls back to a Windows junction.
+
+    `mklink /J` works for an ordinary user where a directory symlink needs
+    Developer Mode or elevation. The fallback must still expose eslint inside
+    the snapshot, and teardown must remove the link rather than the repo's
+    modules it points at. On POSIX the command is simulated with a symlink.
+    `_unlink_node_modules` is exercised directly and its teardown call is
+    spied on, so `git worktree remove` cannot hide a teardown that failed to
+    unlink the snapshot entry.
+    """
+    repo = _init_repo(tmp_path)
+    _write(repo / ".gitignore", "node_modules/\n")
+    _write(repo / "node_modules" / "eslint" / "bin" / "eslint.js", "// eslint\n")
+    _write(repo / "src" / "app.py", "a = 1\n")
+    _commit_all(repo, "base")
+    _write(repo / "src" / "app.py", "a = 2\n")
+    _run(repo, "add", "-A")
+
+    def symlink_denied(self, target, target_is_directory=False):
+        raise OSError("A required privilege is not held by the client")
+
+    monkeypatch.setattr(Path, "symlink_to", symlink_denied)
+    if os.name != "nt":
+        # The junction fallback is Windows-only. Present that platform to the
+        # gate and stand in for `mklink` with a symlink. The proxy delegates
+        # every other os attribute the gate uses.
+        class _WindowsPlatform:
+            name = "nt"
+
+            def __getattr__(self, attribute):
+                return getattr(os, attribute)
+
+        monkeypatch.setattr(precommit_gate, "os", _WindowsPlatform())
+
+    real_run = subprocess.run
+    mklink_commands: list[list[str]] = []
+
+    def run_or_mklink(command, *args, **kwargs):
+        if command[:3] == ["cmd", "/c", "mklink"]:
+            mklink_commands.append(command)
+            if os.name != "nt":
+                os.symlink(command[-1], command[-2], target_is_directory=True)
+                return subprocess.CompletedProcess(command, 0)
+        return real_run(command, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run_or_mklink)
+
+    # The direct call below bypasses the spy and proves the helper works. The
+    # spy therefore records only `staged_tree`'s teardown; without it,
+    # `git worktree remove`/`shutil.rmtree` could hide a teardown that never
+    # called `_unlink_node_modules`.
+    teardown_unlinks: list[Path] = []
+    real_unlink = precommit_gate._unlink_node_modules
+
+    def spy_unlink(tree_path: Path) -> None:
+        teardown_unlinks.append(tree_path)
+        real_unlink(tree_path)
+
+    monkeypatch.setattr(precommit_gate, "_unlink_node_modules", spy_unlink)
+
+    with precommit_gate.staged_tree(repo) as tree:
+        link = tree / "node_modules"
+        repo_module = repo / "node_modules" / "eslint" / "bin" / "eslint.js"
+        assert mklink_commands, "the denied symlink must fall back to a junction"
+        assert mklink_commands[0][3:] == ["/J", str(link), str(repo / "node_modules")]
+        if os.name == "nt":
+            assert link.is_dir() and not link.is_symlink()
+        else:
+            assert link.is_symlink()
+        assert (link / "eslint" / "bin" / "eslint.js").is_file()
+        assert repo_module.is_file()
+
+        # Exercise the link teardown directly, bypassing the spy. `git worktree
+        # remove` (and the shutil.rmtree fallback) can delete a symlink or
+        # junction while leaving the repo modules intact, which would hide a
+        # broken unlink path.
+        real_unlink(tree)
+        assert not link.exists()
+        assert not link.is_symlink()
+        assert repo_module.is_file()
+
+    assert tree in teardown_unlinks, "staged_tree teardown must call _unlink_node_modules"
+    assert not tree.exists()
+    assert repo_module.is_file()
+    assert repo_module.read_text(encoding="utf-8") == "// eslint\n"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="directory junctions are Windows-only")
+def test_unlink_node_modules_rmdir_fallback_removes_the_junction_only(
+    tmp_path, monkeypatch
+) -> None:
+    """When unlink fails on a junction, rmdir must remove the link, not the target."""
+    repo_modules = tmp_path / "repo" / "node_modules"
+    eslint = repo_modules / "eslint" / "bin" / "eslint.js"
+    eslint.parent.mkdir(parents=True)
+    eslint.write_text("// eslint\n", encoding="utf-8")
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    link = tree / "node_modules"
+    created = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(repo_modules)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert created.returncode == 0, created.stderr or created.stdout
+    assert os.path.isjunction(link)
+
+    real_unlink = Path.unlink
+    real_rmdir = Path.rmdir
+    unlink_attempts: list[Path] = []
+    rmdir_attempts: list[Path] = []
+
+    def unlink_denied(self, *args, **kwargs):
+        if self == link:
+            unlink_attempts.append(self)
+            raise OSError("directory junction cannot be unlinked")
+        return real_unlink(self, *args, **kwargs)
+
+    def rmdir_recording(self, *args, **kwargs):
+        rmdir_attempts.append(self)
+        return real_rmdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink_denied)
+    monkeypatch.setattr(Path, "rmdir", rmdir_recording)
+
+    precommit_gate._unlink_node_modules(tree)
+
+    assert link in unlink_attempts, "the junction unlink must be attempted"
+    assert link in rmdir_attempts, "unlink failure must fall back to rmdir"
+    assert not os.path.lexists(link)
+    assert eslint.is_file()
+    assert eslint.read_text(encoding="utf-8") == "// eslint\n"
+
+
+def test_staged_tree_is_removed_when_node_modules_cannot_be_exposed(tmp_path, monkeypatch) -> None:
+    """A denied link must not leak the worktree or the snapshot directory."""
+    repo = _partial_slice_with_a_later_slice_unstaged(tmp_path)
+
+    def denied(tree, root):
+        raise OSError("symlink privilege not held")
+
+    monkeypatch.setattr(precommit_gate, "_link_node_modules", denied)
+
+    with pytest.raises(RuntimeError, match="node_modules"):
+        with precommit_gate.staged_tree(repo):
+            pass
+
+    assert _run(repo, "worktree", "list", "--porcelain").stdout.count("worktree ") == 1
+    tree_root = repo / precommit_gate.STAGED_TREE_DIR
+    assert not tree_root.exists() or not any(tree_root.iterdir())
 
 
 def test_run_changed_validates_the_staged_tree(tmp_path, monkeypatch) -> None:
