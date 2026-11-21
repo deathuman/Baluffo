@@ -47,6 +47,23 @@ def test_table_sizes_bounds_the_reported_table_list(tmp_path: Path) -> None:
     assert result["truncated"] is True
 
 
+def test_table_sizes_lists_every_table_at_the_default_cap(tmp_path: Path) -> None:
+    path = tmp_path / "probe.db"
+    con = sqlite3.connect(path)
+    for index in range(15):
+        con.execute(f"CREATE TABLE table_{index:02d} (id INTEGER PRIMARY KEY, value TEXT)")
+        con.execute(f"INSERT INTO table_{index:02d}(value) VALUES ('x')")
+    con.commit()
+    con.close()
+
+    result = measure_table_sizes(path, sample_rows=4, budget_ms=5_000, exact_max_bytes=0)
+
+    assert result["status"] == "ok"
+    assert result["sampledTables"] == 15
+    assert len(result["tables"]) == 15
+    assert result["truncated"] is False
+
+
 def test_table_sizes_reports_partial_when_the_budget_is_spent(tmp_path: Path) -> None:
     path = tmp_path / "probe.db"
     _seed_database(path)

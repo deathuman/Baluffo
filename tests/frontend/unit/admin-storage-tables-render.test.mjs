@@ -98,6 +98,30 @@ test("renders partial and unavailable states", () => {
   assert.doesNotMatch(unavailable, /<unsafe>/);
 });
 
+test("a complete but truncated sample is estimated, not a timed-out partial", () => {
+  const tables = Array.from({ length: 12 }, (_, index) => ({
+    name: `table_${index}`,
+    bytes: 1_000 - index,
+    share: 0.1,
+    rowCount: 10
+  }));
+  const html = renderStorageTablesHtml(payload({
+    truncated: true,
+    sampledTables: 15,
+    tables
+  }), formatBytes);
+
+  assert.doesNotMatch(html, /Partial snapshot/);
+  assert.doesNotMatch(html, /ran out of time/);
+  assert.doesNotMatch(html, /is-warning/);
+  assert.match(html, /Estimated snapshot/);
+  assert.match(html, /admin-storage-pill is-ok/);
+  assert.match(html, /12 largest of 15 measured tables/);
+  assert.match(html, /15 \(12 largest shown\)/);
+  assert.match(html, /Indexes, schema, and free pages/);
+  assert.match(html, /data-storage-complete="true"/);
+});
+
 test("partial table samples lead with exact allocation and do not claim a full share", () => {
   const html = renderStorageTablesHtml(payload({
     status: "partial",

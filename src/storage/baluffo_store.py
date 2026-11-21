@@ -109,7 +109,9 @@ DEFAULT_HEALTH_LOCK_TIMEOUT_MS = 250
 # `/ops/storage-health` is polled on a timer and must not re-sample every poll.
 DEFAULT_TABLE_SIZE_CACHE_S = 600.0
 # A partial sample is useful immediately but must not freeze the panel for the
-# full cache window: retry it on the next health poll instead.
+# full cache window: retry it on the next health poll instead. Once a complete
+# snapshot exists, a timed-out sample is discarded in favor of that snapshot;
+# the short window only controls how soon the refresh is retried.
 DEFAULT_TABLE_SIZE_PARTIAL_CACHE_S = 5.0
 # An in-place VACUUM holds the store write lock for the whole rebuild, which on a
 # multi-gigabyte runtime database is an unbounded hold -- the same shape that
@@ -342,6 +344,7 @@ class BaluffoStore:
         self._bulk_write_mode = False
         self._table_sizes_lock = threading.Lock()
         self._table_sizes_snapshot: dict[str, Any] | None = None
+        self._table_sizes_last_complete: dict[str, Any] | None = None
         self._table_sizes_cache_until_monotonic = 0.0
         self._maintenance_thread: threading.Thread | None = None
         self._compaction_in_progress = False
@@ -2781,7 +2784,9 @@ class BaluffoStore:
         The measurement samples rowids rather than traversing the database, so a
         multi-hundred-gigabyte runtime store answers in bounded time. The payload
         states how it was obtained (`method`, `estimated`, `complete`, `budgetMs`),
-        so an estimate is never presented as an exact measurement.
+        so an estimate is never presented as an exact measurement. A timed-out
+        refresh keeps the last complete snapshot and its `capturedAt` instead of
+        replacing it, then retries on the short partial cadence.
         """
         now = time.monotonic()
         with self._table_sizes_lock:
@@ -2792,13 +2797,24 @@ class BaluffoStore:
             # a module-level import would close the package cycle.
             from src.storage.db_table_sizes import measure_table_sizes
 
-            snapshot = measure_table_sizes(self.db_path)
+            measured = measure_table_sizes(self.db_path)
+            if measured.get("status") == "partial" and self._table_sizes_last_complete is not None:
+                # A maintenance pass can keep the sampler over budget for its whole
+                # duration. Keep the last complete snapshot and its capturedAt so the
+                # panel does not flip to partial on every short poll; retry on the
+                # partial cadence and replace it only when a complete sample lands.
+                snapshot = self._table_sizes_last_complete
+                cache_s = DEFAULT_TABLE_SIZE_PARTIAL_CACHE_S
+            else:
+                snapshot = measured
+                if snapshot.get("complete") is True:
+                    self._table_sizes_last_complete = snapshot
+                cache_s = (
+                    DEFAULT_TABLE_SIZE_CACHE_S
+                    if snapshot.get("complete") is True
+                    else DEFAULT_TABLE_SIZE_PARTIAL_CACHE_S
+                )
             self._table_sizes_snapshot = snapshot
-            cache_s = (
-                DEFAULT_TABLE_SIZE_CACHE_S
-                if snapshot.get("complete") is True
-                else DEFAULT_TABLE_SIZE_PARTIAL_CACHE_S
-            )
             self._table_sizes_cache_until_monotonic = time.monotonic() + cache_s
             return snapshot
 

@@ -384,13 +384,19 @@ function renderTableRow(table, estimated, allocatedBytes, formatBytes) {
 }
 
 function renderTechnicalDetails(tableSizes, formatBytes, tableCount) {
+  const measuredTables = toNumber(tableSizes.sampledTables) || tableCount;
   const facts = [
     renderFact("Measurement", tableSizes.estimated ? "Sampled estimate" : "Exact allocation"),
     renderFact("Method", tableSizes.method || "Not reported"),
     renderFact("Allocated space", formatBytes(toNumber(tableSizes.allocatedBytes))),
     renderFact("Database file", formatBytes(toNumber(tableSizes.databaseBytes))),
     renderFact("Free space", formatBytes(toNumber(tableSizes.freelistBytes))),
-    renderFact("Tables measured", `${formatCount(tableCount)}${tableSizes.truncated ? " (largest only)" : ""}`),
+    renderFact(
+      "Tables measured",
+      tableSizes.truncated
+        ? `${formatCount(measuredTables)} (${formatCount(tableCount)} largest shown)`
+        : formatCount(measuredTables)
+    ),
     renderFact("Snapshot complete", tableSizes.complete === false ? "No" : "Yes"),
     tableSizes.durationMs === null || tableSizes.durationMs === undefined
       ? ""
@@ -475,28 +481,28 @@ export function renderStorageTablesHtml(tableSizes, formatBytesFormatter, integr
 
   const allocatedBytes = toNumber(tableSizes.allocatedBytes);
   const tables = Array.isArray(tableSizes.tables) ? tableSizes.tables : [];
-  const partial = tableSizes.status === "partial"
-    || tableSizes.complete === false
-    || tableSizes.truncated === true;
-  const snapshotLabel = partial
+  const timedOut = tableSizes.status === "partial" || tableSizes.complete === false;
+  const truncated = tableSizes.truncated === true;
+  const measuredTables = toNumber(tableSizes.sampledTables) || tables.length;
+  const snapshotLabel = timedOut
     ? "Partial snapshot"
     : tableSizes.estimated ? "Estimated snapshot" : "Measured snapshot";
-  const statusClass = partial ? " is-warning" : " is-ok";
+  const statusClass = timedOut ? " is-warning" : " is-ok";
   const rows = tables.map(table =>
     renderTableRow(table, tableSizes.estimated, allocatedBytes, format)
   ).join("");
   const otherBytes = toNumber(tableSizes.otherBytes);
-  const otherLabel = partial
+  const otherLabel = timedOut
     ? "Unattributed allocated space"
     : "Indexes, schema, and free pages";
-  const otherShare = partial
+  const otherShare = timedOut
     ? null
     : formatShare({ bytes: otherBytes, share: tableSizes.otherShare }, allocatedBytes);
   const otherRow = otherBytes > 0
     ? `<div class="admin-storage-table-row admin-storage-overview-row admin-storage-table-other" role="row"
         data-table-name="unattributed"
         data-table-bytes="${otherBytes}"
-        data-table-share="${partial ? "" : escapeHtml(String(tableSizes.otherShare ?? ""))}">
+        data-table-share="${timedOut ? "" : escapeHtml(String(tableSizes.otherShare ?? ""))}">
         <span class="admin-storage-table-label" role="cell">${escapeHtml(otherLabel)}</span>
         <span class="admin-storage-table-cell" role="cell">${escapeHtml(format(otherBytes))}</span>
         ${renderShareBar(otherShare)}
@@ -505,12 +511,21 @@ export function renderStorageTablesHtml(tableSizes, formatBytesFormatter, integr
     : "";
 
   const notices = [];
-  if (partial) {
+  if (timedOut) {
     notices.push(
       "This bounded table sample ran out of time. Database size, allocated space, and free space are exact; table rows are estimates, and unattributed space includes tables and indexes the sample did not measure."
     );
-  } else if (tableSizes.estimated) {
-    notices.push("These sizes are estimated from a small sample, not exact page counts.");
+  } else {
+    if (truncated) {
+      notices.push(
+        measuredTables > tables.length
+          ? `Showing the ${formatCount(tables.length)} largest of ${formatCount(measuredTables)} measured tables; the rest are included in the totals but not listed.`
+          : "Only the largest measured tables are listed; the rest are included in the totals."
+      );
+    }
+    if (tableSizes.estimated) {
+      notices.push("These sizes are estimated from a small sample, not exact page counts.");
+    }
   }
   if (tables.length === 0) {
     notices.push("No table rows were measured in this snapshot.");
@@ -531,12 +546,12 @@ export function renderStorageTablesHtml(tableSizes, formatBytesFormatter, integr
       ${renderStat("Last checked", formatTime(tableSizes.capturedAt))}
       ${renderStat("Integrity", integrityStatValue(integrityCheck))}
     </div>
-    ${notices.map(notice => `<p class="admin-storage-notice${partial ? " is-warning" : ""}">${escapeHtml(notice)}</p>`).join("")}
+    ${notices.map(notice => `<p class="admin-storage-notice${timedOut ? " is-warning" : ""}">${escapeHtml(notice)}</p>`).join("")}
     <div class="admin-storage-table-block">
       <div class="admin-storage-table-block-head">
         <div>
-          <h4 class="admin-storage-subtitle">${partial ? "Largest tables in this sample" : "Largest measured tables"}</h4>
-          <p class="admin-storage-card-note">${partial ? "Measured rows are estimates; the unattributed row is the remaining allocated space." : "Sizes include table data, indexes, and other pages where measured."}</p>
+          <h4 class="admin-storage-subtitle">${timedOut ? "Largest tables in this sample" : "Largest measured tables"}</h4>
+          <p class="admin-storage-card-note">${timedOut ? "Measured rows are estimates; the unattributed row is the remaining allocated space." : "Sizes include table data, indexes, and other pages where measured."}</p>
         </div>
       </div>
       <div class="admin-storage-table" role="table" aria-label="Runtime database table sizes">
