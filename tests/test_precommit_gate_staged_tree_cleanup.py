@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -23,6 +24,15 @@ def _worktree_count(repo: Path) -> int:
     return _run(repo, "worktree", "list", "--porcelain").stdout.count("worktree ")
 
 
+def _registered_worktrees(repo: Path) -> set[str]:
+    listed = _run(repo, "worktree", "list", "--porcelain").stdout.splitlines()
+    return {
+        precommit_gate._normalized_path(Path(line.split(" ", 1)[1]))
+        for line in listed
+        if line.startswith("worktree ")
+    }
+
+
 def test_remove_staged_tree_falls_back_when_git_remove_leaves_the_tree(
     tmp_path, monkeypatch
 ) -> None:
@@ -30,8 +40,8 @@ def test_remove_staged_tree_falls_back_when_git_remove_leaves_the_tree(
 
     `git worktree remove` can report success while a junction or locked file
     keeps the directory behind. `_remove_staged_tree` must then remove the
-    directory itself, prune the worktree metadata, and leave the repo's
-    `node_modules` target untouched.
+    directory itself, drop that checkout's worktree metadata, and leave the
+    repo's `node_modules` target untouched.
     """
     repo = _init_repo(tmp_path)
     _write(repo / ".gitignore", "node_modules/\n")
@@ -67,7 +77,11 @@ def test_remove_staged_tree_falls_back_when_git_remove_leaves_the_tree(
         monkeypatch.setattr(precommit_gate.shutil, "rmtree", rmtree_recording)
 
     assert worktree_remove_calls == [tree]
-    assert rmtree_calls == [tree]
+    assert rmtree_calls[0] == tree
+    # The shared prune keeps the sweep's grace window, so the fallback drops
+    # this checkout's admin entry itself.
+    assert len(rmtree_calls) == 2
+    assert rmtree_calls[1].parent == repo / ".git" / "worktrees"
     assert len(prune_calls) == 1
     assert not tree.exists()
     assert _worktree_count(repo) == 1
@@ -104,7 +118,7 @@ def test_stale_staged_trees_are_swept_and_a_fresh_one_is_kept(tmp_path, monkeypa
         assert not stale.exists()
         assert fresh.is_dir()
         assert _worktree_count(repo) == 2
-        assert prune_calls, "the sweep must prune worktree metadata"
+        assert len(prune_calls) == 1, "a sweep prunes once, not once per swept tree"
         assert any(part.startswith("--expire=") for part in prune_calls[0])
     finally:
         precommit_gate._remove_staged_tree(repo, fresh)
@@ -139,7 +153,7 @@ def test_sweep_does_not_count_a_tree_it_could_not_remove(tmp_path, monkeypatch) 
     _write(stale / "file.txt", "leftover\n")
     old = time.time() - precommit_gate.STALE_STAGED_TREE_AGE_S - 60
     os.utime(stale, (old, old))
-    monkeypatch.setattr(precommit_gate, "_remove_staged_tree", lambda root, tree: None)
+    monkeypatch.setattr(precommit_gate, "_remove_staged_tree", lambda root, tree, **_kwargs: None)
 
     assert precommit_gate._sweep_stale_staged_trees(repo) == []
     assert stale.is_dir()
@@ -189,3 +203,40 @@ def test_read_tree_failure_after_worktree_add_cleans_up_the_staged_tree(
     assert failed_tree is not None
     assert not failed_tree.exists()
     assert _worktree_count(repo) == 1
+
+
+def test_fallback_cleanup_leaves_an_unrelated_missing_worktree_registered(
+    tmp_path, monkeypatch
+) -> None:
+    """A failed `worktree remove` must forget only its own checkout.
+
+    A zero-grace prune is repo-wide, so it deregistered an unrelated worktree
+    whose directory another tool had only just removed.
+    """
+    repo = _partial_slice_with_a_later_slice_unstaged(tmp_path)
+    unrelated = tmp_path / "unrelated-checkout"
+    added = _run(repo, "worktree", "add", "--detach", "--quiet", str(unrelated), "HEAD")
+    assert added.returncode == 0, added.stderr
+    shutil.rmtree(unrelated)
+
+    prune_calls: list[list[str]] = []
+    real_run = subprocess.run
+
+    def fail_worktree_remove(command, *args, **kwargs):
+        if command[3:6] == ["worktree", "remove", "--force"]:
+            return subprocess.CompletedProcess(command, 1, "", "remove failed")
+        if command[3:5] == ["worktree", "prune"]:
+            prune_calls.append(list(command))
+        return real_run(command, *args, **kwargs)
+
+    with precommit_gate.staged_tree(repo) as tree:
+        monkeypatch.setattr(subprocess, "run", fail_worktree_remove)
+
+    assert not tree.exists()
+    assert _registered_worktrees(repo) == {
+        precommit_gate._normalized_path(repo),
+        precommit_gate._normalized_path(unrelated),
+    }
+    assert prune_calls, "the fallback must still prune worktree metadata"
+    window = f"--expire={precommit_gate.STALE_STAGED_TREE_AGE_S}.seconds.ago"
+    assert all(window in command for command in prune_calls)

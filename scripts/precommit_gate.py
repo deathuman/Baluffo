@@ -235,7 +235,42 @@ def _unlink_node_modules(tree: Path) -> None:
         link.rmdir()
 
 
-def _remove_staged_tree(root: Path, tree: Path) -> None:
+def _normalized_path(path: Path) -> str:
+    return os.path.normcase(os.path.realpath(path))
+
+
+def _forget_worktree_registration(root: Path, tree: Path) -> None:
+    """Drop the admin entry for a checkout the gate has just deleted.
+
+    The shared prune keeps the sweep's grace window, so it cannot deregister
+    this checkout yet; the entry is the one whose `gitdir` points at ``tree``.
+    """
+    if tree.exists():
+        return  # git would not prune a live checkout either
+    try:
+        admin_path = _git_at(
+            root, "rev-parse", "--git-path", "worktrees", env=_env_without_git_location()
+        )[0]
+    except (IndexError, RuntimeError):
+        return
+    admin_root = Path(admin_path)
+    if not admin_root.is_absolute():
+        admin_root = root / admin_root
+    checkout = _normalized_path(tree / ".git")
+    try:
+        entries = list(admin_root.iterdir())
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            registered = (entry / "gitdir").read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if registered and _normalized_path(Path(registered)) == checkout:
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def _remove_staged_tree(root: Path, tree: Path, *, prune_stale_metadata: bool = True) -> None:
     _unlink_node_modules(tree)
     completed = subprocess.run(
         ["git", "-C", str(root), "worktree", "remove", "--force", str(tree)],
@@ -249,18 +284,14 @@ def _remove_staged_tree(root: Path, tree: Path) -> None:
         return
     # A locked file (an editor, an antivirus scan) can defeat `worktree remove`
     # on Windows, and a junction it cannot unlink leaves the directory behind
-    # even when git reports success. Drop the directory and prune the metadata
-    # so the next commit does not trip over a worktree git still lists.
+    # even when git reports success. Drop the directory and its registration so
+    # the next commit does not trip over a worktree git still lists.
     shutil.rmtree(tree, ignore_errors=True)
     if tree.exists():
         print(f"pre-commit gate: could not remove the staged tree at {tree}", file=sys.stderr)
-    subprocess.run(
-        ["git", "-C", str(root), "worktree", "prune"],
-        cwd=root,
-        env=_env_without_git_location(),
-        check=False,
-        capture_output=True,
-    )
+    _forget_worktree_registration(root, tree)
+    if prune_stale_metadata:
+        _prune_stale_worktree_entries(root)
 
 
 def _prune_stale_worktree_entries(root: Path) -> None:
@@ -313,7 +344,8 @@ def _sweep_stale_staged_trees(root: Path | None = None) -> list[Path]:
                 continue  # another gate's sweep removed it after the listing
             if not stale:
                 continue
-            _remove_staged_tree(base_root, tree)
+            # One repo-wide prune after the loop, not one per swept tree.
+            _remove_staged_tree(base_root, tree, prune_stale_metadata=False)
             if not tree.exists():
                 removed.append(tree)
     _prune_stale_worktree_entries(base_root)
