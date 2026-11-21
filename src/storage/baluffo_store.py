@@ -2073,6 +2073,9 @@ class BaluffoStore:
                 }
                 with self._maintenance_lock:
                     self._last_vacuum = status
+                # The rebuild returned free pages to the filesystem, so every
+                # cached byte count describes a file that no longer exists.
+                self._invalidate_table_sizes_cache()
                 return status
             except sqlite3.OperationalError as exc:
                 if not _is_busy_error(exc):
@@ -2202,6 +2205,9 @@ class BaluffoStore:
             )
         after = self.file_sizes()
         after_bytes = int(after.get("databaseBytes") or 0)
+        # The compact copy replaced the file, so a cached breakdown would keep
+        # reporting the pre-reclaim sizes for the rest of its window.
+        self._invalidate_table_sizes_cache()
         return self._record_rewrite(
             self._rewrite_status(
                 "ok",
@@ -2302,6 +2308,9 @@ class BaluffoStore:
                 self._initialize_writer()
             except BaseException:
                 if replaced:
+                    # The file is already the compact copy even though the store
+                    # could not reopen it, so the cached breakdown is stale.
+                    self._invalidate_table_sizes_cache()
                     self._mark_unhealthy(
                         "reopen_failed", "compact copy installed but reopen failed"
                     )
@@ -2419,6 +2428,9 @@ class BaluffoStore:
                 self._initialize_writer()
             except BaseException:
                 if replaced:
+                    # The file is already the rebuild even though the store could
+                    # not reopen it, so the cached breakdown describes the old one.
+                    self._invalidate_table_sizes_cache()
                     self._mark_unhealthy(
                         "reopen_failed",
                         "current-feed rebuild installed but the store could not reopen",
@@ -2451,7 +2463,10 @@ class BaluffoStore:
                 **_CLEARED_DELETE_JOURNAL_FIELDS,
                 **(journal_fields or {}),
             )
-            return result
+        # The install replaced the live file, so a cached breakdown would keep
+        # reporting the pre-rebuild sizes for the rest of its window.
+        self._invalidate_table_sizes_cache()
+        return result
 
     def restore_rebuilt_database(
         self,
@@ -2496,6 +2511,9 @@ class BaluffoStore:
                 self._initialize_writer()
             except BaseException:
                 if replaced:
+                    # The file is already the rollback even though the store could
+                    # not reopen it, so the cached breakdown describes the rebuilt one.
+                    self._invalidate_table_sizes_cache()
                     self._mark_unhealthy(
                         "reopen_failed",
                         "pre-rebuild database restored but the store could not reopen",
@@ -2524,7 +2542,10 @@ class BaluffoStore:
                 # failed against it describes nothing.
                 **_CLEARED_DELETE_JOURNAL_FIELDS,
             )
-            return result
+        # The rollback replaced the live file, so a cached breakdown would keep
+        # reporting the rebuilt sizes for the rest of its window.
+        self._invalidate_table_sizes_cache()
+        return result
 
     def compaction_status(self, *, sizes: dict[str, int] | None = None) -> dict[str, Any]:
         """Report the configured gate and the observed reason it is not due."""
@@ -2778,6 +2799,20 @@ class BaluffoStore:
         if result != "ok":
             raise BaluffoStoreError(f"SQLite quick_check failed for {path}: {result}")
 
+    def _invalidate_table_sizes_cache(self) -> None:
+        """Drop the cached breakdown after the live database file is replaced.
+
+        Every replacement path calls this -- an in-place VACUUM, a compact-copy
+        swap, a current-feed rebuild install, and a rollback -- because a cached
+        snapshot describes a file that is no longer live. The retained complete
+        snapshot goes too: keeping it would let a later timed-out refresh
+        resurrect the pre-reclaim numbers.
+        """
+        with self._table_sizes_lock:
+            self._table_sizes_snapshot = None
+            self._table_sizes_last_complete = None
+            self._table_sizes_cache_until_monotonic = 0.0
+
     def table_sizes(self) -> dict[str, Any]:
         """Bounded per-table space breakdown, cached between health reads.
 
@@ -2786,7 +2821,9 @@ class BaluffoStore:
         states how it was obtained (`method`, `estimated`, `complete`, `budgetMs`),
         so an estimate is never presented as an exact measurement. A timed-out
         refresh keeps the last complete snapshot and its `capturedAt` instead of
-        replacing it, then retries on the short partial cadence.
+        replacing it, then retries on the short partial cadence. A successful
+        rewrite, rebuild install, or rollback clears both, so the next read
+        measures the new file.
         """
         now = time.monotonic()
         with self._table_sizes_lock:

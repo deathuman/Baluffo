@@ -118,7 +118,8 @@ test("a complete but truncated sample is estimated, not a timed-out partial", ()
   assert.match(html, /admin-storage-pill is-ok/);
   assert.match(html, /12 largest of 15 measured tables/);
   assert.match(html, /15 \(12 largest shown\)/);
-  assert.match(html, /Indexes, schema, and free pages/);
+  assert.match(html, /3 smaller tables, indexes, and free pages/);
+  assert.match(html, /the other 3 are included in the remaining space/);
   assert.match(html, /data-storage-complete="true"/);
 });
 

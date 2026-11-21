@@ -189,12 +189,20 @@ def _shown_rows(
     allocated_bytes: int,
     max_tables: int,
 ) -> tuple[list[dict[str, Any]], int, bool]:
+    """Rank the tables and pool everything the cap hides into the remainder.
+
+    The cap limits what is listed, not what is accounted for. Measuring the
+    remainder against every table while returning only the largest ones made the
+    omitted tables vanish from both the rows and `otherBytes`, so the panel's
+    numbers stopped adding up to the allocated space. The remainder is therefore
+    taken from the rows that are actually returned.
+    """
     rows.sort(key=lambda row: int(row["bytes"]), reverse=True)
-    table_bytes = sum(int(row["bytes"]) for row in rows)
     shown = rows[: max(1, int(max_tables))]
     for row in shown:
         row["share"] = round(int(row["bytes"]) / max(1, allocated_bytes), 4)
-    return shown, max(0, allocated_bytes - table_bytes), len(rows) > len(shown)
+    shown_bytes = sum(int(row["bytes"]) for row in shown)
+    return shown, max(0, allocated_bytes - shown_bytes), len(rows) > len(shown)
 
 
 def measure_table_sizes(

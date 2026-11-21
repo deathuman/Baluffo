@@ -492,9 +492,16 @@ export function renderStorageTablesHtml(tableSizes, formatBytesFormatter, integr
     renderTableRow(table, tableSizes.estimated, allocatedBytes, format)
   ).join("");
   const otherBytes = toNumber(tableSizes.otherBytes);
+  const omittedTables = Math.max(0, measuredTables - tables.length);
+  // The cap pools the unlisted tables into `otherBytes`, so the row says so
+  // instead of claiming the remainder is only indexes, schema, and free pages.
+  // `truncated` is only set when rows were left out, so the count is always the
+  // number the remainder pools.
   const otherLabel = timedOut
     ? "Unattributed allocated space"
-    : "Indexes, schema, and free pages";
+    : truncated
+      ? `${formatCount(omittedTables)} smaller tables, indexes, and free pages`
+      : "Indexes, schema, and free pages";
   const otherShare = timedOut
     ? null
     : formatShare({ bytes: otherBytes, share: tableSizes.otherShare }, allocatedBytes);
@@ -518,9 +525,7 @@ export function renderStorageTablesHtml(tableSizes, formatBytesFormatter, integr
   } else {
     if (truncated) {
       notices.push(
-        measuredTables > tables.length
-          ? `Showing the ${formatCount(tables.length)} largest of ${formatCount(measuredTables)} measured tables; the rest are included in the totals but not listed.`
-          : "Only the largest measured tables are listed; the rest are included in the totals."
+        `Showing the ${formatCount(tables.length)} largest of ${formatCount(measuredTables)} measured tables; the other ${formatCount(omittedTables)} are included in the remaining space.`
       );
     }
     if (tableSizes.estimated) {

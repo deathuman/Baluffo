@@ -35,16 +35,35 @@ def test_table_sizes_ranks_the_largest_table_first(tmp_path: Path) -> None:
     assert result["otherBytes"] >= 0
 
 
-def test_table_sizes_bounds_the_reported_table_list(tmp_path: Path) -> None:
+def test_table_sizes_bounds_the_reported_table_list(tmp_path: Path, monkeypatch) -> None:
+    """The cap hides a table from the list, never from the accounting.
+
+    The sampled bytes are fixed here: a real rowid sample can estimate more bytes
+    than the file allocates, which clamps `otherBytes` to zero and turns the sum
+    into a statement about the sample instead of about the cap.
+    """
     path = tmp_path / "probe.db"
     _seed_database(path)
+    fixed_bytes = {"big": 40, "small": 30}
 
-    result = measure_table_sizes(
-        path, sample_rows=8, max_tables=1, budget_ms=5_000, exact_max_bytes=0
-    )
+    def fixed_estimate(_conn, name, **_kwargs):
+        return {
+            "name": name,
+            "rowCount": 1,
+            "bytes": fixed_bytes[name],
+            "sampledRows": 1,
+        }, False
 
-    assert len(result["tables"]) == 1
+    monkeypatch.setattr("src.storage.db_table_sizes._estimate_table", fixed_estimate)
+
+    result = measure_table_sizes(path, max_tables=1, budget_ms=5_000, exact_max_bytes=0)
+
+    assert [row["name"] for row in result["tables"]] == ["big"]
     assert result["truncated"] is True
+    # The hidden `small` table's 30 bytes are pooled into the remainder.
+    assert result["otherBytes"] == result["allocatedBytes"] - fixed_bytes["big"]
+    shown_bytes = sum(int(row["bytes"]) for row in result["tables"])
+    assert shown_bytes + result["otherBytes"] == result["allocatedBytes"]
 
 
 def test_table_sizes_lists_every_table_at_the_default_cap(tmp_path: Path) -> None:
