@@ -22,6 +22,7 @@ from src.jobs.common.browser_fallback_queue_diagnostics import (
     build_browser_fallback_queue_diagnostics,
 )
 from src.shared.timing_counters import snapshot_counters
+from src.shared.utils import coerce_int
 from src.storage_metrics import snapshot_storage_metrics
 
 
@@ -120,10 +121,7 @@ def handle_ops_browser_probe_route(
     """Handle the one on-demand browser probe, clamping its timeout to 1-30s."""
     if path == "/ops/browser-probe":
         timeout_raw = str((query.get("timeoutS") or ["10"])[0] or "").strip()
-        try:
-            timeout_s = max(1, min(30, int(timeout_raw)))
-        except ValueError:
-            timeout_s = 10
+        timeout_s = coerce_int(timeout_raw, 10, minimum=1, maximum=30)
         payload = api.probe_browser_fallback_health(timeout_s=timeout_s)
         handler.send_json(payload, status=409 if payload.get("busy") else 200)
         return True

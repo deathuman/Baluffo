@@ -3,7 +3,7 @@ import { mergeOpsHealth } from "./ops-merge-model.js";
 
 export const ACTIVE_PIPELINE_KPI_DELAYED_LABEL = "Updating while job is running.";
 export const FETCH_KPI_LOADING_LABEL = "Loading latest fetch KPI...";
-export const FETCH_KPI_NOT_MEASURED_LABEL = "Not measured (no fetch in the last 7 days)";
+const FETCH_KPI_NOT_MEASURED_LABEL = "Not measured (no fetch in the last 7 days)";
 const FETCH_KPI_UNAVAILABLE_LABEL = "Not available";
 const FETCH_KPI_NO_SUCCESS_LABEL = "No successful fetch yet";
 

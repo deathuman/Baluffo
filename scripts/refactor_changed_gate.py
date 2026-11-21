@@ -80,7 +80,7 @@ def _collect_committed_changed_files(base_ref: str | None = None) -> list[str]:
 
 
 def collect_refactor_changed_files(base_ref: str | None = None) -> list[str]:
-    files = precommit_gate.collect_changed_files()
+    files = precommit_gate.collect_staged_files()
     if files:
         return files
     return _collect_committed_changed_files(base_ref)

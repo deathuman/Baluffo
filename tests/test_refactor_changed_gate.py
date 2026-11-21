@@ -4,7 +4,7 @@ from scripts import refactor_changed_gate
 
 
 def test_collect_refactor_changed_files_falls_back_to_committed_diff(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(refactor_changed_gate.precommit_gate, "collect_changed_files", lambda: [])
+    monkeypatch.setattr(refactor_changed_gate.precommit_gate, "collect_staged_files", lambda: [])
     monkeypatch.setattr(refactor_changed_gate, "_resolve_diff_base", lambda: "abc123")
     monkeypatch.setattr(
         refactor_changed_gate.precommit_gate,
