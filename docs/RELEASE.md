@@ -346,7 +346,9 @@ Intent is read from **shipped commits only**. A `Release-tag:` line on a `docs/`
 
 The same placement rule applies to the bump that replaces intent once the version is tagged, and so does the ordering: a bump only closes a window it **comes after**. Bumping first moves the anchor to the new bump, the shipped commits land in that fresh window, and the gate fails again against the new version — so commit the bump together with the shipped code, or after it.
 
-The window the gate evaluates is the commits after the last commit that changed `src/app_version.py`. Any shipped commit (everything except `docs/`, `tests/`, `tools/`, `.github/`, and root docs/identity files) in that window triggers the failure unless the window carries a bump or an explicit intent declaration. The lint CI checkout fetches full history (`fetch-depth: 0`) so the gate evaluates the real window on every push/PR.
+The window the gate evaluates is the commits after the last commit that changed `src/app_version.py`. Any shipped commit (everything except `docs/`, `tests/`, `tools/`, `.github/`, and root docs/identity files) in that window triggers the failure unless the window carries a bump or an explicit intent declaration. The lint CI checkout fetches full history (`fetch-depth: 0`) so the gate evaluates the real window on every push/PR. CI coverage is split: `lint.yml` runs this offline window gate, while `build-container.yml` runs the online `check_published_version.py --strict` registry check and not the window gate.
+
+**Tag the tip, not an intermediate commit.** A tag is what flips the gate from intent to ancestry: once `vX.Y.Z` exists, every shipped commit *after* it counts as an overwrite of a published image and `Release-tag:` intent stops counting. So `v0.3.069` must sit on the commit that carries all of the window's shipped work — `HEAD` at release time — not on an earlier commit such as `19db1f42`, which would leave the shipped commits that follow it failing the gate.
 
 #### Amending a version bump into an existing commit is a catch-22
 
