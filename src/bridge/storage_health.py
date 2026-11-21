@@ -50,7 +50,9 @@ HEALTH_COMPUTE_TIMEOUT_S = 3.0
 HEALTH_STALE_TTL_S = 300.0
 _STORE_BUILD_LOCKS: dict[Path, threading.Lock] = {}
 _HEALTH_LOCKS: dict[Path, threading.Lock] = {}
-_HEALTH_CACHE: dict[Path, tuple[float, float, dict[str, Any]]] = {}
+# (expires_at, cached_at, payload, database file generation)
+_HealthCacheEntry = tuple[float, float, dict[str, Any], int]
+_HEALTH_CACHE: dict[Path, _HealthCacheEntry] = {}
 
 
 class _StoreOpenBusy(BaluffoStoreError):
@@ -562,43 +564,72 @@ def _cached_storage_payload(
     return payload
 
 
-def _compute_storage_health(resolved: Path) -> dict[str, Any]:
+def _compute_storage_health(resolved: Path) -> tuple[dict[str, Any], int | None]:
     try:
         store = get_storage_store(resolved, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
+        generation: int | None = store.database_file_generation
         health = store.health()
+        if store.database_file_generation != generation:
+            # A rewrite landed while the payload was assembled, so the embedded
+            # breakdown may describe the old file. Leave it uncached; the next
+            # poll measures the new one.
+            generation = None
     except _StoreOpenBusy as exc:
-        return _stalled_storage_payload(resolved, reason=str(exc))
+        return _stalled_storage_payload(resolved, reason=str(exc)), None
     except (BaluffoStoreError, OSError, sqlite3.Error, ValueError) as exc:
-        return {
-            "ok": False,
-            "storage": {
-                "healthy": False,
-                "error": str(exc),
-                "dataDir": str(resolved),
-                **_runtime_db_file_sizes(resolved),
-                "diagnostics": list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, [])),
+        return (
+            {
+                "ok": False,
+                "storage": {
+                    "healthy": False,
+                    "error": str(exc),
+                    "dataDir": str(resolved),
+                    **_runtime_db_file_sizes(resolved),
+                    "diagnostics": list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, [])),
+                },
             },
-        }
+            None,
+        )
     health["diagnostics"] = list(_DIAGNOSTICS_BY_DATA_DIR.get(resolved, []))
     health["healthSource"] = "live"
-    return {"ok": bool(health.get("healthy")), "storage": health}
+    return {"ok": bool(health.get("healthy")), "storage": health}, generation
 
 
-def _read_cached_health(resolved: Path) -> tuple[float, float, dict[str, Any]] | None:
+def _read_cached_health(resolved: Path) -> _HealthCacheEntry | None:
     with _STORE_LOCK:
         return _HEALTH_CACHE.get(resolved)
 
 
-def _cache_health_payload(resolved: Path, payload: dict[str, Any]) -> None:
+def _cache_health_payload(resolved: Path, payload: dict[str, Any], generation: int) -> None:
     now = time.monotonic()
     with _STORE_LOCK:
-        _HEALTH_CACHE[resolved] = (now + HEALTH_CACHE_TTL_S, now, payload)
+        _HEALTH_CACHE[resolved] = (now + HEALTH_CACHE_TTL_S, now, payload, generation)
+
+
+def _cached_health_is_current(resolved: Path, cached: _HealthCacheEntry) -> bool:
+    """True when no rewrite has superseded the cached payload's breakdown.
+
+    A cached payload belongs to the store that built it; if that store is gone
+    the cache was cleared with it, so an absent store cannot hide a rewrite.
+    """
+    with _STORE_LOCK:
+        store = _STORES_BY_DATA_DIR.get(resolved)
+    return store is None or store.database_file_generation == cached[3]
+
+
+def _forget_cached_health(resolved: Path) -> None:
+    with _STORE_LOCK:
+        _HEALTH_CACHE.pop(resolved, None)
 
 
 def _fallback_storage_payload(resolved: Path, *, reason: str) -> dict[str, Any]:
-    """Answer now from the last good reading, or say the read is unavailable."""
+    """Answer now from the last good reading, or say the read is unavailable.
+
+    A payload whose database generation has moved on is not a reading of the
+    current file, so it is not served even as a stale fallback.
+    """
     cached = _read_cached_health(resolved)
-    if cached is not None:
+    if cached is not None and _cached_health_is_current(resolved, cached):
         age_s = max(0.0, time.monotonic() - cached[1])
         if age_s <= HEALTH_STALE_TTL_S:
             return _cached_storage_payload(
@@ -620,6 +651,21 @@ def _storage_wait_seconds(timeout_s: float | None) -> float:
         return HEALTH_COMPUTE_TIMEOUT_S
 
 
+def _cached_health_response(resolved: Path, *, now: float) -> dict[str, Any] | None:
+    """Return a current cached payload, or drop one a rewrite invalidated."""
+    cached = _read_cached_health(resolved)
+    if cached is None:
+        return None
+    if not _cached_health_is_current(resolved, cached):
+        # The store replaced the file after this payload was cached, so its
+        # embedded breakdown is pre-reclaim; recompute instead of serving it.
+        _forget_cached_health(resolved)
+        return None
+    if cached[0] <= now:
+        return None
+    return _cached_storage_payload(resolved, cached[2], age_ms=(now - cached[1]) * 1000)
+
+
 def get_storage_health_payload(
     data_dir: Path | str, *, timeout_s: float | None = None
 ) -> dict[str, Any]:
@@ -634,10 +680,9 @@ def get_storage_health_payload(
     """
     wait_s = _storage_wait_seconds(timeout_s)
     resolved = _resolve_data_dir(data_dir)
-    cached = _read_cached_health(resolved)
-    now = time.monotonic()
-    if cached is not None and cached[0] > now:
-        return _cached_storage_payload(resolved, cached[2], age_ms=(now - cached[1]) * 1000)
+    cached_response = _cached_health_response(resolved, now=time.monotonic())
+    if cached_response is not None:
+        return cached_response
     health_lock = _keyed_lock(_HEALTH_LOCKS, resolved)
     if not health_lock.acquire(blocking=False):
         return _fallback_storage_payload(
@@ -648,10 +693,10 @@ def get_storage_health_payload(
 
     def _run() -> None:
         try:
-            payload = _compute_storage_health(resolved)
+            payload, generation = _compute_storage_health(resolved)
             result["payload"] = payload
-            if not payload["storage"].get("healthStalled"):
-                _cache_health_payload(resolved, payload)
+            if generation is not None and not payload["storage"].get("healthStalled"):
+                _cache_health_payload(resolved, payload, generation)
         except BaseException as exc:  # pragma: no cover - a worker must not die unheard
             result["error"] = exc
         finally:

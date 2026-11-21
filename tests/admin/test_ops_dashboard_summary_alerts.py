@@ -128,18 +128,21 @@ def test_dashboard_summary_bounds_a_slow_storage_read(
     budgets: list[float | None] = []
     real_get_storage_health_payload = storage_health.get_storage_health_payload
 
-    def slow_compute(_data_dir: Any) -> dict[str, Any]:
+    def slow_compute(_data_dir: Any) -> tuple[dict[str, Any], None]:
         started.set()
         release.wait(5.0)
         finished.set()
-        return {
-            "ok": False,
-            "storage": {
-                "healthy": False,
-                "quickCheck": "*** in database main ***",
-                "walMaintenance": {"status": "ok"},
+        return (
+            {
+                "ok": False,
+                "storage": {
+                    "healthy": False,
+                    "quickCheck": "*** in database main ***",
+                    "walMaintenance": {"status": "ok"},
+                },
             },
-        }
+            None,
+        )
 
     def record_storage_budget(data_dir: Any, *, timeout_s: float | None = None) -> dict[str, Any]:
         budgets.append(timeout_s)

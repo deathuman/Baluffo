@@ -433,6 +433,8 @@ def test_storage_health_payload_is_cached_within_the_ttl(tmp_path: Path, monkeyp
     health_calls: list[int] = []
 
     class CountingStore:
+        database_file_generation = 0
+
         def health(self):
             health_calls.append(1)
             return {"healthy": True, "walMode": "wal", "quickCheck": "ok"}
@@ -450,6 +452,69 @@ def test_storage_health_payload_is_cached_within_the_ttl(tmp_path: Path, monkeyp
     assert second["storage"]["healthCacheAgeMs"] >= 0
     assert len(health_calls) == 1
     close_storage_stores()
+
+
+def test_cached_storage_health_remeasures_after_a_database_rewrite(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A cached payload must not keep the breakdown of a replaced file."""
+    store = get_storage_store(tmp_path)
+    first = get_storage_health_payload(tmp_path)
+    assert first["storage"]["healthSource"] == "live"
+    stale_captured_at = first["storage"]["tableSizes"]["capturedAt"]
+
+    fresh = {
+        "schemaVersion": 1,
+        "status": "ok",
+        "method": "rowid-sample",
+        "capturedAt": "2026-11-21T12:00:00Z",
+        "durationMs": 1,
+        "budgetMs": 750,
+        "allocatedBytes": 4096,
+        "estimated": True,
+        "complete": True,
+        "sampledTables": 1,
+        "tables": [{"name": "jobs", "bytes": 4096, "rowCount": 1}],
+        "otherBytes": 0,
+        "truncated": False,
+        "error": "",
+    }
+    monkeypatch.setattr(
+        "src.storage.db_table_sizes.measure_table_sizes", lambda *_args, **_kwargs: fresh
+    )
+    try:
+        store._invalidate_table_sizes_cache()
+
+        second = get_storage_health_payload(tmp_path)
+
+        assert second["storage"]["healthSource"] == "live"
+        assert second["storage"]["tableSizes"]["capturedAt"] == fresh["capturedAt"]
+        assert stale_captured_at != fresh["capturedAt"]
+    finally:
+        close_storage_stores()
+
+
+def test_storage_health_does_not_cache_a_payload_assembled_across_a_rewrite(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A rewrite landing mid-read leaves the payload uncached for the next poll."""
+    store = get_storage_store(tmp_path)
+    real_health = store.health
+
+    def health_then_rewrite():
+        payload = real_health()
+        store._invalidate_table_sizes_cache()
+        return payload
+
+    monkeypatch.setattr(store, "health", health_then_rewrite)
+    try:
+        first = get_storage_health_payload(tmp_path)
+        assert first["storage"]["healthSource"] == "live"
+
+        second = get_storage_health_payload(tmp_path)
+        assert second["storage"]["healthSource"] == "live"
+    finally:
+        close_storage_stores()
 
 
 def test_storage_health_payload_reports_a_stalled_read_without_a_health_verdict(
@@ -482,6 +547,8 @@ def test_storage_health_payload_answers_before_a_slow_read_finishes(
     release = threading.Event()
 
     class SlowStore:
+        database_file_generation = 0
+
         def health(self):
             release.wait(timeout=10)
             return {"healthy": True, "walMode": "wal", "quickCheck": "ok"}
@@ -522,6 +589,8 @@ def test_storage_health_payload_does_not_queue_behind_an_inflight_read(
     entered = threading.Event()
 
     class SlowStore:
+        database_file_generation = 0
+
         def health(self):
             entered.set()
             release.wait(timeout=10)

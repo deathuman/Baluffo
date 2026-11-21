@@ -5,6 +5,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.storage import BaluffoStore
 from src.storage.baluffo_store import DEFAULT_TABLE_SIZE_PARTIAL_CACHE_S
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -174,6 +176,106 @@ def test_a_rebuilt_database_install_and_rollback_drop_the_cached_breakdown(monke
             assert calls == 3
 
 
+def test_a_rebuild_install_that_cannot_reopen_drops_the_cached_breakdown(
+    monkeypatch,
+) -> None:
+    """The file is already the rebuild when the reopen fails, so the cache is stale."""
+    measured = [
+        _snapshot(status="ok", complete=True, captured_at="2026-11-20T10:00:00Z"),
+        _snapshot(status="ok", complete=True, captured_at="2026-11-20T10:05:00Z"),
+    ]
+    calls = 0
+
+    def fake_measure(_path: Path) -> dict[str, Any]:
+        nonlocal calls
+        snapshot = measured[min(calls, len(measured) - 1)]
+        calls += 1
+        return snapshot
+
+    monkeypatch.setattr("src.storage.db_table_sizes.measure_table_sizes", fake_measure)
+
+    with workspace_tmpdir("baluffo-store-table-sizes-rebuild-reopen") as data_dir:
+        with BaluffoStore(data_dir, defer_maintenance=True) as store:
+            staging = data_dir / "staged-rebuild.db"
+            con = sqlite3.connect(staging)
+            con.execute("CREATE TABLE marker (id INTEGER PRIMARY KEY)")
+            con.commit()
+            con.close()
+
+            assert store.table_sizes()["capturedAt"] == "2026-11-20T10:00:00Z"
+            assert calls == 1
+
+            def fail_reopen() -> None:
+                raise RuntimeError("reopen failed")
+
+            monkeypatch.setattr(store, "_initialize_writer", fail_reopen)
+            with pytest.raises(RuntimeError, match="reopen failed"):
+                store.install_rebuilt_database(
+                    staging,
+                    expected_transactions=store.write_transaction_count(),
+                    backup_path=data_dir / "rollback.db",
+                    journal_path=data_dir / "rebuild-journal.json",
+                )
+
+            assert store._table_sizes_snapshot is None
+            assert store.table_sizes()["capturedAt"] == "2026-11-20T10:05:00Z"
+            assert calls == 2
+
+
+def test_a_rebuild_rollback_that_cannot_reopen_drops_the_cached_breakdown(
+    monkeypatch,
+) -> None:
+    """The file is already the rollback when the reopen fails, so the cache is stale."""
+    measured = [
+        _snapshot(status="ok", complete=True, captured_at="2026-11-20T10:00:00Z"),
+        _snapshot(status="ok", complete=True, captured_at="2026-11-20T10:05:00Z"),
+        _snapshot(status="ok", complete=True, captured_at="2026-11-20T10:10:00Z"),
+    ]
+    calls = 0
+
+    def fake_measure(_path: Path) -> dict[str, Any]:
+        nonlocal calls
+        snapshot = measured[min(calls, len(measured) - 1)]
+        calls += 1
+        return snapshot
+
+    monkeypatch.setattr("src.storage.db_table_sizes.measure_table_sizes", fake_measure)
+
+    with workspace_tmpdir("baluffo-store-table-sizes-rollback-reopen") as data_dir:
+        with BaluffoStore(data_dir, defer_maintenance=True) as store:
+            staging = data_dir / "staged-rebuild.db"
+            con = sqlite3.connect(staging)
+            con.execute("CREATE TABLE marker (id INTEGER PRIMARY KEY)")
+            con.commit()
+            con.close()
+            backup = data_dir / "rollback.db"
+            journal = data_dir / "rebuild-journal.json"
+
+            assert store.table_sizes()["capturedAt"] == "2026-11-20T10:00:00Z"
+            assert calls == 1
+
+            installed = store.install_rebuilt_database(
+                staging,
+                expected_transactions=store.write_transaction_count(),
+                backup_path=backup,
+                journal_path=journal,
+            )
+            assert installed["installed"] is True
+            assert store.table_sizes()["capturedAt"] == "2026-11-20T10:05:00Z"
+            assert calls == 2
+
+            def fail_reopen() -> None:
+                raise RuntimeError("reopen failed")
+
+            monkeypatch.setattr(store, "_initialize_writer", fail_reopen)
+            with pytest.raises(RuntimeError, match="reopen failed"):
+                store.restore_rebuilt_database(backup, journal_path=journal)
+
+            assert store._table_sizes_snapshot is None
+            assert store.table_sizes()["capturedAt"] == "2026-11-20T10:10:00Z"
+            assert calls == 3
+
+
 def test_table_sizes_returns_partial_when_no_complete_snapshot_exists(monkeypatch) -> None:
     def fake_measure(_path: Path) -> dict[str, Any]:
         return _snapshot(status="partial", complete=False, captured_at="2026-11-20T10:00:00Z")
@@ -213,3 +315,11 @@ def test_table_sizes_does_not_mask_an_unavailable_refresh_with_a_complete_snapsh
 
     assert result["status"] == "unavailable"
     assert result["complete"] is False
+
+
+def test_invalidating_the_breakdown_bumps_the_database_file_generation() -> None:
+    with workspace_tmpdir("baluffo-store-table-sizes-generation") as data_dir:
+        with BaluffoStore(data_dir, defer_maintenance=True) as store:
+            before = store.database_file_generation
+            store._invalidate_table_sizes_cache()
+            assert store.database_file_generation == before + 1

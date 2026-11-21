@@ -346,6 +346,7 @@ class BaluffoStore:
         self._table_sizes_snapshot: dict[str, Any] | None = None
         self._table_sizes_last_complete: dict[str, Any] | None = None
         self._table_sizes_cache_until_monotonic = 0.0
+        self._database_file_generation = 0
         self._maintenance_thread: threading.Thread | None = None
         self._compaction_in_progress = False
         self._wal_maintenance_cooldown_until_monotonic = 0.0
@@ -2799,6 +2800,16 @@ class BaluffoStore:
         if result != "ok":
             raise BaluffoStoreError(f"SQLite quick_check failed for {path}: {result}")
 
+    @property
+    def database_file_generation(self) -> int:
+        """Monotonic count of live database rewrites or replacements.
+
+        A payload cache that embeds ``table_sizes()`` can compare this to the
+        value it cached: a change means the breakdown describes a file that is
+        no longer live.
+        """
+        return self._database_file_generation
+
     def _invalidate_table_sizes_cache(self) -> None:
         """Drop the cached breakdown after the live database file is replaced.
 
@@ -2806,9 +2817,11 @@ class BaluffoStore:
         swap, a current-feed rebuild install, and a rollback -- because a cached
         snapshot describes a file that is no longer live. The retained complete
         snapshot goes too: keeping it would let a later timed-out refresh
-        resurrect the pre-reclaim numbers.
+        resurrect the pre-reclaim numbers. The generation bump lets a payload
+        cache outside the store notice the same replacement.
         """
         with self._table_sizes_lock:
+            self._database_file_generation += 1
             self._table_sizes_snapshot = None
             self._table_sizes_last_complete = None
             self._table_sizes_cache_until_monotonic = 0.0
