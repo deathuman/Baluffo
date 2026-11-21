@@ -141,14 +141,15 @@ def test_release_group_checks_the_window_at_push_time(monkeypatch) -> None:
     ]
 
 
-def test_commit_gate_runs_the_pending_check_for_unwatched_shipped_paths(
+def test_commit_gate_runs_the_pending_check_when_the_filter_skips_guardrails(
     monkeypatch,
 ) -> None:
-    """`styles/`, `Dockerfile`, and runtime `data/` sit outside the watched roots.
+    """The release-only branch still runs the one check every commit needs.
 
-    The watched-root filter keeps the full guardrail run cheap, but it does not
-    cover every shipped path, so a commit touching only those skipped the
-    container version gate entirely -- the 2026-10-01 CSS deletion was one.
+    The path filter sends non-shipped paths no group owns to this branch; the
+    staged container version gate must run there too -- the 2026-10-01 CSS
+    deletion is what happens without it. Shipped paths now take the full set
+    instead, so the filter is stubbed here to exercise the fallback directly.
     """
     calls: list[tuple[tuple[str, ...], bool]] = []
 

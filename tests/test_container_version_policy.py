@@ -14,9 +14,9 @@ from tools.repo_health.container_version_policy import (
     VERSION_FILES,
     WindowCommit,
     _declared_release_tag_versions,
-    _is_shipped_path,
     check_container_shipped_code_version_gate,
     evaluate_window,
+    is_shipped_path,
 )
 
 
@@ -67,22 +67,22 @@ def _head_sha(repo: Path) -> str:
 
 
 def test_is_shipped_path_classifies_docs_vs_code() -> None:
-    assert _is_shipped_path("src/jobs/adapters/plugins/static/phapp.py")
-    assert not _is_shipped_path("scripts/bump_version.py")
-    assert not _is_shipped_path("umbrel-app-store.yml")
-    assert not _is_shipped_path("deathuman-baluffo/umbrel-app.yml")
-    assert not _is_shipped_path("deathuman-baluffo/docker-compose.yml")
-    assert not _is_shipped_path("deathuman-baluffo/exports.sh")
-    assert _is_shipped_path("data/defaults/source-registry-active.seed.json")
-    assert _is_shipped_path("Dockerfile")
-    assert not _is_shipped_path("docs/RELEASE.md")
-    assert not _is_shipped_path("docs/archive/old-plan.md")
-    assert not _is_shipped_path("tests/test_foo.py")
-    assert not _is_shipped_path("tools/repo_health/repo_guardrails.py")
-    assert not _is_shipped_path(".github/workflows/lint.yml")
-    assert not _is_shipped_path("opencode.json")
-    assert not _is_shipped_path("README.md")
-    assert not _is_shipped_path("release-notes.md")
+    assert is_shipped_path("src/jobs/adapters/plugins/static/phapp.py")
+    assert not is_shipped_path("scripts/bump_version.py")
+    assert not is_shipped_path("umbrel-app-store.yml")
+    assert not is_shipped_path("deathuman-baluffo/umbrel-app.yml")
+    assert not is_shipped_path("deathuman-baluffo/docker-compose.yml")
+    assert not is_shipped_path("deathuman-baluffo/exports.sh")
+    assert is_shipped_path("data/defaults/source-registry-active.seed.json")
+    assert is_shipped_path("Dockerfile")
+    assert not is_shipped_path("docs/RELEASE.md")
+    assert not is_shipped_path("docs/archive/old-plan.md")
+    assert not is_shipped_path("tests/test_foo.py")
+    assert not is_shipped_path("tools/repo_health/repo_guardrails.py")
+    assert not is_shipped_path(".github/workflows/lint.yml")
+    assert not is_shipped_path("opencode.json")
+    assert not is_shipped_path("README.md")
+    assert not is_shipped_path("release-notes.md")
 
 
 def test_memory_notes_are_not_shipped_paths() -> None:
@@ -92,8 +92,8 @@ def test_memory_notes_are_not_shipped_paths() -> None:
     ``Build Container`` and retagged the current version with newer code -- the
     0.2.140 reuse trap.
     """
-    assert not _is_shipped_path("memory/platform-improvement-report-2026-08-26.md")
-    assert not _is_shipped_path("memory/notes/anything.md")
+    assert not is_shipped_path("memory/platform-improvement-report-2026-08-26.md")
+    assert not is_shipped_path("memory/notes/anything.md")
 
 
 def test_dockerignore_excludes_memory_notes() -> None:
@@ -168,8 +168,8 @@ def test_dockerignore_and_nonshipped_agree_on_dev_tooling() -> None:
 # consequence, and `test_package_json_declares_no_runtime_dependencies` for the
 # invariant that makes excluding the manifest sound at all.
 def test_manifest_and_lockfile_classify_together() -> None:
-    assert not _is_shipped_path("package.json")
-    assert not _is_shipped_path("package-lock.json")
+    assert not is_shipped_path("package.json")
+    assert not is_shipped_path("package-lock.json")
 
 
 def test_package_json_declares_no_runtime_dependencies() -> None:

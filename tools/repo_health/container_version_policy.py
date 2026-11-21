@@ -211,7 +211,8 @@ def _window_commits(repo_root: Path, anchor: str, head: str = "HEAD") -> list[Wi
     return commits
 
 
-def _is_shipped_path(rel_path: str) -> bool:
+def is_shipped_path(rel_path: str) -> bool:
+    """True when ``rel_path`` changes shipped container code."""
     return not any(fnmatch.fnmatch(rel_path, pattern) for pattern in NON_SHIPPED_PATTERNS)
 
 
@@ -265,7 +266,7 @@ def evaluate_window(
     ``current_released`` defaults to False, which preserves the pre-release
     behaviour where ``Release-tag: v<current>`` counts as intent.
     """
-    shipped = [commit for commit in commits if any(_is_shipped_path(f) for f in commit.files)]
+    shipped = [commit for commit in commits if any(is_shipped_path(f) for f in commit.files)]
     if not shipped:
         return []
     listing = "\n".join(f"- {commit.sha[:8]} {commit.subject}" for commit in shipped)
@@ -415,7 +416,7 @@ def check_pending_shipped_code_version_gate(repo_root: Path = ROOT) -> list[str]
         return []
     if not _version_is_released(repo_root, index_version):
         return []
-    staged = [path for path in _staged_changed_files(repo_root) if _is_shipped_path(path)]
+    staged = [path for path in _staged_changed_files(repo_root) if is_shipped_path(path)]
     if not staged:
         return []
     listing = "\n".join(f"- {path}" for path in staged)

@@ -14,7 +14,7 @@ import subprocess
 
 from tools.repo_health.container_version_policy import (
     IMAGE_EXCLUDED_BUT_SHIPPED,
-    _is_shipped_path,
+    is_shipped_path,
 )
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -62,7 +62,7 @@ def test_every_image_excluded_data_file_is_classified() -> None:
     unclassified = [
         path
         for path in excluded
-        if _is_shipped_path(path) and path not in IMAGE_EXCLUDED_BUT_SHIPPED
+        if is_shipped_path(path) and path not in IMAGE_EXCLUDED_BUT_SHIPPED
     ]
     assert not unclassified, (
         "tracked files are excluded from the image but gated as shipped without being "
@@ -77,4 +77,4 @@ def test_image_excluded_but_shipped_entries_are_still_valid() -> None:
     for path in IMAGE_EXCLUDED_BUT_SHIPPED:
         assert path in tracked, f"{path} is listed but no longer tracked"
         assert path not in in_image, f"{path} is listed but is now in the image"
-        assert _is_shipped_path(path), f"{path} is listed but is no longer gated shipped"
+        assert is_shipped_path(path), f"{path} is listed but is no longer gated shipped"

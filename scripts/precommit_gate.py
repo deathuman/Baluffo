@@ -17,12 +17,18 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The gate is executed as a script (`python scripts/precommit_gate.py`), so only
+# `scripts/` is on sys.path. The guardrail path filter imports the container
+# policy from `tools/repo_health/`, which needs the repository root.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 PYTHON = sys.executable
 
 
@@ -72,6 +78,11 @@ MAX_PRECOMMIT_FILES_PER_COMMAND = 200
 # tracked-file discovery, so the snapshot can live inside the repository and
 # still resolve the repo's `node_modules` by walking up from it.
 STAGED_TREE_DIR = Path(".tmp") / "precommit-staged-tree"
+# Age, in seconds, past which a staged tree cannot plausibly belong to a running
+# gate: changed mode takes about 35s and the all-files pass a few minutes, so a
+# tree this old is what a killed or hung run left behind. The window is wide on
+# purpose -- sweeping a live tree breaks the gate that owns it.
+STALE_STAGED_TREE_AGE_S = 3600
 # Variables git exports to a commit hook to point at the repository being
 # committed. They resolve relative to the repo root, so inside the snapshot they
 # name paths that do not exist (`.git` is a file in a worktree) -- and a
@@ -252,6 +263,65 @@ def _remove_staged_tree(root: Path, tree: Path) -> None:
     )
 
 
+def _prune_stale_worktree_entries(root: Path) -> None:
+    """Drop worktree metadata whose checkout directory has been gone a while.
+
+    `--expire` measures how long the checkout has been *missing*, not how old
+    the tree is. A zero-grace prune is repo-wide, so it would also deregister
+    any other worktree whose directory another tool has only just moved or
+    removed; the same grace window as the directory sweep keeps this to entries
+    nothing is using.
+    """
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "worktree",
+            "prune",
+            f"--expire={STALE_STAGED_TREE_AGE_S}.seconds.ago",
+        ],
+        cwd=root,
+        env=_env_without_git_location(),
+        check=False,
+        capture_output=True,
+    )
+
+
+def _sweep_stale_staged_trees(root: Path | None = None) -> list[Path]:
+    """Remove staged-tree worktrees an interrupted gate left behind.
+
+    A killed gate never reaches `_remove_staged_tree`, so its worktree stays
+    registered and its checkout stays under `.tmp/precommit-staged-tree`. Every
+    run gets a fresh uuid, so an old tree can never be reused: it is only disk
+    and `git worktree list` noise. Only entries older than
+    `STALE_STAGED_TREE_AGE_S` are touched, because a concurrent gate's tree is
+    seconds old and deleting it mid-run would fail a gate that was working.
+
+    Returns the paths that were removed. A tree that cannot be removed is
+    reported by `_remove_staged_tree` and not counted as swept.
+    """
+    base_root = ROOT if root is None else root
+    base = base_root / STAGED_TREE_DIR
+    removed: list[Path] = []
+    if base.is_dir():
+        cutoff = time.time() - STALE_STAGED_TREE_AGE_S
+        for tree in sorted(base.iterdir()):
+            try:
+                stale = tree.is_dir() and tree.stat().st_mtime <= cutoff
+            except OSError:
+                continue  # another gate's sweep removed it after the listing
+            if not stale:
+                continue
+            _remove_staged_tree(base_root, tree)
+            if not tree.exists():
+                removed.append(tree)
+    _prune_stale_worktree_entries(base_root)
+    if removed:
+        print(f"pre-commit gate: removed {len(removed)} stale staged tree(s)")
+    return removed
+
+
 def _create_staged_tree(root: Path) -> Path:
     """Materialise the index as a detached worktree and return its path."""
     tree_sha = _git_at(root, "write-tree")[0]
@@ -292,6 +362,7 @@ def validation_tree() -> Iterator[Path]:
     index, or an unwritable `.tmp` directory) falls back to the working tree and
     says so. The gate still runs and can still block; it just loses the isolation.
     """
+    _sweep_stale_staged_trees()
     try:
         tree = _create_staged_tree(ROOT)
     except (OSError, RuntimeError) as exc:
@@ -413,26 +484,48 @@ def has_staged_changes() -> bool:
     return bool(_git_lines("diff", "--cached", "--name-only"))
 
 
-def should_run_repo_guardrails(files: list[str]) -> bool:
-    # `.githooks/` is gate configuration like `.github/`: the `workflow` group's
-    # assertions read the hook scripts (release-tag gating, the no-backticks guard,
-    # the timed-lint shape), so a hook-only commit used to take the release-only
-    # fallback below and could land a hook no group had judged before the push.
-    watched_roots = ("src/", "frontend/", "tests/", "scripts/", ".github/", "docs/", ".githooks/")
-    watched_exact = {
+# Shippedness is not a question this gate answers for itself: the container version
+# policy already classifies every tracked path, and `NON_SHIPPED_PATTERNS` is the
+# single source for it. An entry below is needed only when a group *other than*
+# `release` reads the path -- the fallback already runs `release` for everything
+# else. `docs` walks `docs/`, `tools/**/*.md`, the root docs, `release-notes.md` and
+# `opencode.json`; `workflow` reads `.github/`, `AGENTS.md`, the package manifests,
+# and runs the policy-wiring checks defined in `tools/repo_health/`;
+# `test-shape`/`line-budget`/`timing` read `tests/`.
+_GUARDRAIL_JUDGED_NON_SHIPPED_ROOTS = ("docs/", "tests/", ".github/", "tools/")
+_GUARDRAIL_JUDGED_NON_SHIPPED_FILES = frozenset(
+    {
         "AGENTS.md",
         "CONTRIBUTING.md",
         "README.md",
-        "package.json",
+        "opencode.json",
         "package-lock.json",
-        ".gitattributes",
-        ".pre-commit-config.yaml",
-        "ruff.toml",
-        "mypy.ini",
-        "data/defaults/source-registry-active.seed.json",
-        "data/defaults/source-registry-pending.seed.json",
+        "package.json",
+        "release-notes.md",
     }
-    return any(path in watched_exact or path.startswith(watched_roots) for path in files)
+)
+
+
+def should_run_repo_guardrails(files: list[str]) -> bool:
+    """True when a commit can change a guardrail group's verdict.
+
+    Shipped paths are derived from the container version policy's
+    ``NON_SHIPPED_PATTERNS`` instead of a hand-maintained root list, so `styles/`,
+    `Dockerfile`, and the runtime `data/` files -- all shipped, none of them in the
+    old watched roots -- run every group instead of only `release`. `.githooks/` is
+    shipped by that policy too, which keeps the hook scripts covered by the
+    `workflow` group that asserts on them.
+    """
+    # Imported here so the module-level import surface stays stdlib-only; the gate
+    # inserts ROOT on sys.path above for exactly this import.
+    from tools.repo_health.container_version_policy import is_shipped_path
+
+    return any(
+        is_shipped_path(path)
+        or path.startswith(_GUARDRAIL_JUDGED_NON_SHIPPED_ROOTS)
+        or path in _GUARDRAIL_JUDGED_NON_SHIPPED_FILES
+        for path in files
+    )
 
 
 def run_repo_guardrails(
@@ -580,11 +673,11 @@ def run_changed() -> int:
                 failures,
             )
         elif has_staged_changes():
-            # The watched-root filter exists to keep the full guardrail run cheap. It
-            # does not cover every shipped path -- `Dockerfile`, `styles/`, and the
-            # runtime `data/` files are outside it -- so a commit touching only those
-            # would otherwise skip the container version gate entirely. The release
-            # group is the one check every commit needs.
+            # The filter keeps the full guardrail run off commits no group judges
+            # (release notes, memory notes, `tools/`, the release-tag bump script).
+            # Shipped paths no longer land here: `styles/`, `Dockerfile`, and the
+            # runtime `data/` files reach every group through the container policy.
+            # What is left still needs the container version gate every commit needs.
             _run_stage(
                 "repo-guardrails --group release",
                 lambda: run_repo_guardrails(
