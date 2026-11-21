@@ -673,11 +673,11 @@ def run_changed() -> int:
                 failures,
             )
         elif has_staged_changes():
-            # The filter keeps the full guardrail run off commits no group judges
-            # (release notes, memory notes, `tools/`, the release-tag bump script).
-            # Shipped paths no longer land here: `styles/`, `Dockerfile`, and the
-            # runtime `data/` files reach every group through the container policy.
-            # What is left still needs the container version gate every commit needs.
+            # The filter keeps the full guardrail run off commits no group judges:
+            # memory notes, `LICENSE`/`SECURITY.md`, the Umbrel metadata, and the
+            # release-tag bump script. Shipped paths no longer land here: `styles/`,
+            # `Dockerfile`, and runtime `data/` files reach every group through the
+            # container policy; what remains still needs the container version gate.
             _run_stage(
                 "repo-guardrails --group release",
                 lambda: run_repo_guardrails(
