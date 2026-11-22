@@ -68,7 +68,6 @@
     "test:frontend:perf": "playwright test --config=playwright.perf.config.js",
     "test:frontend:unit": "node --test --test-reporter=dot \"tests/frontend/unit/*.test.mjs\"",
     "test:frontend:headed": "playwright test --headed",
-    "test:frontend:ci": "playwright test --reporter=line",
     "test:frontend:linux": "PLAYWRIGHT_SYSTEM_CHROMIUM=1 playwright test --config=playwright.linux.config.js --workers=1 --reporter=line",
     "test:py": "npm run check:python-version && python -m pytest tests -q -m \"not slow and not packaging and not release\" --color=no --basetemp=.tmp/pytest/basetemp",
     "test:py:linux": "npm run check:python-version && python -m pytest tests -q -m \"not slow and not packaging and not release and not windows\" --color=no --basetemp=.tmp/pytest/basetemp",

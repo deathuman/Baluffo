@@ -19,8 +19,11 @@ Use these repo-native entrypoints for packaged startup timing:
 - `npm run perf:startup:admin:cold`
 - `npm run perf:startup:admin:warm`
 - `npm run perf:startup:admin:pair`
+- `npm run perf:startup:jobs:cold`
+- `npm run perf:startup:jobs:warm`
+- `npm run perf:startup:jobs:pair`
 
-The unqualified startup aliases keep measuring the Jobs page for compatibility. Use the `perf:startup:admin:*` aliases when validating the Admin non-blocking startup flow. The lower-level `probe:desktop:startup:*` commands exist, but docs should prefer the `perf:*` names unless a release checklist specifically needs the probe form.
+The unqualified startup aliases keep measuring the Jobs page for compatibility, and the `perf:startup:jobs:*` names are the explicit form of the same three probes. Release preflight (`release:preflight:packaged`) and `.github/workflows/build-portable-exe.yml` call the underlying `probe:desktop:startup:jobs:cold` form directly, and `tools/repo_health/release_docs_policy.py` asserts that form stays in `docs/RELEASE.md` — so do not rewrite a release checklist to the `perf:*` alias. Use the `perf:startup:admin:*` aliases when validating the Admin non-blocking startup flow. The lower-level `probe:desktop:startup:*` commands exist, but docs should prefer the `perf:*` names unless a release checklist specifically needs the probe form.
 
 ## Ownership Boundaries
 

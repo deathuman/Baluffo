@@ -5,7 +5,7 @@
 > - **Canonical for:** test commands, targeted test routing, and fixture references
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
-> - **Last updated:** 2026-08-21
+> - **Last updated:** 2026-11-22
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 
@@ -140,7 +140,7 @@ Use the repo-native perf entrypoints before adding new benchmark tooling:
 | Isolated discovery sanity benchmark | `npm run perf:discovery:benchmark` | `_out/perf-sanity-discovery/` |
 | Packaged Jobs cold/warm startup probe | `npm run perf:startup:cold` / `npm run perf:startup:warm` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
 | Packaged Admin cold/warm startup probe | `npm run perf:startup:admin:cold` / `npm run perf:startup:admin:warm` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
-| Seed Admin benchmark volume from live `/data` | `python scripts/perf_admin_seed.py --from-volume-path <path>` (pass `data`, not the repo root) | `_out/perf-admin-flows/seed-data/` |
+| Seed Admin benchmark volume from live `/data` | `python scripts/perf_admin_seed.py --from-volume-path <path>` or `npm run perf:admin:seed -- --from-volume-path <path>` (pass `data`, not the repo root) | `_out/perf-admin-flows/seed-data/` |
 | Run Admin route + flow benchmark against seeded container | `npm run perf:admin:flows -- --image <img> --profile pi4-tight --data-volume <path>` | `_out/perf-admin-flows/<run-token>/` |
 | Pipeline per-stage benchmark (RSS + CPU per stage) | `python scripts/perf_pipeline_stages.py --image <img> --data-volume <path> [--preset smoke] [--fresh]` | `_out/perf-pipeline/<run-token>/` with `stages.json`, `samples.ndjson`, `report.md`, `FINDINGS.md` |
 | Full pipeline cgroup/process memory profile | `python tools/measurements/pipeline/full_pipeline_memory.py --base-url <url> --container <name> --run-dir <host-run-dir>` (mount the run directory into the container at `/out`) | `<host-run-dir>/cgroup-process.ndjson`, `progress.ndjson`, `phase.json`, and `meta.json` |
@@ -167,6 +167,49 @@ Notes:
 - Fetch-lane CPU attribution is opt-in and stdlib-only. `BALUFFO_PROFILE_SAMPLE=<ms>` gates an all-threads sampler inside the fetch child (`src/shared/profile_utils.py`, entered through `src/jobs_fetcher.py`), writing `<data>/perf-profiles/cpu-samples-<runId>.json` every 60 s of sampling, and again at a clean exit — the pipeline kills the fetch child, so treat the periodic dumps as the record and read the report's coverage line before trusting the tail. Unset means one env lookup and no thread, so production runs are untouched — do not set it on a release or deployed host. `thread_cpu.py` samples the same child per thread from outside through `/proc` as an independent check; start it *before* the pipeline POST, because the fetch child does not exist until the run starts.
 - Run that attribution against a bench seat with the documented acceptance call — the real `POST /tasks/run-jobs-pipeline` with `{"jobsPageLoadedCount":0}`, and no preset, only-source, worker, browser-fallback, or fetch-size override — and aggregate with `--wall-clock-seconds` set from the run's own elapsed time and `--cpu-quota` matching the seat's CPU cap (default `2.0`). Artifacts land under `_out/perf-runs/<token>/`, with the profile files under the seed volume's `perf-profiles/`. The report ends in a computed shape (`latency-bound`, `single-thread-transport-bottleneck`, `thread-contended-python-work`, or `inconclusive-no-cpu-weighting`), so it is evidence, not a verdict on a change: schedule it or run it on `workflow_dispatch` rather than in per-PR CI.
 - The hermetic fetch lane lives in `tools/measurements/corpus/` — record one real run into a content-addressed corpus (`run_fetch.py --mode record`) and replay it with no network (`--mode replay`), then `determinism.py` (3 samples, identical rows, wall-clock spread, plus the two D1 instrumentation ceilings), `ab.py run --pairs 6` (paired alternating arms with a 95% CI and an explicit `inconclusive`; `--resume` rebuilds finished pairs after an interruption instead of re-running them), `explain.py --run <token>` (rank bottlenecks from any past run) and `adjudicate.py` (S0's verdict on the shipped pool claim). Replay arms a socket-level guard where every outbound connect raises: `blockedRemote == 0` is the egress bar, loopback and asyncio's self-pipe are counted separately, and a corpus miss or a parity divergence fails the run rather than producing a plausible report — a drift is accepted as `parity-bound` only when every differing row is attributed to a host the epoch's own conflict report declared (`binding.py`), and refused the moment one differing source is outside that set. Replay measures the engine, not the wire, over the `force_refresh_all` full-fetch workload — treat an absolute replay wall clock as a harness figure, never a production one. `BALUFFO_FETCH_COUNTERS=1` emits the per-source counters the A/B's retry-exposure line reads; it is off by default and aggregated per source, never per request. Do not add `pytest-benchmark` or `py-spy` by default here. If dependency approval happens later, benchmark deterministic Python leaf logic first and keep desktop startup analysis on the existing startup-trace pipeline. Normalisation changes are priced on the same lane without a second tree: `BALUFFO_TEXT_NORMALIZATION=legacy` runs the pre-pass spellings and bypasses the memo caches (`src/jobs/text_utils.py`, `src/jobs/adapters/parsers/location.py`, `src/jobs/adapters/location_rules.py`) as the A/B's control arm, unset is production, and `tests/test_text_normalization_equivalence.py` pins both modes to identical outputs — see [the pass receipt](snapshots/fetch-pipeline-normalization-pass-2026-10-08.md). A candidate change is *priced* before it is committed, too: `tools/measurements/corpus/probes/` holds dev-only ablation payloads that ride one arm through `PYTHONPATH` (`sitecustomize.py` is imported before the driver runs), so `src/` stays byte-identical, both arms get the same path, and only the candidate sets the ablation variable. Each payload writes a per-process marker (calls, builds, mismatches) and raises rather than degrading, because a probe that silently failed to apply would report a confident zero — and its arms' parity line is the end-to-end equivalence check — see [the pricing receipt](snapshots/fetch-pipeline-next-optimisation-price-2026-10-10.md).
+
+### Local benchmark loop (mirrors the Benchmark workflow)
+
+`.github/workflows/benchmark.yml` runs the perf smoke on manual dispatch and on pull requests that touch the fetch, discovery, or bridge paths (plus `scripts/perf_compare.py`, `scripts/perf_baseline.py`, `src/fetcher_metrics.py`, and the workflow itself). `scripts/perf_ci.py` runs the same four steps locally.
+
+That mirror is **not** enforced. `tests/test_perf_ci.py::test_perf_ci_steps_match_smoke_workflow` compares `perf_ci_steps()` against a literal command list written inside the test, and no test reads `benchmark.yml`, so changing a workflow step fails nothing. Mirror the change by hand in `perf_ci.py` **and** in that test, or the local loop silently stops matching CI.
+
+| Goal | Command | Output |
+|------|---------|--------|
+| Run the workflow's steps locally | `npm run perf:ci` | `_out/perf-ci/discovery.json`, `_out/perf-ci/fetch.json` |
+| Same, three-run median | `npm run perf:ci:median` | `_out/perf-ci/summary.json` and `_out/perf-ci/runs/run-1..3/` |
+| Append this run's median to the trend ledger | `npm run perf:ci:record-trend` | `_out/perf-trend.ndjson` |
+| Re-baseline from a three-run median | `npm run perf:ci:rebaseline` | `_out/perf-baseline/<mode>-baseline.json` plus a trend row |
+| Read the trend ledger | `npm run perf:trend` | Console table of the last 20 rows |
+| Compare one artifact against a baseline | `npm run perf:compare -- --mode discovery --current <json> --baseline <json>` | Console verdict; exit 1 when the regression passes the fail threshold (>15%), and also when `--current` yields no usable duration, so a wrong path reads as a failure rather than a pass |
+| Adapter durations from the single-run artifacts | `npm run perf:adapter-summary` | Console table over `_out/perf-ci/{discovery,fetch}.json`, summing `networkWaitCounters.adapterDurationsMs` plus `runtime.timingSummary.adapterTimings` and `runtime.adapterTimings` (also under `firstRun`/`secondRun`). Only plain `perf:ci` writes those two files; the `--runs 3` variants write under `runs/run-N/`, so pass explicit paths to read another run |
+| Record a baseline by hand | `npm run perf:baseline:record -- --mode discovery --total-duration-ms <n>` | `_out/perf-baseline/discovery-baseline.json` plus a trend row |
+
+`perf:compare` and `perf:baseline:record` require their flags, so the `--` separator is part of the command. Prefer `perf:ci:rebaseline` for normal re-baselining; `perf:baseline:record` is the escape hatch when the duration comes from somewhere else.
+
+No baseline is tracked in git (`_out/` is untracked), so `benchmark.yml`'s two compare steps read a missing file and report `baseline_missing` as informational, exit 0. The comparison only starts to bite once a baseline exists, which is what these commands produce.
+
+Lane presets, all thin wrappers over the two scripts the workflow calls:
+
+| Goal | Command |
+|------|---------|
+| Discovery: the workflow's quick preset | `npm run perf:discovery:quick` |
+| Discovery: capped, capped-provider, capped-gamedevmap | `npm run perf:discovery:capped`, `npm run perf:discovery:capped-provider`, `npm run perf:discovery:capped-gamedevmap` |
+| Fetch: the workflow's smoke group | `npm run perf:fetch:smoke` |
+| Fetch: provider-api, static-detail, static-outliers, mixed | `npm run perf:fetch:provider-api`, `npm run perf:fetch:static-detail`, `npm run perf:fetch:static-outliers`, `npm run perf:fetch:mixed` |
+
+`npm run perf:complete:record-trend` and `npm run perf:complete:rebaseline` do the same for the broad `perf:complete` report.
+
+### Interactive and container debug tools
+
+These are manual tools, not local gates. Only the container Jobs boot measurement also runs in CI (`jobs-boot-perf.yml`, on every push and pull request to `main`); the rest are local-only.
+
+| Goal | Command |
+|------|---------|
+| Watch a failing Playwright spec in a visible browser | `npm run test:frontend:headed` |
+| Step through the packaged desktop smoke | `npm run test:frontend:packaged:headed` (`--headed --pause-on-failure`) |
+| Run the container Jobs boot modes cold, then warm, then nav | `npm run measure:container-jobs-boot` — three sequential `node` runs, one report each under `_out/perf-traces/container-jobs-<mode>-<ts>.json`. It passes no `--base-url`, so a container must already be serving `http://127.0.0.1:8877`; append `-- --base-url <url>` otherwise. `jobs-boot-perf.yml` builds and seeds the image itself, then runs the same three modes in one step |
+| Admin flows with a short timeout or the roomy profile | `npm run perf:admin:flows:quick -- --data-volume <path>` (`--timeout 30`), `npm run perf:admin:flows:roomy -- --data-volume <path>` (`--profile pi4-roomy`). Neither alias supplies `--data-volume`, which the script requires; seed that volume with the `perf:admin:seed` form in the table above |
 
 ### Playwright perf traces
 
