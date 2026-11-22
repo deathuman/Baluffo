@@ -30,6 +30,7 @@ from src.bridge.routes.error_boundary import (
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.source_policy_migration_links import apply_source_policy_migration_link_action
 from src.bridge.storage_health import storage_reclaim_hold_status
+from src.bridge.storage_rebuild import copy_status_running
 from src.jobs.common.contracts_dedup_review_state import (
     apply_dedup_review_action,
     read_dedup_review_state_artifact,
@@ -85,6 +86,8 @@ class _AdminPostRouteApi(Protocol):
     def get_jobs_pipeline_schedule_payload(self) -> dict[str, Any]: ...
 
     def get_sync_status_payload(self) -> dict[str, Any]: ...
+
+    def get_storage_rebuild_payload(self) -> dict[str, Any]: ...
 
     def load_alert_state(self) -> dict[str, Any]: ...
 
@@ -561,6 +564,34 @@ def _storage_reclaim_start_refusal(
     return True
 
 
+def _storage_rebuild_start_refusal(
+    handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str
+) -> bool:
+    """Refuse a task start while a rebuild or reclaim copy owns the database.
+
+    The copy installs only if no write committed since it began, so a task
+    started mid-copy makes the install `superseded` and throws the whole copy
+    away. Only task starts are held; the rebuild's own controls answer through
+    the job.
+    """
+    if path not in TASK_START_PATHS:
+        return False
+    payload = api.get_storage_rebuild_payload()
+    rebuild = payload.get("storageRebuild") if isinstance(payload, dict) else None
+    if not copy_status_running(rebuild):
+        return False
+    handler.send_json(
+        {
+            "ok": False,
+            "started": False,
+            "reason": "storage-rebuild-running",
+            "storageRebuild": rebuild,
+        },
+        status=409,
+    )
+    return True
+
+
 def _handle_sync_post(
     handler: BridgeResponseWriter,
     *,
@@ -627,6 +658,9 @@ def handle_post(
     data = as_json_object(payload)
 
     if _storage_reclaim_start_refusal(handler, path=path):
+        return True
+
+    if _storage_rebuild_start_refusal(handler, api=api, path=path):
         return True
 
     if _handle_review_post(handler, api=api, path=path, data=data):

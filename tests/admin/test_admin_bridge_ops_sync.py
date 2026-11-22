@@ -196,6 +196,9 @@ class _PreviewPushRouteApi:
     def set_sync_status(self, **_kwargs: Any) -> None:
         return None
 
+    def get_storage_rebuild_payload(self) -> dict[str, Any]:
+        return {"ok": True, "storageRebuild": None}
+
 
 def test_sync_push_route_reads_dry_run_from_body(admin_bridge_entrypoint_root):
     api = _PreviewPushRouteApi()

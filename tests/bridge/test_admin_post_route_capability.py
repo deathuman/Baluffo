@@ -25,6 +25,7 @@ class MinimalAdminPostRouteApi:
         self.sync_status_updates: list[dict[str, Any]] = []
         self.tombstones: dict[str, Any] = {}
         self.load_state_calls = 0
+        self.storage_rebuild: dict[str, Any] = {"status": "idle", "runId": ""}
 
     def abort_task(self, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         return 202, {"ok": True, "abortPayload": payload}
@@ -148,6 +149,9 @@ class MinimalAdminPostRouteApi:
             "requestedRunId": run_id,
             "runtimeRetention": {"status": "cancelling", "running": True, "runId": run_id},
         }
+
+    def get_storage_rebuild_payload(self) -> dict[str, Any]:
+        return {"ok": True, "storageRebuild": dict(self.storage_rebuild)}
 
     def start_storage_rebuild(self) -> dict[str, Any]:
         return {"ok": True, "started": True, "storageRebuild": {"status": "running"}}
@@ -422,6 +426,49 @@ def test_task_starts_are_refused_while_a_reclaim_run_holds(tmp_path: Path) -> No
     assert allowed.sent[-1]["status"] == 200
     allowed_rebuild = _post(api, "/ops/storage-rebuild", {})
     assert allowed_rebuild.sent[-1]["status"] == 202
+
+
+def test_task_starts_are_refused_while_a_current_feed_rebuild_copies(tmp_path: Path) -> None:
+    api = MinimalAdminPostRouteApi(tmp_path)
+    api.storage_rebuild = {
+        "status": "running",
+        "phase": "copying",
+        "runId": "current_feed_rebuild_1",
+    }
+
+    for path, payload in (
+        ("/tasks/run-fetcher", {}),
+        ("/tasks/run-jobs-bootstrap", {}),
+        ("/tasks/run-jobs-pipeline", {}),
+        ("/tasks/run-discovery", {}),
+        ("/discovery/check-source", {"sourceId": "active-1"}),
+        ("/tasks/run-sync-pull", {}),
+        ("/tasks/run-sync-push", {}),
+        ("/sync/pull", {}),
+        ("/sync/push", {}),
+        ("/tasks/job-availability-check", {}),
+    ):
+        blocked = _post(api, path, payload)
+        assert blocked.sent[-1]["status"] == 409, path
+        assert blocked.sent[-1]["payload"]["started"] is False, path
+        assert blocked.sent[-1]["payload"]["reason"] == "storage-rebuild-running", path
+        assert blocked.sent[-1]["payload"]["storageRebuild"]["runId"] == (
+            "current_feed_rebuild_1"
+        ), path
+
+    # A copy being cancelled still owns its staging file and the install gate.
+    api.storage_rebuild = {"status": "cancelling", "runId": "current_feed_rebuild_1"}
+    assert _post(api, "/tasks/run-fetcher", {}).sent[-1]["status"] == 409
+
+    # Only task starts are held: the rebuild's own controls answer through the job.
+    api.storage_rebuild = {"status": "running", "runId": "current_feed_rebuild_1"}
+    rebuild_start = _post(api, "/ops/storage-rebuild", {})
+    assert rebuild_start.sent[-1]["status"] == 202
+
+    api.storage_rebuild = {"status": "complete", "runId": "current_feed_rebuild_1"}
+    allowed = _post(api, "/tasks/run-fetcher", {})
+    assert allowed.sent[-1]["status"] == 200
+    assert allowed.sent[-1]["payload"]["started"] is True
 
 
 def test_review_posts_do_not_load_registry_state(tmp_path: Path) -> None:

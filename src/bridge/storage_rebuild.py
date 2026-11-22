@@ -1352,6 +1352,13 @@ def _watch_rebuild_run(job: StorageRebuildJob, rebuild: dict[str, Any]) -> None:
     )
 
 
+def copy_status_running(rebuild: Any) -> bool:
+    """Whether a rebuild snapshot still owns its staging file and the install gate."""
+    status = str((rebuild if isinstance(rebuild, dict) else {}).get("status") or "")
+    # `cancelling` has not stopped copying yet, so it holds task starts too.
+    return status.strip().lower() in {"running", "cancelling"}
+
+
 def start_storage_rebuild(data_dir: Path | str, *, mirror: bool = True) -> dict[str, Any]:
     job = _job_for(data_dir)
     rebuild, started = job.start()

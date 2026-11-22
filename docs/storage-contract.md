@@ -311,6 +311,11 @@ replacement for them.
 - The rebuild first asks the running retention pass to stop at its next batch
   boundary and waits for it to leave the write path. Retention writes would
   otherwise make the swap superseded.
+- Task starts are refused while the copy is `running` or `cancelling`: every
+  route that starts a task row answers `409 storage-rebuild-running` with the
+  live rebuild record. A fetch, discovery, sync or pipeline started mid-copy
+  would commit a write and make the install `superseded`, wasting the whole
+  copy. The rebuild's own controls stay available.
 - The staging copy is built read-only against the live database. Free space is
   checked first: at least 1% of the live file (clamped to 256 MiB-3 GiB) plus a
   64 MiB margin must be free, which is the measured 1-3 GB planning envelope for

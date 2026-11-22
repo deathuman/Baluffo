@@ -528,8 +528,7 @@ def _rebuild_copy_running(data_dir: Path) -> bool:
     from src.bridge import storage_rebuild as storage_rebuild_mod
 
     rebuild = storage_rebuild_mod.get_storage_rebuild_payload(data_dir).get("storageRebuild")
-    status = str((rebuild if isinstance(rebuild, dict) else {}).get("status") or "")
-    return status.strip().lower() in {"running", "cancelling"}
+    return storage_rebuild_mod.copy_status_running(rebuild)
 
 
 def _maintenance_refusal(
