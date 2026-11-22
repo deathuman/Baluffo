@@ -4,7 +4,7 @@
 AI boundary: this file owns `LocalDataStore` facade compatibility only.
 AI boundary implement in: `src.local_data_store_*` and tracking leaves.
 AI boundary search before contracts: `frontend/shared/local-data` callers.
-AI boundary verify: local-data tests plus `npm run test:refactor:changed`.
+AI boundary verify: local-data tests plus `npm run test:py`.
 """
 
 from __future__ import annotations

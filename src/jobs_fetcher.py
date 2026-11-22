@@ -4,7 +4,7 @@
 AI boundary: this file owns CLI compatibility exports and root patch seams only.
 AI boundary implement in: `src.jobs.*` pipeline, adapter, dedup, report leaves.
 AI boundary search before contracts: bridge task launch and frontend fetcher callers.
-AI boundary verify: `npm run test:refactor:changed` plus focused fetcher tests.
+AI boundary verify: `npm run test:py` plus focused fetcher tests.
 """
 
 from __future__ import annotations

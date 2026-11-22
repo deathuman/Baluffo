@@ -2,7 +2,7 @@
 """AI boundary owns: bridge startup, root exports, compatibility patch seams.
 AI boundary implement in: `src.bridge.*` leaves and admin entrypoint helpers.
 AI boundary search before contracts: route handlers, frontend callers, API docs.
-AI boundary verify: `npm run test:refactor:changed` plus focused bridge tests."""
+AI boundary verify: `npm run test:py` plus focused bridge tests."""
 
 from __future__ import annotations
 

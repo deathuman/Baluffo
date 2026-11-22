@@ -774,21 +774,11 @@ Still run `npm run typecheck:py` yourself before pushing Python changes, especia
 
 `npm run lint:deadcode:js` (knip) now follows that same one-script-per-surface shape, having been the one gate that was CI-only. It is not a `.pre-commit-config.yaml` hook and is not in `PRE_PUSH_HOOK_IDS`, so nothing local could fail a push on it: `Unused exports (6)` sat red on the `Lint` lane for 21 consecutive pushes before `2b2148c8` fixed the six names and `.githooks/pre-push` gained the call. The first of those runs failed an *earlier* step instead (`check_container_shipped_code_version_gate`), and because pre-commit runs before the scan and short-circuits on failure, that masked the knip failure entirely until the version gate cleared on 25/09. All three surfaces now invoke the identical script, so a dead JS export fails before the push rather than after it. Knip also runs in `release:preflight:fast`, immediately after the pre-commit gate: it costs about 2s, and it was the lane that could pass a green local preflight and still fail the `main` or release-tag push. See the local-preflight coverage list in `RELEASE.md`.
 
-## Refactor Guard
-
-Run the path-aware refactor lane when you change compatibility roots, archive/doc routing, or hook workflow wiring:
-
-```bash
-npm run test:refactor:changed
-```
-
-The lane inspects changed tracked files first. It runs only the matching contract/subsystem tests for narrow compatibility-surface changes, runs `tests/test_release_docs.py` for docs routing changes, and escalates to `npm run test:py:extended` for broad multi-subsystem or packaging/release refactors.
-
 ## Which command should I run?
 
 - Small Python logic change: `npm run test:py`
-- Compatibility root or monkeypatch-surface refactor (`src/ship/desktop_app/*`, `src/ship/desktop_updater.py`, `src/packaged_desktop_smoke.py`, `src/source_discovery/{gamesmap,reporting,web_search}.py`, `src/source_sync.py`, `src/admin_bridge.py`, `src/jobs_fetcher.py`, `src/jobs/{pipeline,state,reporting}.py`): `npm run test:refactor:changed`
-- Docs/archive move or routing cleanup (`docs/`, especially `docs/archive/`, `docs/INDEX.md`, `docs/CHANGELOG.md`): `npm run test:refactor:changed`
+- Compatibility root or monkeypatch-surface refactor (`src/ship/desktop_app/*`, `src/ship/desktop_updater.py`, `src/packaged_desktop_smoke.py`, `src/source_discovery/{gamesmap,reporting,web_search}.py`, `src/source_sync.py`, `src/admin_bridge.py`, `src/jobs_fetcher.py`, `src/jobs/{pipeline,state,reporting}.py`): `npm run test:py:extended`, or the subsystem's own `pytest` path
+- Docs/archive move or routing cleanup (`docs/`, especially `docs/archive/`, `docs/INDEX.md`, `docs/CHANGELOG.md`): `npm run lint:repo-guardrails`
 - Perf-sensitive backend or packaging change: `npm run perf:py:timing`, then the nearest discovery/startup perf lane if relevant
 - Before pushing to `main` or preparing a release: `npm run test:py:extended`
 - Before merging a broad or risky backend change: `npm run test:py:extended` or `npm run verify`

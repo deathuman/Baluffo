@@ -1123,7 +1123,6 @@ def run_workflow_group() -> list[GuardFailure]:
             "test_pre_push_hook_uses_timed_lint_default_and_explicit_full_ci_mode",
             "test_pre_commit_hook_runs_lint_gate",
             "test_package_json_dev_pipeline_uses_module_entrypoint",
-            "test_package_json_exposes_refactor_changed_entrypoint",
             "test_package_json_packaged_smoke_scripts_use_direct_dist_by_default",
             "test_package_json_perf_scripts_reuse_existing_perf_entrypoints",
         )

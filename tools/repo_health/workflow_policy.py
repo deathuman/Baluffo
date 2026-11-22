@@ -688,13 +688,10 @@ def test_lint_workflow_enforces_source_complexity_baseline() -> None:
 
 def test_package_json_exposes_repo_guardrails_entrypoint(repo_root: Path) -> None:
     package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
-    refactor_gate = (repo_root / "scripts" / "refactor_changed_gate.py").read_text(encoding="utf-8")
 
     assert package["scripts"]["lint:repo-guardrails"] == (
         "python tools/repo_health/repo_guardrails.py"
     )
-    assert "tests/test_suite_contract.py" not in refactor_gate
-    assert "tools/repo_health/repo_guardrails.py" in refactor_gate
 
 
 def test_package_json_uses_direct_frontend_unit_discovery(repo_root: Path) -> None:
@@ -749,7 +746,6 @@ def test_pre_push_hook_uses_timed_lint_default_and_explicit_full_ci_mode() -> No
         f"{hook_path.name} should keep timing output dynamic rather than hardcoded as static text."
     )
     for legacy_command in (
-        "npm run test:refactor:changed",
         "npm run test:py:extended",
         "npm run test:smoke",
     ):
@@ -888,11 +884,6 @@ def test_package_json_dev_pipeline_uses_module_entrypoint(repo_root: Path) -> No
     assert package["scripts"]["dev:pipeline"] == (
         "npm run check:python-version && python -m src.jobs.pipeline --force-refresh-all"
     )
-
-
-def test_package_json_exposes_refactor_changed_entrypoint(repo_root: Path) -> None:
-    package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
-    assert package["scripts"]["test:refactor:changed"] == "python scripts/refactor_changed_gate.py"
 
 
 def test_package_json_packaged_smoke_scripts_use_direct_dist_by_default(repo_root: Path) -> None:

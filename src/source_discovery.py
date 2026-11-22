@@ -4,7 +4,7 @@
 AI boundary: this file owns CLI entry compatibility only.
 AI boundary implement in: `src.source_discovery.*` leaves.
 AI boundary search before contracts: bridge discovery routes and Admin callers.
-AI boundary verify: source-discovery tests plus `npm run test:refactor:changed`.
+AI boundary verify: source-discovery tests plus `npm run test:py:extended`.
 """
 
 from __future__ import annotations
