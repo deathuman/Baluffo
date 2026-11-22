@@ -47,17 +47,17 @@ jobs:
           mkdir -p _out/perf-ci
           python src/discovery_sanity_benchmark.py --preset quick --timeout 10 --top 5 --output-dir _out/perf-ci/discovery-data > _out/perf-ci/discovery.json
 
-      - name: Compare discovery benchmark
+      - name: Compare discovery benchmark (informational without a baseline)
         run: |
-          python scripts/perf_compare.py --mode discovery --current _out/perf-ci/discovery.json --baseline _out/perf-baseline/discovery-baseline.json
+          python scripts/perf_compare.py --mode discovery --current _out/perf-ci/discovery.json --baseline _out/perf-baseline/discovery-baseline.json --allow-missing-baseline
 
       - name: Run fetch smoke benchmark
         run: |
           python src/fetch_incremental_sanity_benchmark.py --timeout 30 --group smoke --output-dir _out/perf-ci/fetch-data > _out/perf-ci/fetch.json
 
-      - name: Compare fetch benchmark
+      - name: Compare fetch benchmark (informational without a baseline)
         run: |
-          python scripts/perf_compare.py --mode fetch --current _out/perf-ci/fetch.json --baseline _out/perf-baseline/fetch-baseline.json
+          python scripts/perf_compare.py --mode fetch --current _out/perf-ci/fetch.json --baseline _out/perf-baseline/fetch-baseline.json --allow-missing-baseline
 
       - name: Upload benchmark artifacts
         if: always()

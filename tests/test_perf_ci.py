@@ -36,6 +36,7 @@ def test_perf_ci_steps_match_smoke_workflow(tmp_path: Path) -> None:
         str(output_dir / "discovery.json"),
         "--baseline",
         str(baseline_dir / "discovery-baseline.json"),
+        "--allow-missing-baseline",
     ]
     assert steps[2] == (
         [
@@ -59,6 +60,7 @@ def test_perf_ci_steps_match_smoke_workflow(tmp_path: Path) -> None:
         str(output_dir / "fetch.json"),
         "--baseline",
         str(baseline_dir / "fetch-baseline.json"),
+        "--allow-missing-baseline",
     ]
 
 

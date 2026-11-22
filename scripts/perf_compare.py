@@ -84,7 +84,7 @@ def compare_duration(
         return {
             "status": "baseline_missing",
             "deltaPct": 0.0,
-            "message": "No usable baseline duration found; benchmark is informational.",
+            "message": "No usable baseline duration found.",
         }
     delta_pct = ((current - baseline) / baseline) * 100.0
     if delta_pct > float(fail_pct):
@@ -135,6 +135,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--mode", required=True)
     parser.add_argument("--current", required=True)
     parser.add_argument("--baseline", required=True)
+    parser.add_argument(
+        "--allow-missing-baseline",
+        action="store_true",
+        help="Exit 0 when no baseline duration is available; without this flag a missing baseline fails.",
+    )
     parser.add_argument("--warn-pct", type=float, default=WARN_REGRESSION_PCT)
     parser.add_argument("--fail-pct", type=float, default=FAIL_REGRESSION_PCT)
     return parser.parse_args(argv)
@@ -150,9 +155,18 @@ def main(argv: list[str] | None = None) -> int:
         fail_pct=float(args.fail_pct),
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
-    if result["status"] == "warn":
+    status = result["status"]
+    if status == "warn":
         print(f"::warning title=Benchmark regression::{result['message']}", file=sys.stderr)
-    return 1 if result["status"] == "failed" else 0
+    elif status == "baseline_missing":
+        detail = f"No usable baseline at {result['baselinePath']}, so this run compared nothing."
+        level = "warning" if args.allow_missing_baseline else "error"
+        print(f"::{level} title=Benchmark baseline missing::{detail}", file=sys.stderr)
+    if status == "failed":
+        return 1
+    if status == "baseline_missing" and not args.allow_missing_baseline:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

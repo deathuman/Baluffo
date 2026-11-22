@@ -45,7 +45,7 @@ def test_compare_duration_warns_and_fails_at_thresholds() -> None:
     )
 
 
-def test_compare_benchmark_files_is_informational_without_baseline() -> None:
+def test_compare_benchmark_files_reports_baseline_missing() -> None:
     with workspace_tmpdir("perf-compare-missing-baseline") as data_dir:
         current = data_dir / "current.json"
         baseline = data_dir / "missing.json"
@@ -60,3 +60,20 @@ def test_compare_benchmark_files_is_informational_without_baseline() -> None:
         assert result["status"] == "baseline_missing"
         assert result["currentDurationMs"] == 1000
         assert result["baselineDurationMs"] == 0
+
+
+def test_compare_cli_fails_on_missing_baseline_unless_opted_in() -> None:
+    with workspace_tmpdir("perf-compare-cli-missing") as data_dir:
+        current = data_dir / "current.json"
+        current.write_text(json.dumps({"totalDurationMs": 1000}), encoding="utf-8")
+        argv = [
+            "--mode",
+            "discovery",
+            "--current",
+            str(current),
+            "--baseline",
+            str(data_dir / "missing.json"),
+        ]
+
+        assert perf_compare.main(argv) == 1
+        assert perf_compare.main([*argv, "--allow-missing-baseline"]) == 0
