@@ -276,7 +276,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Desktop launcher | `python -m pytest tests/desktop_app/ -q` |
 | Packaged desktop smoke | `python -m pytest tests/packaged_desktop/ -q` |
 | Linux Python tests | `npm run test:py:linux` |
-| Linux frontend tests | `PLAYWRIGHT_SYSTEM_CHROMIUM=1 npm run test:frontend:linux` |
+| Linux frontend tests (local-only; no workflow runs it) | `PLAYWRIGHT_SYSTEM_CHROMIUM=1 npm run test:frontend:linux` |
 | Full verification | `npm run verify` |
 
 See [`testing.md`](testing.md) for more commands.

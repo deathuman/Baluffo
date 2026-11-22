@@ -82,7 +82,7 @@ Baluffo-specific Codex skills are project-scoped under `.agents/skills/`. Keep B
 | Duplicated function bodies | `python tools/repo_health/repo_guardrails.py --group duplication` (blocking; `DUP_GATE_ENFORCING` in `repo_guardrails.py` is `True`) |
 | Tracked-source line budget | `python tools/repo_health/repo_guardrails.py --group loc` — fails on any area growing past `loc_baseline.json` **and** on any shrink left un-ratcheted; use `python tools/repo_health/loc_budget.py --report` for the area table, `--update` to ratchet after an intentional reduction |
 | Linux Python tests | `npm run test:py:linux` |
-| Linux frontend tests | `npm run test:frontend:linux` |
+| Linux frontend tests (local-only; no workflow runs it) | `npm run test:frontend:linux` |
 | Full verification | `npm run verify` |
 | Coverage/delivery claims | Load `.agents/skills/baluffo-coverage-delivery/SKILL.md`, then `python tools/coverage_drain.py --rounds 1 --data-dir _out/coverage/drain` (offline half; add `--verify-collected` for the real fetch — local-only, tens of minutes) |
 

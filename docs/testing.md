@@ -319,6 +319,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Full pre-commit sweep (local and CI; identical command) | `npm run lint:precommit:ci` |
 | Repository policy guardrails | `npm run lint:repo-guardrails` |
 | Frontend unit tests | `npm run test:frontend:unit` |
+| Frontend smoke tests against the distro's Chromium (Linux/WSL, local-only) | `npm run test:frontend:linux` |
 | Live-tree static ratchets (pre-push) | `npm run test:py:ratchets` |
 | Python dependency security audit | `npm run security:python` |
 | JavaScript dependency security audit | `npm run security:js` |
@@ -762,6 +763,8 @@ Make sure `python` on your machine resolves to Python 3 (not Python 2), otherwis
 If needed for local development, set `PLAYWRIGHT_PYTHON=py` (or any Python 3 launcher) to override what Playwright uses.
 
 Playwright artifacts are written under `.tmp/playwright/test-results`, so the repo root does not accumulate a `test-results/` directory.
+
+`npm run test:frontend:linux` runs that same `tests/frontend/smoke.spec.js` set through `playwright.linux.config.js`. Its only differences are `channel: "chromium"` — the distro's `chromium-browser` — and `python3` as the web-server launcher, which is why it exists for Ubuntu 26.04 and WSL, where Playwright's bundled Chromium is unsupported. No workflow calls it and none should: `test.yml` already runs these specs on `ubuntu-latest` with bundled Chromium, so a CI step would only re-test the browser channel, and `build-linux.yml` already drives system Chromium against the packaged AppImage through `PACKAGED_SMOKE_SYSTEM_CHROMIUM=1`. It is a local lane, not a gate.
 
 ## Test types in Baluffo
 
