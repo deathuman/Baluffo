@@ -109,9 +109,10 @@ def _reset_storage_compaction_hold_each_test() -> Generator[None]:
     every later test in the same process, which looks like a compaction bug in a
     completely different suite.
     """
-    from src.bridge import storage_health
+    from src.bridge import storage_health, storage_task_rows
 
     storage_health.set_storage_compaction_hold(False)
+    storage_task_rows.set_task_lifecycle(None)
     yield
 
 

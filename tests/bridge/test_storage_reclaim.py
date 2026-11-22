@@ -400,6 +400,9 @@ def test_a_reclaim_run_rebuilds_verifies_and_deletes_the_retained_copy(
             started = storage_reclaim.start_storage_reclaim(data_dir)
 
             assert started["started"] is True
+            # The lifecycle row starts from this stamp; a run without one would
+            # appear in Current Runs with no duration.
+            assert started["storageReclaim"]["startedAt"]
             assert _wait_for(lambda: _status(data_dir) in TERMINAL, 30.0)
             payload = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
             journal = storage_reclaim.read_reclaim_journal(data_dir)
@@ -759,7 +762,7 @@ def test_a_rebuild_refusal_settles_cancelled_not_failed(
         monkeypatch.setattr(
             storage_reclaim.rebuild_mod,
             "start_storage_rebuild",
-            lambda _data_dir: {
+            lambda _data_dir, **_kwargs: {
                 "ok": True,
                 "started": False,
                 "reason": "backup-exists",

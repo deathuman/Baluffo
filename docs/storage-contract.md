@@ -155,7 +155,12 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   either, because the release re-schedules it. The hold exists because write
   silence cannot tell a finished task from a slow source: a fetch that pauses
   between two sources looks idle. Holding before the start write matters because
-  that write itself can cross the freelist threshold.
+  that write itself can cross the freelist threshold. Storage rows
+  (`storage_maintenance`, `storage_rebuild`, `storage_reclaim`) are exempt from
+  this hold: each storage worker checks the gate itself, and a row that held it
+  would refuse the work the row reports. A fetch or sync row still holds it, so a
+  storage worker that starts mid-task still refuses or aborts through its own
+  check.
 - **A VACUUM only starts once the write path is quiet.** This is the second gate,
   and it still applies after the last task finishes and the hold is released: the
   release schedules the rebuild, and the rebuild then waits out the window. The
@@ -190,7 +195,11 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   `storage_health.resume_storage_maintenance()`. Each store runs its deferred work
   at most once per process, on one background thread after
   `DEFAULT_POST_SERVE_MAINTENANCE_GRACE_S` (5 s), so the first page load is not
-  queued behind a VACUUM. Later writes schedule maintenance normally.
+  queued behind a VACUUM. Later writes schedule maintenance normally. The
+  automatic post-serve pass is the one storage pass with no Admin task row: it
+  is idempotent housekeeping that re-runs on the next launch, so it must not
+  hold the desktop exit guard, and its state is already `runtimeRetention` /
+  `compaction` in `/ops/storage-health`.
 - A store that is asked to resume with nothing over threshold records
   `"not-needed"`.
 - A VACUUM runs its own `PRAGMA wal_checkpoint(TRUNCATE)` before and after the
@@ -442,7 +451,7 @@ The same route accepts `mode: "quick"` for a bounded first look. It reads page c
 
 Before that destructive action, Admin can call the read-only `GET /ops/storage-maintenance/preview`. It uses the same generation selector and delete cap as the pass, keeps the current generation out of the candidate list, and reports per-version job/source row counts, bounded payload-byte estimates, the current-feed protection flag, free disk space, and reusable SQLite pages. It never writes generation stats or schedules retention; payload bytes are estimates and actual file shrinkage still depends on compaction. The preview uses cached generation stats first; missing legacy counts get one shared two-second deadline and fall back to bounded-sample lower bounds when interrupted. Admin allows 45 seconds with an in-progress state, and the container gateway uses its existing 60-second heavy-route budget.
 
-Admin also exposes that cleanup as an explicit **Run maintenance** action in the Runtime Database Storage panel. `POST /ops/storage-maintenance` starts one forced, bounded pass through the same scheduler, keeps the current generation, and refuses to schedule while an active task holds compaction. The route only hands the pass to the background worker; it does not wait, and a pass that hits a cap leaves the normal 30-second follow-up in place. The response reports `started`, `alreadyRunning`, and the current `runtimeRetention`/`compaction` records so an operator can tell a new pass from a held or already-running one. While the pass runs, `runtimeRetention` carries `phase`, `stage`, `elapsedMs`, `processedRunCount`/`totalRunCount`, and deletion counters; those fields advance before the pass completes. Admin polls `/ops/storage-health` for them and stops when `running` is false.
+Admin also exposes that cleanup as an explicit **Run maintenance** action in the Runtime Database Storage panel. `POST /ops/storage-maintenance` starts one forced, bounded pass through the same scheduler, keeps the current generation, and refuses to schedule while an active task holds compaction or while a rebuild or reclaim copy is running: retention's deletes would make the copy's install gate reject the rebuild as superseded. The route only hands the pass to the background worker; it does not wait, and a pass that hits a cap leaves the normal 30-second follow-up in place. The response reports `started`, `alreadyRunning`, and the current `runtimeRetention`/`compaction` records so an operator can tell a new pass from a held or already-running one. While the pass runs, `runtimeRetention` carries `phase`, `stage`, `elapsedMs`, `processedRunCount`/`totalRunCount`, and deletion counters; those fields advance before the pass completes. Admin polls `/ops/storage-health` for them and stops when `running` is false.
 
 A running pass can be stopped with `POST /ops/storage-maintenance/cancel`. The cancel body must carry the active `runtimeRetention.runId`; a missing token or one from an older pass is rejected with `stale: true` and leaves the newer pass running. Cancellation is checked only at bounded batch and phase boundaries, so the current SQLite transaction, bulk-delete pragmas, and WAL restoration finish normally; no new batch starts. A pass that is scheduled but has not entered its worker yet reports `starting: true` with `running: true`; a stop requested then is honored before the first mutation. The status moves to `cancelling` and then `cancelled`, with the counters reached so far. Already deleted rows stay deleted, and a cancelled pass does not schedule a follow-up or start compaction. The Admin **Stop maintenance** button appears only while `runtimeRetention.running` is true and is disabled once stopping is requested. Compaction is not cancellable: while `compaction.running` is true, Admin labels the control **Stop feed cleanup**, keeps it available only for the retention pass, and reports that compaction cannot be safely interrupted. When retention is not running, the control is hidden and the panel reports the compaction state instead.
 

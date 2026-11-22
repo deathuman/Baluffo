@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.bridge import storage_task_rows
 from src.bridge.storage_health import HEALTH_STORE_OPEN_TIMEOUT_S, get_storage_store
 from src.bridge.storage_reclaim_space import (
     claim_live_artifacts,
@@ -1321,9 +1322,41 @@ def _job_for(data_dir: Path | str) -> StorageRebuildJob:
         return job
 
 
-def start_storage_rebuild(data_dir: Path | str) -> dict[str, Any]:
+def _watch_rebuild_run(job: StorageRebuildJob, rebuild: dict[str, Any]) -> None:
+    """Mirror the started rebuild into the lifecycle ledger.
+
+    A rebuild is bridge work that outlives the request which started it, so its
+    row is what tells Admin (and the desktop close guard) that the database is
+    being copied. A reclaim's internal rebuild passes ``mirror=False``: that copy
+    is already covered by the reclaim row.
+    """
+
+    def read_status() -> dict[str, Any]:
+        snapshot = job.snapshot()
+        return {
+            "running": bool(snapshot.get("running")),
+            "status": str(snapshot.get("status") or "").strip().lower(),
+            "phase": str(snapshot.get("phase") or snapshot.get("status") or "").strip().lower(),
+            "counts": storage_task_rows.progress_counts(snapshot.get("progress")),
+            "summary": {"mode": "rebuild"},
+            "error": str(snapshot.get("error") or "").strip(),
+        }
+
+    storage_task_rows.watch_storage_task(
+        task_type="storage_rebuild",
+        run_id=str(rebuild.get("runId") or job.run_id or ""),
+        started_at=str(rebuild.get("startedAt") or ""),
+        stage=str(rebuild.get("phase") or "queued"),
+        summary={"mode": "rebuild"},
+        read_status=read_status,
+    )
+
+
+def start_storage_rebuild(data_dir: Path | str, *, mirror: bool = True) -> dict[str, Any]:
     job = _job_for(data_dir)
     rebuild, started = job.start()
+    if started and mirror:
+        _watch_rebuild_run(job, rebuild)
     return {
         "ok": True,
         "started": started,

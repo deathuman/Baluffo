@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge import storage_rebuild as rebuild_mod
+from src.bridge import storage_task_rows
 from src.bridge.storage_health import (
     HEALTH_STORE_OPEN_TIMEOUT_S,
     RECLAIM_HOLD_MAX_S,
@@ -230,11 +231,60 @@ def get_storage_reclaim_payload(
     }
 
 
+def _watch_reclaim_run(
+    job: StorageReclaimJob,
+    result: dict[str, Any],
+    *,
+    auto: bool,
+    rehearsal: bool,
+) -> None:
+    """Mirror the started run into the lifecycle ledger.
+
+    Reclaim is the longest storage operation (a full copy, a verify, then a
+    delete), and the panel already promises the copy survives the page closing.
+    The row is what makes that promise true for the bridge's own exit guards too.
+    """
+    status = job.status_fields()
+
+    def read_status() -> dict[str, Any]:
+        # Settle a run whose thread is gone before reading it: the row must not
+        # stay active for a copy nothing can finish.
+        job.watchdog()
+        current = job.status_fields()
+        return {
+            "running": str(current.get("status") or "") in {"running", "cancelling"},
+            "status": str(current.get("status") or "").strip().lower(),
+            "phase": str(current.get("phase") or current.get("status") or "").strip().lower(),
+            "summary": {
+                "mode": str(current.get("mode") or ""),
+                "rebuildRunId": str(current.get("rebuildRunId") or ""),
+            },
+            "error": str(current.get("error") or "").strip(),
+        }
+
+    storage_task_rows.watch_storage_task(
+        task_type="storage_reclaim",
+        run_id=str(result.get("runId") or status.get("runId") or ""),
+        started_at=str(status.get("startedAt") or ""),
+        stage=str(status.get("phase") or "evaluating"),
+        summary={
+            "mode": str(status.get("mode") or ""),
+            "auto": bool(auto),
+            "rehearsal": bool(rehearsal),
+        },
+        read_status=read_status,
+    )
+
+
 def start_storage_reclaim(
     data_dir: Path | str, *, auto: bool = False, hold: bool = True, rehearsal: bool = False
 ) -> dict[str, Any]:
     """Start one journaled reclaim run, or answer why it did not start."""
-    return _job_for(data_dir).start(auto=auto, hold=hold, rehearsal=rehearsal)
+    job = _job_for(data_dir)
+    result = job.start(auto=auto, hold=hold, rehearsal=rehearsal)
+    if bool(result.get("started")):
+        _watch_reclaim_run(job, result, auto=auto, rehearsal=rehearsal)
+    return result
 
 
 def cancel_storage_reclaim(data_dir: Path | str, run_id: str = "") -> dict[str, Any]:
@@ -590,6 +640,8 @@ class StorageReclaimJob:
                 "runId": str(self._state["runId"]),
                 "mode": str(self._state["mode"]),
                 "rebuildRunId": str(self._state["rebuildRunId"]),
+                "startedAt": str(self._state.get("startedAt") or ""),
+                "finishedAt": str(self._state.get("finishedAt") or ""),
                 "error": _operator_error(str(self._state["operatorError"] or self._state["error"])),
             }
 
@@ -1133,7 +1185,7 @@ class StorageReclaimJob:
                 return None, "rebuild-running"
             self._heartbeat()
             time.sleep(RECLAIM_POLL_S)
-        started = rebuild_mod.start_storage_rebuild(self.data_dir)
+        started = rebuild_mod.start_storage_rebuild(self.data_dir, mirror=False)
         if bool(started.get("started")):
             return dict(started.get("storageRebuild") or {}), ""
         return None, str(started.get("reason") or "rebuild-refused")

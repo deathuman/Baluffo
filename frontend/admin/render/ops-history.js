@@ -37,7 +37,10 @@ const TASK_TYPE_LABELS = new Map([
   ["discovery", "Discovery"],
   ["pipeline", "Pipeline"],
   ["fetch", "Fetch"],
-  ["sync", "Sync"]
+  ["sync", "Sync"],
+  ["storage_maintenance", "Maintenance"],
+  ["storage_rebuild", "Feed rebuild"],
+  ["storage_reclaim", "Reclaim"]
 ]);
 
 function formatRunTaskTypeLabel(value) {

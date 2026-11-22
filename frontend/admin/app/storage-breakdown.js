@@ -776,6 +776,11 @@ export function createStorageBreakdownController({
           "Deferred while an active task is running; try again when it finishes.",
           "warning"
         );
+      } else if (payload?.reason === "rebuild-running") {
+        setMaintenanceStatus(
+          "A feed rebuild is copying the database; run maintenance when it finishes.",
+          "warning"
+        );
       } else {
         setMaintenanceStatus(
           `Maintenance did not start: ${payload?.error || payload?.reason || "unknown reason"}`,

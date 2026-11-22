@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from src.bridge import storage_health as storage_health_mod
 from src.bridge import storage_reclaim_triggers
+from src.bridge.storage_task_rows import STORAGE_TASK_TYPES
 from src.bridge.task_lifecycle import TaskLifecycleService
 from src.storage.task_runtime import TaskRuntimeStore
 
@@ -180,6 +181,9 @@ class AdminTaskLifecycle:
         wait behind it. The hold is released on the transition that leaves no
         active row, which re-schedules a due rebuild.
 
+        Storage rows are exempt: every storage worker checks this gate itself,
+        so a row that held it would refuse the work the row reports.
+
         Returns what the derivation saw so the startup path can record whether a
         rebuild was held from a task that predates this bridge.
         """
@@ -206,12 +210,18 @@ class AdminTaskLifecycle:
             )
             summary["error"] = str(exc)
             return summary
-        active = bool(rows)
+        held_rows = [
+            row
+            for row in rows
+            if str(row.get("taskType") or row.get("type") or "").strip().lower()
+            not in STORAGE_TASK_TYPES
+        ]
+        active = bool(held_rows)
         summary.update(
             hasActiveTask=active,
-            activeTaskCount=len(rows),
-            activeTaskTypes=_active_task_types(rows),
-            activeRunIds=_active_run_ids(rows),
+            activeTaskCount=len(held_rows),
+            activeTaskTypes=_active_task_types(held_rows),
+            activeRunIds=_active_run_ids(held_rows),
         )
         if active != storage_health_mod.storage_compaction_hold_active():
             storage_health_mod.set_storage_compaction_hold(active)
@@ -245,11 +255,12 @@ class AdminTaskLifecycle:
         """Re-derive the rebuild hold from the active rows in the ledger."""
         return self._sync_compaction_hold()
 
-    def start_run(self, **kwargs: Any) -> dict[str, Any]:
+    def start_run(self, *, hold_compaction: bool = True, **kwargs: Any) -> dict[str, Any]:
         # Hold before the transition writes: the start write itself can cross the
         # freelist threshold and schedule a rebuild, and a hold applied afterwards
-        # arrives too late to stop it.
-        self._hold_compaction()
+        # arrives too late to stop it. Storage rows that own the gate pass False.
+        if hold_compaction:
+            self._hold_compaction()
         result = self._get_service().start_run(**kwargs)
         self._sync_compaction_hold()
         return result

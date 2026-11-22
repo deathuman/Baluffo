@@ -8,14 +8,17 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused ops API tests.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Mapping
 from typing import Any, cast
 
 from src.bridge import active_task_snapshot as _active_task_snapshot
 from src.bridge import ops_live_payload as _ops_live_payload
 from src.bridge import ops_task_live as _ops_task_live
-from src.bridge.ops_api_core import OpsApiState, _run_id, _task_type
+from src.bridge import storage_task_rows
+from src.bridge.ops_api_core import OpsApiState, _row_active, _run_id, _task_type
 from src.bridge.ops_api_live import _merge_bounded_fetch_summary_for_task_state_row
+from src.bridge.storage_task_rows import STORAGE_TASK_TYPES
 from src.bridge.task_abort_evidence import row_abort_requested
 from src.shared.json_shapes import as_json_object
 from src.shared.live_task import (
@@ -363,6 +366,31 @@ class OpsApiTaskStateMixin(OpsApiState):
             "diagnostics": diagnostics,
         }
 
+    def _with_active_storage_rows(self, payload: TaskStatePayload) -> TaskStatePayload:
+        """Add live storage rows a hot snapshot cannot carry.
+
+        The active snapshot is written by fetch, discovery, sync and pipeline
+        workers, so a storage job never lands in it. The watcher registry answers
+        "is one running?" without any I/O, and only then is the ledger read.
+        """
+        if not storage_task_rows.has_active_watchers():
+            return payload
+        try:
+            rows = [
+                row
+                for row in self._current_lifecycle_rows()
+                if _task_type(row) in STORAGE_TASK_TYPES and _row_active(row)
+            ]
+        except (OSError, RuntimeError, sqlite3.Error, TypeError, ValueError):
+            return payload
+        if not rows:
+            return payload
+        # The active snapshot never carries a storage row, so the payload cannot
+        # already hold one: appending is enough.
+        tasks: list[Any] = [*payload.get("tasks", []), *rows]
+        tasks.sort(key=lambda row: str(row.get("startedAt") or ""), reverse=True)
+        return cast(TaskStatePayload, {**payload, "tasks": tasks, "count": len(tasks)})
+
     def get_current_task_state_summary_payload(self) -> TaskStatePayload:
         pipeline_status = self._deps.get_jobs_pipeline_status_payload()
         snapshot = self._fresh_active_task_snapshot()
@@ -372,7 +400,7 @@ class OpsApiTaskStateMixin(OpsApiState):
                 pipeline_status=pipeline_status,
             )
             if hot_payload is not None:
-                return cast(TaskStatePayload, hot_payload)
+                return self._with_active_storage_rows(cast(TaskStatePayload, hot_payload))
 
         lifecycle_current = self._current_lifecycle_rows()
         pipeline_row = cast(

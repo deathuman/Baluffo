@@ -297,6 +297,7 @@ class BaluffoStore:
         self._passive_checkpoint_hold_ms_last = 0
         self._passive_checkpoint_busy_retries = 0
         self._last_vacuum: dict[str, Any] = {
+            "runId": "",
             "status": "not-run",
             "reason": "",
             "durationMs": 0,
@@ -2000,10 +2001,12 @@ class BaluffoStore:
     @contextmanager
     def _compaction_run(self, reason: str) -> Iterator[None]:
         """Mark a real rebuild as running for health and Admin observers."""
+        run_id = f"compaction_{uuid.uuid4().hex[:12]}"
         with self._maintenance_lock:
             self._compaction_in_progress = True
             self._last_vacuum = {
                 **self._last_vacuum,
+                "runId": run_id,
                 "status": "running",
                 "reason": str(reason or ""),
                 "startedAt": _now_iso(),
@@ -2022,6 +2025,10 @@ class BaluffoStore:
                         "status": "failed",
                         "error": "compaction ended without a terminal status",
                     }
+                # The identity belongs to this attempt whichever path wrote the
+                # terminal record: `_vacuum_locked` and the compact copy publish
+                # their own status dict without one.
+                self._last_vacuum = {**self._last_vacuum, "runId": run_id}
 
     def vacuum(self, *, reason: str = "") -> dict[str, Any]:
         """Rebuild the database to return free pages to the filesystem.

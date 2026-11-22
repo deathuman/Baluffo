@@ -18,11 +18,19 @@ from typing import Any, cast
 
 from src.bridge import startup_work_budget, storage_health, storage_reclaim_triggers
 from src.bridge.server import runtime_state as bridge_runtime_state
+from src.bridge.storage_task_rows import STORAGE_TASK_TYPES
 from src.local_data_store import LocalDataPaths, LocalDataStore
 from src.shared.utils import parse_iso as _shared_parse_iso_from_utils
 
 _PROC_ROOT = Path("/proc")
 BRIDGE_LAUNCH_MONO = 0.0
+
+# Storage work holds the bridge the same way a pipeline does: a reclaim copy can
+# run for hours, and killing it wastes the copy. These types are lifecycle rows,
+# not job launches, so nothing in the launch path has to know about them.
+_EXIT_BLOCKING_TASK_TYPES = frozenset({"fetch", "discovery", "pipeline", "sync"}) | (
+    STORAGE_TASK_TYPES
+)
 
 
 def begin_bridge_startup(*, append_startup_metric: Callable[..., Any] | None = None) -> None:
@@ -451,7 +459,7 @@ def owner_session_should_exit(*, root_mod: Any) -> bool:
             if isinstance(task, dict)
             and bool(task.get("active"))
             and str(task.get("taskType") or task.get("type") or "").strip().lower()
-            in {"fetch", "discovery", "pipeline", "sync"}
+            in _EXIT_BLOCKING_TASK_TYPES
         ]
         shutdown_reason = (
             str(bridge_runtime_state.get_desktop_session_payload().get("shutdownReason") or "")

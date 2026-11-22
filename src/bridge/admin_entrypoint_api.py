@@ -8,6 +8,7 @@ from src.bridge import storage_diagnostic as storage_diagnostic_mod
 from src.bridge import storage_health as storage_health_mod
 from src.bridge import storage_rebuild as storage_rebuild_mod
 from src.bridge import storage_reclaim as storage_reclaim_mod
+from src.bridge import storage_task_rows
 from src.bridge.api import BridgeApi
 
 
@@ -24,6 +25,10 @@ def _warm_desktop_update_artifact(service: Any) -> None:
 
 def build_bridge_api(config: Any, *, root_mod: Any) -> BridgeApi:
     ops_api = root_mod._get_ops_api()
+    # Storage jobs mirror their rows through this reference: it is the same
+    # facade every other task type uses, so a rebuild or reclaim appears in
+    # Admin Current Runs and in the desktop exit guard without new plumbing.
+    storage_task_rows.set_task_lifecycle(root_mod._TASK_LIFECYCLE)
     desktop_update_service = root_mod._get_desktop_update_service()
     _warm_desktop_update_artifact(desktop_update_service)
     return bridge_bootstrap.build_bridge_api(

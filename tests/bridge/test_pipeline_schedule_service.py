@@ -208,6 +208,105 @@ def test_pipeline_schedule_defers_once_while_any_lifecycle_task_is_active(
     assert len(harness.started_payloads) == 1
 
 
+def test_pipeline_schedule_idle_predicate_reads_pipeline_status_and_rows(tmp_path: Path) -> None:
+    """`_is_idle` is the gate every scheduled start passes through.
+
+    Storage rows feed it now, so pin each source it answers for: the pipeline's
+    own status, a row's `active` flag, and a row whose status says running
+    without that flag.
+    """
+    harness = _Harness(tmp_path)
+    service = harness.service
+
+    assert service._is_idle() is True
+
+    harness.pipeline_status = {"active": True, "runId": "pipeline_live"}
+    assert service._is_idle() is False
+
+    harness.pipeline_status = {"active": False, "running": True}
+    assert service._is_idle() is False
+
+    harness.pipeline_status = {"active": False}
+    harness.current_runs = [
+        {
+            "taskType": "storage_reclaim",
+            "runId": "storage_reclaim_1",
+            "active": True,
+            "lifecycleStatus": "running",
+        }
+    ]
+    assert service._is_idle() is False
+
+    # Older ledger rows carry only a status; a running one still blocks.
+    harness.current_runs = [
+        {"taskType": "storage_maintenance", "runId": "retention_1", "lifecycleStatus": "running"}
+    ]
+    assert service._is_idle() is False
+
+    # A row with no status at all is presumed queued, not finished.
+    harness.current_runs = [{"taskType": "fetch", "runId": "fetch_1"}]
+    assert service._is_idle() is False
+
+    harness.current_runs = [
+        {
+            "taskType": "storage_rebuild",
+            "runId": "current_feed_rebuild_1",
+            "active": False,
+            "status": "completed",
+            "finishedAt": "2026-05-31T09:59:00+00:00",
+        }
+    ]
+    assert service._is_idle() is True
+
+
+def test_pipeline_schedule_defers_while_a_storage_task_row_is_active(
+    tmp_path: Path,
+) -> None:
+    """Storage work is a first-class row now, so the scheduler waits it out.
+
+    Starting a pipeline fetch during a rebuild would abort the copy, so the
+    deferral is the intended behavior change of the storage-row work.
+    """
+    harness = _Harness(tmp_path)
+    harness.saved = {"schemaVersion": 1, "enabled": True, "intervalHours": 24}
+    harness.recent_runs = [
+        {
+            "taskType": "pipeline",
+            "status": "ok",
+            "finishedAt": "2026-05-30T08:00:00+00:00",
+        }
+    ]
+    harness.current_runs = [
+        {
+            "taskType": "storage_rebuild",
+            "runId": "current_feed_rebuild_1",
+            "active": True,
+            "lifecycleStatus": "running",
+        }
+    ]
+
+    deferred = harness.service.evaluate_due(reason="test")
+
+    assert deferred["started"] is False
+    assert deferred["pending"] is True
+    assert harness.started_payloads == []
+
+    harness.current_runs = [
+        {
+            "taskType": "storage_rebuild",
+            "runId": "current_feed_rebuild_1",
+            "active": False,
+            "lifecycleStatus": "completed",
+            "finishedAt": "2026-05-31T09:59:00+00:00",
+        }
+    ]
+
+    started = harness.service.evaluate_due(reason="test")
+
+    assert started["started"] is True
+    assert [item["trigger"] for item in harness.started_payloads] == ["schedule"]
+
+
 def test_pipeline_schedule_active_pipeline_due_is_next_after_current_completes(
     tmp_path: Path,
 ) -> None:

@@ -14,7 +14,10 @@ const TASK_TITLES = {
   fetch: "Fetcher",
   discovery: "Discovery",
   sync: "Sync",
-  pipeline: "Pipeline"
+  pipeline: "Pipeline",
+  storage_maintenance: "Maintenance",
+  storage_rebuild: "Feed rebuild",
+  storage_reclaim: "Reclaim"
 };
 
 const TASK_RUN_SUMMARY_COUNT_KEYS = [

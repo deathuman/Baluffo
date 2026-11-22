@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.bridge import storage_task_rows
 from src.storage import BaluffoStore, BaluffoStoreError
 from src.storage.baluffo_store import (
     DEFAULT_BUSY_RETRY_ATTEMPTS,
@@ -458,13 +459,102 @@ def get_storage_maintenance_preview(data_dir: Path | str) -> dict[str, Any]:
         }
 
 
+_MAINTENANCE_COUNT_KEYS = (
+    "processedRunCount",
+    "totalRunCount",
+    "candidateRunCount",
+    "deletedGenerationCount",
+    "deletedGenerationRowCount",
+)
+
+
+def _watch_maintenance_pass(store: Any, status: dict[str, Any]) -> None:
+    """Mirror the scheduled pass into the lifecycle ledger as one task row.
+
+    The pass is retention followed by any due compaction, so the row follows
+    both workers: it stays active through the short handoff between them and
+    closes with the retention pass's terminal status. The automatic post-serve
+    pass is not mirrored: it is idempotent housekeeping that re-runs on the next
+    launch, so it must not hold the desktop exit guard, and its state is already
+    in the storage health payload.
+    """
+    run_id = str(status.get("runId") or "").strip()
+    if not run_id:
+        return
+
+    def read_status() -> dict[str, Any]:
+        retention = store.runtime_retention_status()
+        compaction = store.compaction_status()
+        compaction_running = bool(compaction.get("running"))
+        return {
+            "running": bool(retention.get("running")) or compaction_running,
+            "status": str(retention.get("status") or "").strip().lower(),
+            "phase": (
+                "compaction"
+                if compaction_running
+                else str(retention.get("phase") or retention.get("status") or "").strip().lower()
+            ),
+            "counts": {
+                key: int(retention.get(key) or 0)
+                for key in _MAINTENANCE_COUNT_KEYS
+                if retention.get(key) is not None
+            },
+            "summary": {
+                "reason": str(status.get("reason") or ""),
+                "compactionRunId": (
+                    str(compaction.get("runId") or "") if compaction_running else ""
+                ),
+            },
+            "error": str(retention.get("error") or "").strip(),
+        }
+
+    storage_task_rows.watch_storage_task(
+        task_type="storage_maintenance",
+        run_id=run_id,
+        started_at=str(status.get("startedAt") or ""),
+        stage=str(status.get("phase") or "starting"),
+        summary={"reason": str(status.get("reason") or "")},
+        read_status=read_status,
+    )
+
+
+def _rebuild_copy_running(data_dir: Path) -> bool:
+    """Whether a rebuild or reclaim copy is live for this data dir.
+
+    A reclaim drives the same rebuild job, so this one read covers both. The
+    import stays local because `storage_rebuild` imports this module for its
+    store accessor.
+    """
+    from src.bridge import storage_rebuild as storage_rebuild_mod
+
+    rebuild = storage_rebuild_mod.get_storage_rebuild_payload(data_dir).get("storageRebuild")
+    status = str((rebuild if isinstance(rebuild, dict) else {}).get("status") or "")
+    return status.strip().lower() in {"running", "cancelling"}
+
+
+def _maintenance_refusal(
+    store: Any, status: dict[str, Any], reason: str, *, already_running: bool = False
+) -> dict[str, Any]:
+    """The payload for a pass that will not start, with its live records."""
+    return {
+        "ok": True,
+        "started": False,
+        "alreadyRunning": already_running,
+        "reason": reason,
+        "runtimeRetention": status,
+        "compaction": store.compaction_status(),
+    }
+
+
 def start_storage_maintenance(data_dir: Path | str) -> dict[str, Any]:
     """Start one bounded retention/compaction pass for the runtime store.
 
     This is the same post-serve maintenance path, exposed for an explicit Admin
     action. It never waits for the pass to finish: the store schedules its own
     daemon thread, and the existing retention follow-up drains a backlog. A
-    running bridge task holds the pass so a fetch cannot race generation removal.
+    running bridge task holds the pass so a fetch cannot race generation removal,
+    and a live rebuild or reclaim refuses it: retention's deletes would make the
+    copy's install gate reject the rebuild as superseded, wasting the whole copy.
     """
     resolved = _resolve_data_dir(data_dir)
     try:
@@ -478,26 +568,17 @@ def start_storage_maintenance(data_dir: Path | str) -> dict[str, Any]:
         }
     try:
         status = store.runtime_retention_status()
+        # Cheapest first: the hold is a boolean, the copy check reads the job.
         if store.compaction_held:
-            return {
-                "ok": True,
-                "started": False,
-                "alreadyRunning": False,
-                "reason": "held-active-task",
-                "runtimeRetention": status,
-                "compaction": store.compaction_status(),
-            }
+            return _maintenance_refusal(store, status, "held-active-task")
+        if _rebuild_copy_running(resolved):
+            return _maintenance_refusal(store, status, "rebuild-running")
         if bool(status.get("running")):
-            return {
-                "ok": True,
-                "started": False,
-                "alreadyRunning": True,
-                "reason": "already-running",
-                "runtimeRetention": status,
-                "compaction": store.compaction_status(),
-            }
+            return _maintenance_refusal(store, status, "already-running", already_running=True)
         started = bool(store.schedule_runtime_retention(reason="admin-manual", force=True))
         current = store.runtime_retention_status()
+        if started:
+            _watch_maintenance_pass(store, current)
         reason = ""
         if not started:
             reason = (

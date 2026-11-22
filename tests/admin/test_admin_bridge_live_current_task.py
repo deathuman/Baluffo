@@ -1,10 +1,12 @@
 import json
+from typing import Any
 from unittest import mock
 
 import pytest
 
 from src import admin_bridge
-from src.bridge.ops_api_task_state import _compact_task_state_payload
+from src.bridge import storage_task_rows
+from src.bridge.ops_api_task_state import OpsApiTaskStateMixin, _compact_task_state_payload
 
 from ._admin_bridge_live_payloads_shared import (
     CURRENT_TASK_STATE_CASES,
@@ -34,6 +36,55 @@ def test_get_current_task_state_payload_cases(case: _CurrentTaskStateCase) -> No
     finally:
         if cleanup is not None:
             cleanup()
+
+
+class _LifecycleRowsStub:
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = rows
+
+    def _current_lifecycle_rows(self) -> list[dict]:
+        return list(self._rows)
+
+
+def test_task_state_summary_merges_active_storage_rows(monkeypatch) -> None:
+    monkeypatch.setattr(storage_task_rows, "has_active_watchers", lambda: True)
+    fetch: dict[str, Any] = {
+        "taskType": "fetch",
+        "runId": "fetch_1",
+        "active": True,
+        "startedAt": "2026-03-01T00:00:01+00:00",
+    }
+    storage: dict[str, Any] = {
+        "taskType": "storage_reclaim",
+        "runId": "storage_reclaim_1",
+        "active": True,
+        "startedAt": "2026-03-01T00:00:05+00:00",
+        "status": "running",
+    }
+    finished: dict[str, Any] = {
+        "taskType": "storage_rebuild",
+        "runId": "rebuild_old",
+        "active": False,
+        "startedAt": "2026-03-01T00:00:00+00:00",
+        "finishedAt": "2026-03-01T00:00:02+00:00",
+    }
+
+    stub: Any = _LifecycleRowsStub([fetch, storage, finished])
+    payload: Any = {"tasks": [fetch], "count": 1, "summary": True}
+
+    result = OpsApiTaskStateMixin._with_active_storage_rows(stub, payload)
+
+    assert [row["runId"] for row in result["tasks"]] == ["storage_reclaim_1", "fetch_1"]
+    assert result["count"] == 2
+    assert result["summary"] is True
+
+
+def test_task_state_summary_skips_the_ledger_without_a_storage_watcher(monkeypatch) -> None:
+    monkeypatch.setattr(storage_task_rows, "has_active_watchers", lambda: False)
+    stub: Any = object()
+    payload: Any = {"tasks": [{"taskType": "fetch", "runId": "fetch_1"}], "count": 1}
+
+    assert OpsApiTaskStateMixin._with_active_storage_rows(stub, payload) is payload
 
 
 def test_current_task_state_summary_payload_stays_bounded_for_large_work_items() -> None:

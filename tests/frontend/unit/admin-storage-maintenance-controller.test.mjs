@@ -282,3 +282,19 @@ test("maintenance reports an active-task hold instead of claiming it started", a
   assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /active task/i);
   assert.equal(f.refs.adminStorageMaintenanceStatusEl.attributes["data-tone"], "warning");
 });
+
+test("maintenance reports a live rebuild instead of claiming it started", async () => {
+  const f = fixture({
+    maintenancePayload: {
+      ok: true,
+      started: false,
+      alreadyRunning: false,
+      reason: "rebuild-running"
+    }
+  });
+
+  await f.controller.startMaintenance();
+
+  assert.match(f.refs.adminStorageMaintenanceStatusEl.textContent, /rebuild is copying/i);
+  assert.equal(f.refs.adminStorageMaintenanceStatusEl.attributes["data-tone"], "warning");
+});

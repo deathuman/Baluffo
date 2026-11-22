@@ -3,7 +3,9 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
+from unittest import mock
 
+from src.bridge import storage_task_rows
 from src.bridge.routes.get_routes import handle_get
 from src.bridge.storage_health import (
     _StoreOpenBusy,
@@ -241,6 +243,146 @@ def test_start_storage_maintenance_honors_the_active_task_hold(tmp_path: Path, m
 
     assert result["started"] is False
     assert result["reason"] == "held-active-task"
+
+
+def test_start_storage_maintenance_refuses_while_a_rebuild_copies(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class CopyingRebuild:
+        status = "running"
+
+        def snapshot(self):
+            return {"status": self.status, "phase": self.status, "running": True}
+
+    class IdleStore:
+        compaction_held = False
+
+        def __init__(self) -> None:
+            self.scheduled = False
+
+        def runtime_retention_status(self):
+            return {"running": False, "lastStatus": "not-run"}
+
+        def schedule_runtime_retention(self, *, reason: str, force: bool) -> bool:
+            self.scheduled = True
+            return True
+
+        def compaction_status(self):
+            return {"status": "not-run", "freelistBytes": 0}
+
+    store = IdleStore()
+    rebuild = CopyingRebuild()
+    # A real live copy needs a full database and a started job; stand in for the
+    # snapshot such a job returns. The payload around it is the real one.
+    monkeypatch.setattr(
+        "src.bridge.storage_health.get_storage_store", lambda *_args, **_kwargs: store
+    )
+    monkeypatch.setattr("src.bridge.storage_rebuild._job_for", lambda _data_dir: rebuild)
+
+    refused = start_storage_maintenance(tmp_path)
+
+    # Retention deletes would make the copy's install gate reject it as
+    # superseded, so the pass must not start while the rebuild is copying.
+    assert refused["started"] is False
+    assert refused["alreadyRunning"] is False
+    assert refused["reason"] == "rebuild-running"
+    assert store.scheduled is False
+
+    rebuild.status = "complete"
+
+    assert start_storage_maintenance(tmp_path)["started"] is True
+    assert store.scheduled is True
+
+
+def _wait_for_call(predicate, timeout_s: float) -> bool:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_start_storage_maintenance_mirrors_the_pass_into_a_task_row(
+    tmp_path: Path, monkeypatch
+) -> None:
+    class FakeStore:
+        compaction_held = False
+
+        def __init__(self) -> None:
+            self.status = {
+                "running": False,
+                "status": "not-run",
+                "phase": "not-run",
+                "runId": "retention_1",
+                "startedAt": "2026-03-01T00:00:00+00:00",
+                "processedRunCount": 2,
+                "totalRunCount": 5,
+            }
+
+        def runtime_retention_status(self):
+            return dict(self.status)
+
+        def schedule_runtime_retention(self, *, reason: str, force: bool) -> bool:
+            self.status.update(running=True, status="running", phase="deleting-generations")
+            return True
+
+        def compaction_status(self):
+            return {"status": "not-run", "freelistBytes": 0, "running": False}
+
+    store = FakeStore()
+    lifecycle = mock.Mock()
+    monkeypatch.setattr(
+        "src.bridge.storage_health.get_storage_store",
+        lambda *_args, **_kwargs: store,
+    )
+    # The row normally stays open through the retention-to-compaction handoff;
+    # this pass has no compaction, so the test closes it on the first terminal
+    # read instead of waiting out the grace window.
+    monkeypatch.setattr(storage_task_rows, "MAINTENANCE_HANDOFF_GRACE_S", 0.0)
+    storage_task_rows.set_task_lifecycle(lifecycle)
+    try:
+        result = start_storage_maintenance(tmp_path)
+
+        assert result["started"] is True
+        assert _wait_for_call(lambda: lifecycle.start_run.called, 2.0)
+        start = lifecycle.start_run.call_args.kwargs
+        assert start["task_type"] == "storage_maintenance"
+        assert start["run_id"] == "retention_1"
+        assert start["started_at"] == "2026-03-01T00:00:00+00:00"
+        assert start["hold_compaction"] is False
+
+        store.status.update(running=False, status="complete", phase="complete")
+
+        assert _wait_for_call(lambda: lifecycle.finish_run.called, 5.0)
+        assert lifecycle.finish_run.call_args.args == ("retention_1", "storage_maintenance")
+    finally:
+        storage_task_rows.set_task_lifecycle(None)
+
+
+def test_post_serve_maintenance_does_not_mirror_a_task_row(tmp_path: Path) -> None:
+    """The automatic pass is idempotent housekeeping, not a task run.
+
+    It re-runs on the next launch, so it must not hold the desktop exit guard or
+    the scheduler; its state lives in the storage health payload instead. Pinning
+    the absence keeps a future change from giving it that weight by accident.
+    """
+    get_storage_store(tmp_path)
+    lifecycle = mock.Mock()
+    storage_task_rows.set_task_lifecycle(lifecycle)
+    try:
+        assert _wait_for_call(lambda: storage_task_rows.has_active_watchers() is False, 2.0)
+
+        results = resume_storage_maintenance(reason="test-serve", grace_s=0.0)
+
+        assert [row["dataDir"] for row in results] == [str(tmp_path.resolve())]
+        assert results[0]["scheduled"] is True
+        assert storage_task_rows.has_active_watchers() is False
+    finally:
+        close_storage_stores()
+        storage_task_rows.set_task_lifecycle(None)
+
+    assert not lifecycle.start_run.called
 
 
 def test_storage_maintenance_deferral_covers_stores_created_later(tmp_path: Path) -> None:
