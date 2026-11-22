@@ -120,7 +120,7 @@ def handle_ops_browser_probe_route(
 ) -> bool:
     """Handle the one on-demand browser probe, clamping its timeout to 1-30s."""
     if path == "/ops/browser-probe":
-        timeout_raw = str((query.get("timeoutS") or ["10"])[0] or "").strip()
+        timeout_raw = (query.get("timeoutS") or ["10"])[0]
         timeout_s = coerce_int(timeout_raw, 10, minimum=1, maximum=30)
         payload = api.probe_browser_fallback_health(timeout_s=timeout_s)
         handler.send_json(payload, status=409 if payload.get("busy") else 200)
