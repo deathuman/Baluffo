@@ -10,6 +10,7 @@ in ``src.storage.current_feed_rebuild`` and ``BaluffoStore``.
 from __future__ import annotations
 
 import copy
+import logging
 import os
 import sqlite3
 import threading
@@ -20,7 +21,11 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge import storage_task_rows
-from src.bridge.storage_health import HEALTH_STORE_OPEN_TIMEOUT_S, get_storage_store
+from src.bridge.storage_health import (
+    HEALTH_STORE_OPEN_TIMEOUT_S,
+    get_storage_store,
+    record_storage_diagnostic,
+)
 from src.bridge.storage_reclaim_space import (
     claim_live_artifacts,
     release_live_artifacts,
@@ -50,6 +55,8 @@ _JOBS_LOCK = threading.RLock()
 _JOBS_BY_DATA_DIR: dict[Path, StorageRebuildJob] = {}
 DEFAULT_REBUILD_RETENTION_STOP_WAIT_S = 120.0
 DEFAULT_REBUILD_RETENTION_POLL_S = 0.25
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -615,10 +622,6 @@ class StorageRebuildJob:
                 "retry when storage maintenance is idle"
             )
 
-    def _release_copy_hold(self, store: Any | None, *, copy_held: bool) -> None:
-        if copy_held and store is not None:
-            store.release_copy_hold()
-
     def _run(self) -> None:
         staging: Path | None = None
         store: Any | None = None
@@ -829,10 +832,40 @@ class StorageRebuildJob:
                 staging.unlink(missing_ok=True)
             self._settle_failure(exc)
         finally:
-            release_live_artifacts([self.journal_path.with_name(f"{self.journal_path.name}.tmp")])
-            if staging is not None:
-                release_live_artifacts([staging])
-            self._release_copy_hold(store, copy_held=copy_held)
+            self._teardown(staging, store, copy_held)
+
+    def _teardown(self, staging: Path | None, store: Any | None, copy_held: bool) -> None:
+        """Release the copy's claims, hold and worker slot on every exit path."""
+        artifacts = [self.journal_path.with_name(f"{self.journal_path.name}.tmp")]
+        if staging is not None:
+            artifacts.append(staging)
+        # Cleanup, the hold and the thread clear are independent: a failed
+        # unlink or claim release must not leave maintenance held or the job
+        # reporting a worker that has already exited.
+        try:
+            release_live_artifacts(artifacts)
+        except Exception:
+            LOGGER.warning(
+                "storage rebuild could not release its artifact claims",
+                exc_info=True,
+            )
+        try:
+            if copy_held and store is not None:
+                store.release_copy_hold()
+        except Exception as exc:
+            # A release or deferred-scheduling failure here leaves the
+            # maintenance state suspect; surface it in storage health, not only
+            # in the process log.
+            LOGGER.warning("storage rebuild could not release the copy hold", exc_info=True)
+            record_storage_diagnostic(
+                self.data_dir,
+                surface="storageRebuild",
+                code="copy_hold_release_failed",
+                ok=False,
+                message=str(exc),
+                details={"runId": self.run_id},
+            )
+        finally:
             with self._lock:
                 if self._thread is threading.current_thread():
                     self._thread = None

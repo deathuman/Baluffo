@@ -1693,6 +1693,12 @@ class BaluffoStore:
     def release_copy_hold(self) -> bool:
         """Release the copy hold and schedule a deferred retention pass once.
 
+        The flag and the gate are released in one `_maintenance_lock` critical
+        section: a compaction attempt that reads `_compaction_blocked()` false
+        must then find the gate free. Releasing outside the lock let an attempt
+        land in the handoff, fail the gate acquire, and record a held status the
+        copy had already cleared.
+
         Returns whether a deferred pass was scheduled.
         """
         pending = False
@@ -1702,7 +1708,7 @@ class BaluffoStore:
             self._copy_hold = False
             pending = self._retention_deferred
             self._retention_deferred = False
-        self._compaction_gate.release()
+            self._compaction_gate.release()
         if not pending:
             return False
         return self.schedule_runtime_retention(reason="copy-complete", force=True)
@@ -1759,7 +1765,10 @@ class BaluffoStore:
             self._retention_deferred = True
             return "rebuild-copy"
         if self._compaction_hold:
-            return reason
+            # The caller's reason is a label, not the hold decision: an empty one
+            # is falsy and used to read as "not held", so the pass ran while the
+            # active task's rebuild was still blocked.
+            return reason or "compaction-hold"
         return ""
 
     def _run_runtime_retention(self, *, reason: str) -> bool:

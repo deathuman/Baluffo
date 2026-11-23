@@ -9,6 +9,30 @@ from src.storage import BaluffoStore
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
+class _HandoffGate:
+    """Proxy the compaction gate and hold its release open across the handoff."""
+
+    def __init__(self, lock: Any) -> None:
+        self._lock = lock
+        self.attempt_may_run = threading.Event()
+        self.attempt_finished = threading.Event()
+
+    def acquire(self, blocking: bool = True) -> bool:
+        return bool(self._lock.acquire(blocking=blocking))
+
+    def release(self) -> None:
+        if self.attempt_may_run.is_set():
+            self._lock.release()
+            return
+        # Let the racing attempt run while the copy's gate is still held. On the
+        # old code it fails the acquire and finishes here; once the flag and the
+        # gate release share a critical section, it blocks on the maintenance
+        # lock instead, so this wait is bounded.
+        self.attempt_may_run.set()
+        self.attempt_finished.wait(0.25)
+        self._lock.release()
+
+
 def test_copy_hold_defers_a_truncated_retention_followup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -99,6 +123,39 @@ def test_copy_hold_refuses_to_start_during_compaction(
             assert thread.is_alive() is False
             assert store.acquire_copy_hold() is True
             assert store.release_copy_hold() is False
+
+
+def test_release_copy_hold_does_not_fail_a_racing_compaction_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("baluffo-store-copy-hold-release-race") as data_dir:
+        with BaluffoStore(data_dir, vacuum_idle_s=0.0) as store:
+            gate = _HandoffGate(store._compaction_gate)
+            store._compaction_gate = gate  # type: ignore[assignment]
+            monkeypatch.setattr(
+                store, "_vacuum_locked", lambda *, reason="": {"status": "ok", "reason": reason}
+            )
+
+            assert store.acquire_copy_hold() is True
+            outcomes: list[bool] = []
+
+            def attempt_compaction() -> None:
+                # The production sequence: read the holds, then start the rebuild.
+                gate.attempt_may_run.wait(5)
+                outcomes.append(store._run_compaction_when_idle(reason="handoff-race"))
+                gate.attempt_finished.set()
+
+            thread = threading.Thread(target=attempt_compaction, daemon=True)
+            thread.start()
+
+            assert store.release_copy_hold() is False
+            thread.join(5)
+
+            assert thread.is_alive() is False
+            # A clear copy hold must imply a free gate: an attempt that lands in
+            # the handoff used to record `held-active-task` instead of rebuilding.
+            assert outcomes == [True]
+            assert store.compaction_status()["status"] != "held-active-task"
 
 
 def test_vacuum_refuses_while_the_copy_hold_is_set() -> None:

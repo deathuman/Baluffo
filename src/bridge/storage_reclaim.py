@@ -1073,26 +1073,46 @@ class StorageReclaimJob:
         # Neither step changes the copy's phases: the pulse emits none.
         with _hold_pulse(run_id, self._hold_taken):
             store = get_storage_store(self.data_dir, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
-            rebuild_mod.stop_runtime_retention_for_copy(store)
-            self._heartbeat()
-            if self._cancel_event.is_set():
-                self._settle("cancelled")
-                return
-            self._set_phase("copying")
-            staging = rebuild_staging_path(self.db_path, run_id=run_id)
-            journal = rehearsal_journal_path(self.data_dir)
-            # Claim what this rehearsal owns until its cleanup; relief in another
-            # run must not remove the copy or its scratch mid-copy.
-            claim_live_artifacts([staging, journal, journal.with_name(f"{journal.name}.tmp")])
-            copied = rebuild_current_feed_database(
-                self.db_path,
-                staging,
-                journal_path=journal,
-                run_id=run_id,
-                cancel_requested=cancel_requested,
-                # Per-batch beats keep it fresher than the pulse while it reads.
-                on_progress=lambda _progress: self._heartbeat(),
-            )
+            copy_held = False
+            try:
+                # A real run owns compaction for the copy's duration. Take the
+                # same hold here, atomically with compaction start, so a
+                # post-serve pass cannot swap the live file mid-measurement.
+                if not store.acquire_copy_hold():
+                    self._settle(
+                        "cancelled",
+                        error=(
+                            "a compaction started before the rehearsal copy hold "
+                            "could be taken; retry when storage maintenance is idle"
+                        ),
+                    )
+                    return
+                copy_held = True
+                rebuild_mod.stop_runtime_retention_for_copy(store)
+                self._heartbeat()
+                if self._cancel_event.is_set():
+                    self._settle("cancelled")
+                    return
+                self._set_phase("copying")
+                staging = rebuild_staging_path(self.db_path, run_id=run_id)
+                journal = rehearsal_journal_path(self.data_dir)
+                # Claim what this rehearsal owns until its cleanup; relief in
+                # another run must not remove the copy or its scratch mid-copy.
+                claim_live_artifacts([staging, journal, journal.with_name(f"{journal.name}.tmp")])
+                copied = rebuild_current_feed_database(
+                    self.db_path,
+                    staging,
+                    journal_path=journal,
+                    run_id=run_id,
+                    cancel_requested=cancel_requested,
+                    # Per-batch beats keep it fresher than the pulse while it reads.
+                    on_progress=lambda _progress: self._heartbeat(),
+                )
+            finally:
+                # Success, cancel, run limit and every exception leave the gate
+                # here; releasing schedules any deferred retention pass.
+                if copy_held:
+                    store.release_copy_hold()
         source_bytes = int(copied.get("sourceBytes") or 0)
         staging_bytes = int(copied.get("stagingBytes") or 0)
         # This copy is the measurement the next gate is built from, and it is also

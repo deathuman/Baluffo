@@ -8,6 +8,7 @@ refuses — plus the report it leaves in the reclaim journal.
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -227,6 +228,64 @@ def test_a_rehearsal_stops_runtime_retention_before_copying(
     assert events[:2] == ["retention", "copy"]
 
 
+def test_a_rehearsal_holds_the_copy_gate_against_post_serve_compaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compactions: list[str] = []
+    copy_started = threading.Event()
+    attempt_done = threading.Event()
+    real_copy_table = current_feed_rebuild._copy_table
+
+    def copy_table_waiting_for_maintenance(*args: Any, **kwargs: Any) -> int:
+        copy_started.set()
+        # Hold the copy here until the post-serve attempt has run, so the gate
+        # is provably held while the copy reads the live database.
+        assert attempt_done.wait(10)
+        return real_copy_table(*args, **kwargs)
+
+    with workspace_tmpdir("reclaim-rehearsal-copy-hold") as data_dir:
+        _seed(data_dir, generations=2)
+        monkeypatch.setattr(current_feed_rebuild, "_copy_table", copy_table_waiting_for_maintenance)
+        store: BaluffoStore | None = None
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir, rehearsal=True)
+            assert started["started"] is True, started
+            assert copy_started.wait(10)
+            store = storage_health.get_storage_store(data_dir)
+
+            def record_vacuum(*, reason: str = "") -> dict[str, Any]:
+                compactions.append(reason)
+                return {"status": "ok", "reason": reason}
+
+            monkeypatch.setattr(store, "vacuum", record_vacuum)
+            monkeypatch.setattr(store, "_compaction_needed", lambda _sizes: True)
+            monkeypatch.setattr(store, "_run_wal_maintenance", lambda **_kwargs: None)
+            # Without the copy hold this attempt would compact immediately; the
+            # hold must be what stops it, not the idle window.
+            monkeypatch.setattr(store, "effective_vacuum_idle_s", lambda _bytes: 0.0)
+            try:
+                store._run_post_serve_maintenance(reason="post-serve", grace_s=0.0)
+                held = store.compaction_status()
+                # Capture only the copy's window: a later, legitimate compaction
+                # once the hold is released is not what this test is about.
+                during_copy = list(compactions)
+            finally:
+                attempt_done.set()
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 60.0)
+            payload = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+            # The rehearsal's finally cleared the hold on the store it copied
+            # from, so the next copy can take it.
+            assert store._copy_hold is False
+        finally:
+            attempt_done.set()
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    assert payload["status"] == "complete", payload
+    assert during_copy == []
+    assert held["status"] == "held-active-task"
+
+
 def test_a_rehearsal_fails_when_retention_will_not_stop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -369,6 +428,7 @@ def test_a_failed_rehearsal_still_removes_its_staging_and_scratch_journal(
                 for path in data_dir.iterdir()
                 if path.name.endswith(".tmp") or "rehearsal" in path.name
             )
+            store = storage_health.get_storage_store(data_dir)
             hold = storage_health.storage_reclaim_hold_status()
         finally:
             storage_reclaim.close_storage_reclaim_jobs()
@@ -385,8 +445,10 @@ def test_a_failed_rehearsal_still_removes_its_staging_and_scratch_journal(
     assert "the copy exploded" in journal["error"]
     assert live_jobs == 2
     assert leftovers == []
-    # A failure must release the container hold in the same finally.
+    # A failure must release the container hold and the copy gate in the same
+    # finally, so the next copy is not blocked by this one.
     assert hold["active"] is False
+    assert store._copy_hold is False
 
 
 def test_a_cancel_during_the_retention_stop_settles_cancelled(
