@@ -123,7 +123,7 @@ def test_a_successful_compaction_drops_the_cached_breakdown(monkeypatch) -> None
             assert store.table_sizes()["capturedAt"] == "2026-11-20T10:00:00Z"
             assert calls == 1
 
-            assert store.compact_database(reason="test")["status"] == "ok"
+            assert store._compact_database_locked(reason="test")["status"] == "ok"
             refreshed = store.table_sizes()
 
     assert calls == 2

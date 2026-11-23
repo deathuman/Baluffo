@@ -5,7 +5,7 @@
 > - **Canonical for:** target storage authority boundaries, SQLite connection and transaction discipline, migration safety, export and rollback behavior, and hot-path size budgets
 > - **Not canonical for:** current endpoint payload fields, current JSON artifact schemas, source-sync v2 schema details, or Jobs frontend row fields
 > - **Then inspect:** [`sync-contract.md`](sync-contract.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), and archived rollout history in [`archive/runtime-storage-and-sync-architecture-plan.md`](archive/runtime-storage-and-sync-architecture-plan.md) only when historical provenance is needed
-> - **Last updated:** 2026-11-15
+> - **Last updated:** 2026-11-22
 
 This document defines the current runtime storage contract. The archived rollout plan records sequencing and closeout evidence; this active contract owns the invariants future code must preserve.
 
@@ -215,7 +215,10 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   pass that reports `truncated` is followed up after
   `DEFAULT_RUNTIME_RETENTION_FOLLOWUP_S` (30 seconds) until the backlog drains,
   so a long-running container keeps cleaning instead of stopping after one
-  startup pass. The newest `BALUFFO_RUNTIME_RETENTION_KEEP_RUNS` fetch runs
+  startup pass. A current-feed rebuild holds retention and compaction for its
+  copy's duration: a pending follow-up is cancelled and the deferred pass runs
+  once the copy settles, so a follow-up delete cannot make the install
+  `superseded`. The newest `BALUFFO_RUNTIME_RETENTION_KEEP_RUNS` fetch runs
   (default `30`) and all active runs are retained; every older terminal run is
   deleted in batches, including a recent run beyond the count cap, so growth is
   bounded even when fetches arrive faster than the age cutoff. The age cutoff
@@ -315,7 +318,12 @@ replacement for them.
   route that starts a task row answers `409 storage-rebuild-running` with the
   live rebuild record. A fetch, discovery, sync or pipeline started mid-copy
   would commit a write and make the install `superseded`, wasting the whole
-  copy. The rebuild's own controls stay available.
+  copy. The copy also holds retention and compaction for its duration:
+  acquiring the hold is atomic with compaction start, and `vacuum` and its
+  compact-copy path use the same gate, so a truncated pass's 30 s follow-up
+  cannot delete rows mid-copy and a post-serve compaction cannot swap the live
+  file. A compaction already running when the rebuild starts fails the rebuild
+  before it copies. The rebuild's own controls stay available.
 - The staging copy is built read-only against the live database. Free space is
   checked first: at least 1% of the live file (clamped to 256 MiB-3 GiB) plus a
   64 MiB margin must be free, which is the measured 1-3 GB planning envelope for

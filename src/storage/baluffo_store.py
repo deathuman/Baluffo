@@ -341,6 +341,8 @@ class BaluffoStore:
         self._retention_cancelled_last_run = False
         self._retention_timer: threading.Timer | None = None
         self._retention_next_run_monotonic = 0.0
+        self._copy_hold = False
+        self._retention_deferred = False
         self._closed = False
         self._bulk_write_mode = False
         self._table_sizes_lock = threading.Lock()
@@ -362,6 +364,7 @@ class BaluffoStore:
         self._write_lock_depth = 0
         self._read_lock = threading.RLock()
         self._maintenance_lock = threading.RLock()
+        self._compaction_gate = threading.Lock()
         self._maintenance_deferred = bool(defer_maintenance)
         self._compaction_hold = bool(compaction_hold)
         self.slow_write_warn_ms = max(0, int(slow_write_warn_ms))
@@ -1358,6 +1361,10 @@ class BaluffoStore:
         with self._maintenance_lock:
             return self._compaction_hold
 
+    def _compaction_blocked(self) -> bool:
+        with self._maintenance_lock:
+            return self._compaction_hold or self._copy_hold
+
     def set_compaction_hold(self, held: bool) -> bool:
         """Hold the rebuild while bridge tasks are running, and release it after.
 
@@ -1535,22 +1542,18 @@ class BaluffoStore:
                 # attached the follow-up timer yet. Never expose that narrow
                 # window as a fully complete pass.
                 follow_up_scheduled = True
-            if running or starting:
-                completion_state = "running"
-            elif last_status == "cancelled":
-                completion_state = "cancelled"
-            elif retry_scheduled:
-                completion_state = "retry-scheduled"
-            elif last_status == "failed":
-                completion_state = "failed"
-            elif last_status == MAINTENANCE_STATUS_HELD_ACTIVE_TASK:
-                completion_state = "held-active-task"
-            elif follow_up_scheduled:
-                completion_state = "follow-up-scheduled"
-            elif self._runtime_retention_done:
-                completion_state = "complete"
-            else:
-                completion_state = last_status or "not-run"
+            if self._copy_hold:
+                # The copy owns retention; the deferred pass runs on release.
+                follow_up_scheduled = False
+                retry_scheduled = False
+            completion_state = self._retention_completion_state(
+                running=running,
+                starting=starting,
+                copy_held=self._copy_hold,
+                last_status=last_status,
+                retry_scheduled=retry_scheduled,
+                follow_up_scheduled=follow_up_scheduled,
+            )
             status = {
                 **self._last_retention,
                 "runId": str(self._retention_run_id or ""),
@@ -1580,6 +1583,34 @@ class BaluffoStore:
                 # previous result as the current state.
                 status.update({"status": "running", "phase": "starting", "stage": "starting"})
             return status
+
+    def _retention_completion_state(
+        self,
+        *,
+        running: bool,
+        starting: bool,
+        copy_held: bool,
+        last_status: str,
+        retry_scheduled: bool,
+        follow_up_scheduled: bool,
+    ) -> str:
+        if running or starting:
+            return "running"
+        if copy_held:
+            return MAINTENANCE_STATUS_HELD_ACTIVE_TASK
+        if last_status == "cancelled":
+            return "cancelled"
+        if retry_scheduled:
+            return "retry-scheduled"
+        if last_status == "failed":
+            return "failed"
+        if last_status == MAINTENANCE_STATUS_HELD_ACTIVE_TASK:
+            return "held-active-task"
+        if follow_up_scheduled:
+            return "follow-up-scheduled"
+        if self._runtime_retention_done:
+            return "complete"
+        return last_status or "not-run"
 
     def cancel_runtime_retention(self, run_id: str = "") -> dict[str, Any]:
         """Request cancellation of one specific retention run.
@@ -1633,6 +1664,49 @@ class BaluffoStore:
                 "runtimeRetention": self.runtime_retention_status(),
             }
 
+    def acquire_copy_hold(self) -> bool:
+        """Take the copy hold atomically with compaction start.
+
+        A truncated retention pass schedules a short follow-up, and a post-serve
+        compaction would swap the live file mid-copy. Either would make the
+        install stale or superseded, so the copy owns retention and compaction
+        until it installs or fails. Returns False when a compaction is already
+        running; the caller must not start a copy in that case.
+        """
+        if not self._compaction_gate.acquire(blocking=False):
+            return False
+        timer = None
+        with self._maintenance_lock:
+            if self._closed:
+                self._compaction_gate.release()
+                return False
+            self._copy_hold = True
+            timer = self._retention_timer
+            self._retention_timer = None
+            self._retention_next_run_monotonic = 0.0
+            if timer is not None:
+                self._retention_deferred = True
+        if timer is not None:
+            timer.cancel()
+        return True
+
+    def release_copy_hold(self) -> bool:
+        """Release the copy hold and schedule a deferred retention pass once.
+
+        Returns whether a deferred pass was scheduled.
+        """
+        pending = False
+        with self._maintenance_lock:
+            if not self._copy_hold:
+                return False
+            self._copy_hold = False
+            pending = self._retention_deferred
+            self._retention_deferred = False
+        self._compaction_gate.release()
+        if not pending:
+            return False
+        return self.schedule_runtime_retention(reason="copy-complete", force=True)
+
     def schedule_runtime_retention(self, *, reason: str = "", force: bool = False) -> bool:
         """Start one bounded runtime-retention pass in the background.
 
@@ -1648,6 +1722,9 @@ class BaluffoStore:
             if self._retention_starting or (
                 self._retention_thread is not None and self._retention_thread.is_alive()
             ):
+                return False
+            if self._copy_hold:
+                self._retention_deferred = True
                 return False
             if self._retention_timer is not None:
                 self._retention_timer.cancel()
@@ -1677,6 +1754,14 @@ class BaluffoStore:
                 raise
             return True
 
+    def _runtime_retention_hold_reason(self, reason: str) -> str:
+        if self._copy_hold:
+            self._retention_deferred = True
+            return "rebuild-copy"
+        if self._compaction_hold:
+            return reason
+        return ""
+
     def _run_runtime_retention(self, *, reason: str) -> bool:
         started = time.monotonic()
         started_at = _now_iso()
@@ -1686,8 +1771,9 @@ class BaluffoStore:
             self._retention_cancelled_last_run = False
             if self._runtime_retention_done:
                 return False
-            if self._compaction_hold:
-                self._set_retention_held(reason)
+            hold_reason = self._runtime_retention_hold_reason(reason)
+            if hold_reason:
+                self._set_retention_held(hold_reason)
                 return False
             # A scheduled thread already owns its run id. A direct call must
             # start a new run and clear any event left by the previous pass.
@@ -1840,6 +1926,9 @@ class BaluffoStore:
         with self._maintenance_lock:
             if self._closed:
                 return
+            if self._copy_hold:
+                self._retention_deferred = True
+                return
             if self._retention_timer is not None:
                 return
             timer = threading.Timer(delay, self._retention_timer_fired)
@@ -1853,6 +1942,9 @@ class BaluffoStore:
         with self._maintenance_lock:
             self._retention_timer = None
             self._retention_next_run_monotonic = 0.0
+            if self._copy_hold:
+                self._retention_deferred = True
+                return
             self._runtime_retention_done = False
         self.schedule_runtime_retention(reason="retention-timer")
 
@@ -1999,36 +2091,51 @@ class BaluffoStore:
             self._last_checkpoint = status
 
     @contextmanager
-    def _compaction_run(self, reason: str) -> Iterator[None]:
-        """Mark a real rebuild as running for health and Admin observers."""
-        run_id = f"compaction_{uuid.uuid4().hex[:12]}"
-        with self._maintenance_lock:
-            self._compaction_in_progress = True
-            self._last_vacuum = {
-                **self._last_vacuum,
-                "runId": run_id,
-                "status": "running",
-                "reason": str(reason or ""),
-                "startedAt": _now_iso(),
-                "durationMs": 0,
-                "reclaimedBytes": 0,
-                "error": "",
-            }
+    def _compaction_run(self, reason: str) -> Iterator[bool]:
+        """Mark a real rebuild as running for health and Admin observers.
+
+        Yields False without starting when a task holds maintenance, or when the
+        compaction gate is held by a copy or another compaction.
+        """
+        if not self._compaction_gate.acquire(blocking=False):
+            yield False
+            return
         try:
-            yield
-        finally:
+            run_id = f"compaction_{uuid.uuid4().hex[:12]}"
             with self._maintenance_lock:
-                self._compaction_in_progress = False
-                if self._last_vacuum.get("status") == "running":
+                blocked = self._compaction_hold
+                if not blocked:
+                    self._compaction_in_progress = True
                     self._last_vacuum = {
                         **self._last_vacuum,
-                        "status": "failed",
-                        "error": "compaction ended without a terminal status",
+                        "runId": run_id,
+                        "status": "running",
+                        "reason": str(reason or ""),
+                        "startedAt": _now_iso(),
+                        "durationMs": 0,
+                        "reclaimedBytes": 0,
+                        "error": "",
                     }
-                # The identity belongs to this attempt whichever path wrote the
-                # terminal record: `_vacuum_locked` and the compact copy publish
-                # their own status dict without one.
-                self._last_vacuum = {**self._last_vacuum, "runId": run_id}
+            if blocked:
+                yield False
+                return
+            try:
+                yield True
+            finally:
+                with self._maintenance_lock:
+                    self._compaction_in_progress = False
+                    if self._last_vacuum.get("status") == "running":
+                        self._last_vacuum = {
+                            **self._last_vacuum,
+                            "status": "failed",
+                            "error": "compaction ended without a terminal status",
+                        }
+                    # The identity belongs to this attempt whichever path wrote the
+                    # terminal record: `_vacuum_locked` and the compact copy publish
+                    # their own status dict without one.
+                    self._last_vacuum = {**self._last_vacuum, "runId": run_id}
+        finally:
+            self._compaction_gate.release()
 
     def vacuum(self, *, reason: str = "") -> dict[str, Any]:
         """Rebuild the database to return free pages to the filesystem.
@@ -2039,13 +2146,15 @@ class BaluffoStore:
         interruptible: a copy or VACUUM must reach its own terminal state before
         the store can safely continue.
         """
-        with self._compaction_run(reason):
+        with self._compaction_run(reason) as started:
+            if not started:
+                return self._record_compaction_held(reason=reason, sizes=self.file_sizes())
             return self._vacuum_locked(reason=reason)
 
     def _vacuum_locked(self, *, reason: str = "") -> dict[str, Any]:
         """Run the selected rebuild implementation while compaction is marked live."""
         if self._path_size(self.db_path) >= self.vacuum_large_database_bytes:
-            return self.compact_database(reason=reason)
+            return self._compact_database_locked(reason=reason)
         started = time.perf_counter()
         before_bytes = self._path_size(self.db_path)
         last_busy_error: sqlite3.OperationalError | None = None
@@ -2113,7 +2222,7 @@ class BaluffoStore:
             self._last_vacuum = status
         raise BaluffoStoreError(message)
 
-    def compact_database(self, *, reason: str = "") -> dict[str, Any]:
+    def _compact_database_locked(self, *, reason: str = "") -> dict[str, Any]:
         """Shrink the file by rewriting it into a compact copy and swapping it in.
 
         Post-retention deletes free pages; only a rewrite returns them to the
@@ -2122,7 +2231,8 @@ class BaluffoStore:
         the compact copy through `VACUUM INTO` on its own read snapshot while
         writers keep running, then swaps it in under both locks. The run is
         bounded by `compaction_budget_s` and by free disk space, and the original
-        file stays in place until the copy validates.
+        file stays in place until the copy validates. The caller holds the
+        compaction gate.
         """
         started = time.monotonic()
         before = self.file_sizes()
@@ -2681,13 +2791,13 @@ class BaluffoStore:
         waited_started = time.monotonic()
         deadline = waited_started + self.vacuum_idle_max_wait_s
         while True:
-            if self.compaction_held:
+            if self._compaction_blocked():
                 self._record_compaction_held(reason=reason, sizes=snapshot)
                 return False
             idle_for_s = self._seconds_since_write()
             if idle_for_s >= idle_gate_s:
-                self.vacuum(reason=reason)
-                return True
+                status = self.vacuum(reason=reason)
+                return status.get("status") != MAINTENANCE_STATUS_HELD_ACTIVE_TASK
             remaining_s = min(idle_gate_s - idle_for_s, deadline - time.monotonic())
             if remaining_s <= 0.0:
                 self._record_compaction_skipped(
@@ -2700,11 +2810,11 @@ class BaluffoStore:
                 return False
             time.sleep(min(self.vacuum_idle_poll_s, remaining_s))
 
-    def _record_compaction_held(self, *, reason: str, sizes: dict[str, int]) -> None:
-        """Record a rebuild held back by an active bridge task.
+    def _record_compaction_held(self, *, reason: str, sizes: dict[str, int]) -> dict[str, Any]:
+        """Record a rebuild held back by an active task or a database copy.
 
-        No waiting happens here: the hold is released by the bridge when the last
-        task finishes, and that release re-schedules the rebuild.
+        No waiting happens here: the bridge or the rebuild releases the hold when
+        its work finishes.
         """
         database_bytes = int(sizes.get("databaseBytes") or 0)
         status = {
@@ -2718,8 +2828,11 @@ class BaluffoStore:
             "databaseBytes": database_bytes,
         }
         with self._maintenance_lock:
+            if self._compaction_in_progress:
+                return dict(self._last_vacuum)
             self._last_vacuum = status
-        LOGGER.info("SQLite VACUUM held while a bridge task is active: %s", reason)
+        LOGGER.info("SQLite VACUUM held while storage maintenance is held: %s", reason)
+        return status
 
     def _record_compaction_skipped(
         self,

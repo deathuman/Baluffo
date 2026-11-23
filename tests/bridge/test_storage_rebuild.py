@@ -136,6 +136,12 @@ def test_rebuild_reports_checkpoint_busy_without_claiming_superseded(monkeypatch
         class BusyStore:
             compaction_held = False
 
+            def acquire_copy_hold(self) -> bool:
+                return True
+
+            def release_copy_hold(self) -> bool:
+                return False
+
             def runtime_retention_status(self):
                 return {"running": False}
 

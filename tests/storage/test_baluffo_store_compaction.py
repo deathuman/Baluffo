@@ -19,7 +19,7 @@ def test_vacuum_on_a_large_store_rebuilds_through_a_compact_copy(
         calls.append(f"compact:{reason}")
         return {}
 
-    monkeypatch.setattr(BaluffoStore, "compact_database", record_compact)
+    monkeypatch.setattr(BaluffoStore, "_compact_database_locked", record_compact)
 
     with workspace_tmpdir("baluffo-store-compact-copy") as data_dir:
         with BaluffoStore(data_dir, vacuum_large_database_bytes=1) as store:
@@ -33,7 +33,7 @@ def test_compact_database_skips_when_free_space_cannot_hold_the_live_bytes() -> 
         with BaluffoStore(data_dir) as store:
             store._free_disk_bytes = lambda: 1024  # type: ignore[method-assign]
 
-            status = store.compact_database(reason="test")
+            status = store._compact_database_locked(reason="test")
 
             assert status["status"] == "skipped-no-space"
             assert status["method"] == "vacuum-into"
@@ -58,7 +58,7 @@ def test_interrupted_compact_copy_keeps_the_original(
             store.write(lambda conn: conn.execute("CREATE TABLE marker(value TEXT)"))
             store.write(lambda conn: conn.execute("INSERT INTO marker(value) VALUES ('kept')"))
 
-            status = store.compact_database(reason="test")
+            status = store._compact_database_locked(reason="test")
 
             assert status["status"] == "budget-exceeded"
             assert status["error"] == "interrupted"
@@ -79,7 +79,7 @@ def test_compact_database_reclaims_free_pages_and_keeps_rows() -> None:
             before = store.file_sizes()
             assert before["freelistBytes"] > 0
 
-            status = store.compact_database(reason="retention")
+            status = store._compact_database_locked(reason="retention")
 
             assert status["status"] == "ok", status
             assert status["method"] == "vacuum-into"

@@ -608,10 +608,31 @@ class StorageRebuildJob:
             }
             self._state.update(self._disk_fields_locked())
 
+    def _acquire_copy_hold(self, store: Any) -> None:
+        if not store.acquire_copy_hold():
+            raise CurrentFeedRebuildError(
+                "a compaction started before the copy hold could be taken; "
+                "retry when storage maintenance is idle"
+            )
+
+    def _release_copy_hold(self, store: Any | None, *, copy_held: bool) -> None:
+        if copy_held and store is not None:
+            store.release_copy_hold()
+
     def _run(self) -> None:
         staging: Path | None = None
+        store: Any | None = None
+        copy_held = False
         try:
             store = get_storage_store(self.data_dir, build_timeout_s=HEALTH_STORE_OPEN_TIMEOUT_S)
+            # A truncated retention pass schedules a short follow-up, and a
+            # post-serve compaction would swap the live file. Either would make
+            # this install stale or superseded, so the copy owns retention and
+            # compaction until it installs or fails. The hold is atomic with
+            # compaction start; a compaction that wins makes the rebuild fail
+            # here, before it reads the live file.
+            self._acquire_copy_hold(store)
+            copy_held = True
             self._update(phase="stopping-retention", stage="stopping-retention")
             retention_stopped = stop_runtime_retention_for_copy(store)
             if self._cancel.is_set():
@@ -811,6 +832,7 @@ class StorageRebuildJob:
             release_live_artifacts([self.journal_path.with_name(f"{self.journal_path.name}.tmp")])
             if staging is not None:
                 release_live_artifacts([staging])
+            self._release_copy_hold(store, copy_held=copy_held)
             with self._lock:
                 if self._thread is threading.current_thread():
                     self._thread = None
