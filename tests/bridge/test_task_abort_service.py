@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 from src.bridge.task_abort_evidence import (
     repair_discovery_canceled_evidence,
@@ -34,7 +38,12 @@ def _save_json_atomic(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def _abort_service(tmp_path: Path) -> tuple[TaskAbortService, TaskLifecycleService]:
+def _abort_service(
+    tmp_path: Path,
+    *,
+    process_registry: Any | None = None,
+    bridge_log: Any | None = None,
+) -> tuple[TaskAbortService, TaskLifecycleService]:
     lifecycle = TaskLifecycleService(
         path=tmp_path / "admin-task-lifecycle.json",
         lock=threading.RLock(),
@@ -51,7 +60,7 @@ def _abort_service(tmp_path: Path) -> tuple[TaskAbortService, TaskLifecycleServi
         ),
         deps=TaskAbortDeps(
             now_iso=lambda: "2026-05-06T19:00:00+00:00",
-            bridge_log=lambda *_args, **_kwargs: None,
+            bridge_log=bridge_log or (lambda *_args, **_kwargs: None),
             load_json_object=_load_json_object,
             save_json_atomic=_save_json_atomic,
             normalize_fetch_report_contract=lambda payload: payload,
@@ -59,8 +68,9 @@ def _abort_service(tmp_path: Path) -> tuple[TaskAbortService, TaskLifecycleServi
             get_lifecycle_rows=lifecycle.get_current_runs,
             request_abort_run=lifecycle.request_abort_run,
             cancel_lifecycle_run=lifecycle.cancel_run,
+            fail_lifecycle_run=lifecycle.fail_run,
             pid_is_running=lambda _pid: False,
-            process_registry=None,
+            process_registry=process_registry,
         ),
     )
     return service, lifecycle
@@ -109,6 +119,78 @@ def test_task_abort_service_cancels_dead_fetch_and_repairs_evidence(tmp_path: Pa
     report = _load_json_object(tmp_path / "jobs-fetch-report.json", {})
     assert report["status"] == "canceled"
     assert report["taskProgress"]["active"] is False
+
+
+@pytest.mark.parametrize("abort_method", ["abort_task", "abort_task_async"])
+def test_abort_already_in_progress_skips_finalize_for_sync_and_async(
+    tmp_path: Path, abort_method: str
+) -> None:
+    terminate_calls: list[tuple[str, str]] = []
+
+    def terminate(task_type: str, run_id: str, timeout_s: float = 3.0) -> dict[str, Any]:
+        terminate_calls.append((task_type, run_id))
+        return {"exited": True}
+
+    service, lifecycle = _abort_service(
+        tmp_path, process_registry=SimpleNamespace(terminate=terminate)
+    )
+    lifecycle.start_run(run_id="fetch_1", task_type="fetch")
+    lifecycle.request_abort_run("fetch_1", "fetch")
+    report_path = tmp_path / "jobs-fetch-report.json"
+    _save_json_atomic(
+        report_path,
+        {"runId": "fetch_1", "finishedAt": "", "status": "running"},
+    )
+
+    status, payload = getattr(service, abort_method)({"taskType": "fetch", "runId": "fetch_1"})
+
+    assert status == 202
+    assert payload["state"] == "already_aborting"
+    assert payload["abortAccepted"] is True
+    assert payload["deferred"] is True
+    assert terminate_calls == []
+    assert _load_json_object(report_path, {})["status"] == "running"
+
+
+def test_async_abort_finalize_failure_logs_and_fails_run(tmp_path: Path) -> None:
+    logs: list[tuple[str, str, dict[str, Any]]] = []
+    terminate_started = threading.Event()
+
+    def bridge_log(level: str, event: str, **fields: Any) -> None:
+        logs.append((level, event, fields))
+
+    def terminate(task_type: str, run_id: str, timeout_s: float = 3.0) -> dict[str, Any]:
+        terminate_started.set()
+        raise RuntimeError("process registry exploded")
+
+    service, lifecycle = _abort_service(
+        tmp_path,
+        process_registry=SimpleNamespace(terminate=terminate),
+        bridge_log=bridge_log,
+    )
+    lifecycle.start_run(run_id="fetch_1", task_type="fetch")
+
+    status, payload = service.abort_task_async({"taskType": "fetch", "runId": "fetch_1"})
+
+    assert status == 202
+    assert payload["state"] == "aborting"
+    assert terminate_started.wait(2.0)
+
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline and not lifecycle.get_recent_runs():
+        time.sleep(0.01)
+
+    recent = lifecycle.get_recent_runs()
+    assert len(recent) == 1
+    assert recent[0]["lifecycleStatus"] == "failed"
+    assert recent[0]["terminalReason"] == "abort_finalize_failed"
+    assert recent[0]["summary"]["terminalReason"] == "abort_finalize_failed"
+    assert "process registry exploded" in recent[0]["summary"]["error"]
+    assert lifecycle.get_current_runs() == []
+    failure = next(entry for entry in logs if entry[1] == "task_abort_finalize_failed")
+    assert failure[0] == "error"
+    assert failure[2]["runId"] == "fetch_1"
+    assert "process registry exploded" in failure[2]["error"]
 
 
 def test_fetch_repair_overwrites_finished_report_only_when_requested(tmp_path: Path) -> None:

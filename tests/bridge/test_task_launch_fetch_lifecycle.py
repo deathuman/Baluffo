@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from src.bridge.task_launch_fetch_lifecycle import (
     FetchLifecycleContext,
     fetch_launch_failure_path,
     heartbeat_fetch_lifecycle_from_tasks,
+    watch_fetch_lifecycle,
     write_fetch_launch_failure,
 )
 from tests.helpers.mutation import append_and_return
@@ -270,3 +274,76 @@ def test_fetch_lifecycle_heartbeat_without_gate_preserves_direct_heartbeat_behav
         "initializing_runtime",
         "initializing_runtime",
     ]
+
+
+def test_fetch_watch_retries_transient_heartbeat_and_terminal_write_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_task_state(
+        tmp_path,
+        phase_key="executing_sources",
+        heartbeat_at="2026-07-02T10:00:00+00:00",
+    )
+    heartbeats: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    logs: list[tuple[str, str, dict[str, Any]]] = []
+    sleeps: list[float] = []
+
+    def bridge_log(level: str, event: str, **fields: Any) -> None:
+        logs.append((level, event, fields))
+
+    heartbeat_calls = 0
+
+    def heartbeat(run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        nonlocal heartbeat_calls
+        heartbeat_calls += 1
+        if heartbeat_calls == 1:
+            raise OSError("heartbeat write failed")
+        heartbeats.append({"runId": run_id, "taskType": task_type, **kwargs})
+        return {}
+
+    pid_checks = 0
+
+    def pid_is_running(_pid: int) -> bool:
+        nonlocal pid_checks
+        pid_checks += 1
+        return pid_checks <= 2
+
+    failure_calls = 0
+
+    def fail(run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        nonlocal failure_calls
+        failure_calls += 1
+        if failure_calls == 1:
+            raise OSError("closeout write failed")
+        failures.append({"runId": run_id, "taskType": task_type, **kwargs})
+        return {}
+
+    def no_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) > 10:
+            raise AssertionError("fetch watcher did not converge")
+
+    ctx = replace(
+        _ctx(tmp_path, heartbeats, failures),
+        bridge_log=bridge_log,
+        pid_is_running=pid_is_running,
+        heartbeat_lifecycle_run=heartbeat,
+        fail_lifecycle_run=fail,
+    )
+    monkeypatch.setattr("src.bridge.task_launch_fetch_lifecycle.time.sleep", no_sleep)
+
+    watch_fetch_lifecycle(ctx, run_id="fetch_1", pid=123)
+
+    assert heartbeat_calls == 2
+    assert len(heartbeats) == 1
+    assert failure_calls == 2
+    assert len(failures) == 1
+    assert failures[0]["terminal_reason"] == "owner_inactive_without_terminal_report"
+    retries = [entry for entry in logs if entry[1] == "task_lifecycle_watch_retry"]
+    assert [(entry[0], entry[2]["stage"], entry[2]["taskType"]) for entry in retries] == [
+        ("warn", "heartbeat", "fetch"),
+        ("warn", "terminal_closeout", "fetch"),
+    ]
+    assert "heartbeat write failed" in retries[0][2]["error"]
+    assert "closeout write failed" in retries[1][2]["error"]

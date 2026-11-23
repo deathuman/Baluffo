@@ -2,6 +2,7 @@ import json
 from types import SimpleNamespace
 
 from src.bridge.ops_task_live import OpsTaskLiveContext, get_task_live_payload
+from src.bridge.ops_task_live_dispatch import _apply_sqlite_task_events
 from src.bridge.ops_task_projection import resolve_projected_live_context
 from src.bridge.run_history_api import ChildTaskSnapshot, LifecycleProjection
 
@@ -95,3 +96,15 @@ def test_task_live_payload_prefers_sqlite_events_when_available(tmp_path) -> Non
 
     assert payload["recentEvents"][0]["event"] == "sqlite_event"
     assert payload["recentEvents"][0]["message"] == "SQLite event"
+
+
+def test_empty_task_events_leave_json_live_payload_events_intact() -> None:
+    payload = {
+        "runId": "sync_json_events",
+        "recentEvents": [{"event": "json_event", "message": "JSON event"}],
+    }
+    context = SimpleNamespace(deps=SimpleNamespace(get_lifecycle_task_events=lambda **_kwargs: []))
+
+    applied = _apply_sqlite_task_events(context, payload, task_type="sync")
+
+    assert applied["recentEvents"] == [{"event": "json_event", "message": "JSON event"}]

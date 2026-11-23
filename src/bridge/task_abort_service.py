@@ -55,6 +55,7 @@ class TaskAbortDeps:
     request_abort_run: Callable[..., dict[str, Any]]
     cancel_lifecycle_run: Callable[..., dict[str, Any]]
     pid_is_running: Callable[[int], bool]
+    fail_lifecycle_run: Callable[..., dict[str, Any]] | None = None
     process_registry: Any | None = None
     pipeline_service: Callable[[], Any] | None = None
 
@@ -388,6 +389,18 @@ class TaskAbortService:
                 abort_accepted=True,
                 aborted=True,
             )
+        if state == "already_aborting":
+            # A repeat request must not run the process kill and evidence repair
+            # a second time; the first abort still owns that work.
+            return 202, self._response(
+                ok=True,
+                task_type=request.task_type,
+                run_id=request.run_id,
+                state="already_aborting",
+                abort_accepted=True,
+                aborted=False,
+                deferred=True,
+            )
         return None
 
     def _abort_pipeline(self, request: _AbortRequest, *, stage: str) -> tuple[str, bool, list[str]]:
@@ -438,19 +451,16 @@ class TaskAbortService:
         _AbortRequest | None,
         tuple[int, dict[str, Any]] | None,
         str,
-        dict[str, Any] | None,
     ]:
         """Validate + flip lifecycle row, instrumented. Shared by sync/async paths.
 
-        Returns (request, early_response, stage, lifecycle_abort_result).
-        Caller checks early_response first; non-None means respond with it.
-        On success lifecycle_abort_result contains the post-flip result so the
-        caller can decide synchronous vs async finalize.
+        Returns (request, early_response, stage). Caller checks early_response
+        first; non-None means respond with it.
         """
         with time_operation("abort.validate"):
             request, early_response = self._validate_abort_request(payload)
         if early_response is not None or request is None:
-            return request, early_response, "", None
+            return request, early_response, ""
 
         stage = self._abort_stage(request)
         with time_operation("abort.flip_lifecycle_row"):
@@ -464,9 +474,76 @@ class TaskAbortService:
         state = _clean_text(abort_result.get("state"))
         lifecycle_response = self._lifecycle_abort_response(request, state)
         if lifecycle_response is not None:
-            return request, lifecycle_response, stage, None
+            return request, lifecycle_response, stage
 
-        return request, None, stage, abort_result
+        return request, None, stage
+
+    def _safe_bridge_log(self, level: str, event: str, **fields: Any) -> None:
+        try:
+            self._deps.bridge_log(level, event, **fields)
+        except Exception:
+            # Logging must never break abort; the lifecycle row already shows it.
+            pass
+
+    def _handle_async_abort_failure(self, request: _AbortRequest, exc: Exception) -> None:
+        """Log an async finalizer failure and terminalize a still-active run.
+
+        A repeated abort now returns early, so a thread that dies silently would
+        leave the lifecycle row in `aborting` forever. Only an active row is
+        failed: a run that already reached a terminal state must not be rewritten.
+        """
+        error = f"{type(exc).__name__}: {exc}"
+        self._safe_bridge_log(
+            "error",
+            "task_abort_finalize_failed",
+            taskType=request.task_type,
+            runId=request.run_id,
+            error=error,
+            source="async",
+        )
+        try:
+            row = self._lifecycle_row(request.task_type, request.run_id)
+        except Exception as read_exc:
+            self._safe_bridge_log(
+                "error",
+                "task_abort_finalize_failed_lifecycle_read_failed",
+                taskType=request.task_type,
+                runId=request.run_id,
+                error=str(read_exc),
+                source="async",
+            )
+            return
+        status = _clean_text(
+            (row or {}).get("lifecycleStatus") or (row or {}).get("status")
+        ).lower()
+        if status not in {"queued", "running"}:
+            return
+        fail_run = self._deps.fail_lifecycle_run
+        if not callable(fail_run):
+            return
+        summary = dict((row or {}).get("summary") or {})
+        summary["terminalReason"] = "abort_finalize_failed"
+        summary["error"] = f"abort finalizer failed: {error}"
+        progress = dict((row or {}).get("taskProgress") or (row or {}).get("progress") or {})
+        progress.update({"active": False, "phaseKey": "abort_failed", "phaseLabel": "Abort failed"})
+        try:
+            fail_run(
+                request.run_id,
+                request.task_type,
+                finished_at=self._deps.now_iso(),
+                terminal_reason="abort_finalize_failed",
+                summary=summary,
+                progress=progress,
+            )
+        except Exception as fail_exc:
+            self._safe_bridge_log(
+                "error",
+                "task_abort_finalize_failed_terminalize_failed",
+                taskType=request.task_type,
+                runId=request.run_id,
+                error=str(fail_exc),
+                source="async",
+            )
 
     def _log_abort(
         self,
@@ -478,24 +555,20 @@ class TaskAbortService:
         warnings: list[str],
         source: str,
     ) -> None:
-        try:
-            self._deps.bridge_log(
-                "info",
-                "task_abort_requested",
-                taskType=request.task_type,
-                runId=request.run_id,
-                state=state,
-                aborted=aborted,
-                deferred=deferred,
-                warnings=warnings,
-                source=source,
-            )
-        except Exception:
-            # Logging must never break abort; the lifecycle row already shows it.
-            pass
+        self._safe_bridge_log(
+            "info",
+            "task_abort_requested",
+            taskType=request.task_type,
+            runId=request.run_id,
+            state=state,
+            aborted=aborted,
+            deferred=deferred,
+            warnings=warnings,
+            source=source,
+        )
 
     def abort_task(self, payload: dict[str, Any] | None) -> tuple[int, dict[str, Any]]:
-        request, early_response, stage, _ = self._prepare_abort(payload)
+        request, early_response, stage = self._prepare_abort(payload)
         if early_response is not None:
             return early_response
         if request is None:
@@ -528,14 +601,18 @@ class TaskAbortService:
         process kill + report-repair run on a daemon thread. Internal callers
         (e.g. pipeline parent aborting a child) still use `abort_task`.
         """
-        request, early_response, stage, _ = self._prepare_abort(payload)
+        request, early_response, stage = self._prepare_abort(payload)
         if early_response is not None:
             return early_response
         if request is None:
             raise RuntimeError("validated abort request missing")
 
         def _run() -> None:
-            state, aborted, warnings, deferred = self._finalize_abort(request, stage=stage)
+            try:
+                state, aborted, warnings, deferred = self._finalize_abort(request, stage=stage)
+            except Exception as exc:
+                self._handle_async_abort_failure(request, exc)
+                return
             self._log_abort(
                 request,
                 state=state,

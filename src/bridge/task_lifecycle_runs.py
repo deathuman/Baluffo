@@ -70,11 +70,17 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
             "summary": _compact_lifecycle_summary(task_type, summary_payload),
         }
 
-    def _upsert_locked(self, entry: dict[str, Any]) -> dict[str, Any]:
+    def _upsert_locked(
+        self,
+        entry: dict[str, Any],
+        *,
+        allow_terminal_override: bool = False,
+        known_rows: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         normalized = self._normalize_row(entry)
         run_id = _clean_text(normalized.get("runId"))
         task_type = _clean_text(normalized.get("taskType")).lower()
-        loaded_rows = self._load_rows_locked()
+        loaded_rows = known_rows if known_rows is not None else self._load_rows_locked()
         existing = next(
             (
                 row
@@ -84,12 +90,10 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
             ),
             None,
         )
-        if (
-            existing is not None
-            and _clean_text(existing.get("status")).lower() == "canceled"
-            and _clean_text(normalized.get("status")).lower() != "canceled"
-        ):
-            return self._normalize_row(existing)
+        if existing is not None:
+            existing_status = _clean_text(existing.get("status")).lower()
+            if existing_status in TERMINAL_STATUSES and not allow_terminal_override:
+                return self._normalize_row(existing)
         rows = [
             row
             for row in loaded_rows
@@ -99,7 +103,7 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
             )
         ]
         rows.append(normalized)
-        self._save_rows_locked(rows)
+        self._save_rows_locked(rows, allow_terminal_override=allow_terminal_override)
         return normalized
 
     def start_run(
@@ -115,8 +119,28 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
         parent_task_type: str = "",
         progress: dict[str, Any] | None = None,
         summary: dict[str, Any] | None = None,
+        restart: bool = False,
     ) -> dict[str, Any]:
         with self._lock:
+            rows = self._load_rows_locked()
+            existing = next(
+                (
+                    row
+                    for row in rows
+                    if _clean_text(row.get("runId")) == _clean_text(run_id)
+                    and _clean_text(row.get("taskType")).lower() == _clean_text(task_type).lower()
+                ),
+                None,
+            )
+            if existing is not None:
+                existing_status = _clean_text(existing.get("status")).lower()
+                if existing_status in ACTIVE_STATUSES:
+                    return self._normalize_row(existing)
+                if existing_status in TERMINAL_STATUSES and not restart:
+                    raise ValueError(
+                        f"start_run cannot reuse terminal run {run_id!r}; "
+                        "pass restart=True to start a new attempt"
+                    )
             started = _clean_text(started_at) or self._now_iso()
             return self._upsert_locked(
                 {
@@ -132,7 +156,9 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
                     "parentTaskType": parent_task_type,
                     "progress": progress or {},
                     "summary": summary or {},
-                }
+                },
+                allow_terminal_override=restart,
+                known_rows=rows,
             )
 
     def heartbeat_run(
@@ -180,6 +206,7 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
         terminal_reason: str = "",
         summary: dict[str, Any] | None = None,
         progress: dict[str, Any] | None = None,
+        allow_terminal_override: bool = False,
     ) -> dict[str, Any]:
         with self._lock:
             rows = self._load_rows_locked()
@@ -194,8 +221,8 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
             if target is None:
                 target = {"runId": run_id, "taskType": task_type, "startedAt": ""}
             elif (
-                _clean_text(target.get("status")).lower() == "canceled"
-                and _clean_text(status).lower() != "canceled"
+                _clean_text(target.get("status")).lower() in TERMINAL_STATUSES
+                and not allow_terminal_override
             ):
                 return self._normalize_row(target)
             target.update(
@@ -209,16 +236,27 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
                 target["summary"] = dict(summary)
             if progress is not None:
                 target["progress"] = dict(progress)
-            return self._upsert_locked(target)
+            return self._upsert_locked(
+                target,
+                allow_terminal_override=allow_terminal_override,
+            )
 
     def _end_run(
-        self, run_id: str, task_type: str, *, status: str, default_reason: str, **kwargs: Any
+        self,
+        run_id: str,
+        task_type: str,
+        *,
+        status: str,
+        default_reason: str,
+        allow_terminal_override: bool = False,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         return self._terminal_run(
             run_id=run_id,
             task_type=task_type,
             status=status,
             terminal_reason=kwargs.pop("terminal_reason", default_reason),
+            allow_terminal_override=allow_terminal_override,
             **kwargs,
         )
 
@@ -247,6 +285,65 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
             default_reason="owner_inactive_without_terminal_report",
             **kwargs,
         )
+
+    def repair_terminal_run(
+        self,
+        run_id: str,
+        task_type: str,
+        *,
+        status: str,
+        finished_at: str = "",
+        terminal_reason: str = "",
+        summary: dict[str, Any] | None = None,
+        progress: dict[str, Any] | None = None,
+        repair_reason: str = "",
+    ) -> dict[str, Any]:
+        """Explicitly repair an existing terminal row.
+
+        Normal terminal writers are immutable once a row is terminal. This is
+        the only override: it requires both an existing terminal row and a
+        non-empty repair reason, and records that reason on the row.
+        """
+        target_status = _clean_text(status).lower()
+        if target_status not in TERMINAL_STATUSES:
+            raise ValueError("repair_terminal_run requires a terminal status")
+        clean_repair_reason = _clean_text(repair_reason)
+        if not clean_repair_reason:
+            raise ValueError("repair_terminal_run requires repair_reason")
+        with self._lock:
+            rows = self._load_rows_locked()
+            existing = next(
+                (
+                    row
+                    for row in rows
+                    if _clean_text(row.get("runId")) == _clean_text(run_id)
+                    and _clean_text(row.get("taskType")).lower() == _clean_text(task_type).lower()
+                ),
+                None,
+            )
+            if (
+                existing is None
+                or _clean_text(existing.get("status")).lower() not in TERMINAL_STATUSES
+            ):
+                raise ValueError("repair_terminal_run requires an existing terminal row")
+            merged_summary = dict(existing.get("summary") or {})
+            if summary is not None:
+                merged_summary.update(dict(summary))
+            merged_summary["repairReason"] = clean_repair_reason
+            return self._terminal_run(
+                run_id=run_id,
+                task_type=task_type,
+                status=target_status,
+                finished_at=finished_at,
+                terminal_reason=(
+                    _clean_text(terminal_reason)
+                    or _clean_text(existing.get("terminalReason"))
+                    or target_status
+                ),
+                summary=merged_summary,
+                progress=progress,
+                allow_terminal_override=True,
+            )
 
     def request_abort_run(
         self,
@@ -327,6 +424,8 @@ class TaskLifecycleRunsMixin(TaskLifecycleState):
                     continue
                 if _clean_text(row.get("taskType")).lower() != _clean_text(task_type).lower():
                     continue
+                if _clean_text(row.get("status")).lower() in TERMINAL_STATUSES:
+                    return self._normalize_row(row)
                 row["parentRunId"] = _clean_text(parent_run_id)
                 row["parentTaskType"] = _clean_text(parent_task_type).lower()
                 if not _clean_text(row.get("ownerKind")):

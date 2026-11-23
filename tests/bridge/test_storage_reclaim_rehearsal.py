@@ -228,6 +228,61 @@ def test_a_rehearsal_stops_runtime_retention_before_copying(
     assert events[:2] == ["retention", "copy"]
 
 
+def test_a_rehearsal_settles_cancelled_when_the_copy_gate_is_busy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate_attempts: list[bool] = []
+    copied: list[str] = []
+
+    with workspace_tmpdir("reclaim-rehearsal-copy-busy") as data_dir:
+        _seed(data_dir, generations=2)
+        db_path = data_dir / DEFAULT_DB_NAME
+        monkeypatch.setattr(
+            storage_reclaim,
+            "_compute_verdict",
+            lambda *_args, **_kwargs: _bloat_verdict(),
+        )
+        store = storage_health.get_storage_store(data_dir)
+
+        def busy_gate() -> bool:
+            gate_attempts.append(True)
+            return False
+
+        monkeypatch.setattr(store, "acquire_copy_hold", busy_gate)
+
+        def record_copy(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            copied.append("copy")
+            return {}
+
+        monkeypatch.setattr(storage_reclaim, "rebuild_current_feed_database", record_copy)
+        try:
+            started = storage_reclaim.start_storage_reclaim(data_dir, rehearsal=True)
+            assert started["started"] is True, started
+            assert _wait_for(lambda: _status(data_dir) in TERMINAL, 60.0)
+            payload = storage_reclaim.get_storage_reclaim_payload(data_dir)["storageReclaim"]
+            journal = storage_reclaim.read_reclaim_journal(data_dir)
+            live_jobs = sqlite3.connect(db_path).execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+            staging_exists = rebuild_staging_path(db_path, run_id=str(started["runId"])).exists()
+        finally:
+            storage_reclaim.close_storage_reclaim_jobs()
+            close_storage_rebuild_jobs()
+
+    retry_message = (
+        "a compaction started before the rehearsal copy hold could be taken; "
+        "retry when storage maintenance is idle"
+    )
+    assert gate_attempts == [True]
+    assert payload["status"] == "cancelled", payload
+    assert payload["error"] == retry_message
+    assert journal is not None
+    assert journal["status"] == "cancelled"
+    assert journal["error"] == retry_message
+    # A busy gate stops the rehearsal before it makes or claims any copy.
+    assert copied == []
+    assert live_jobs == 2
+    assert staging_exists is False
+
+
 def test_a_rehearsal_holds_the_copy_gate_against_post_serve_compaction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

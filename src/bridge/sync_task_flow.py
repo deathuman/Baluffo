@@ -44,6 +44,11 @@ class UpsertRunHistoryFunc(Protocol):
     def __call__(self, entry: dict[str, Any]) -> None: ...
 
 
+def _notify_progress(on_progress: Callable[[], None] | None) -> None:
+    if on_progress is not None:
+        on_progress()
+
+
 def _run_sync_action_with_optional_progress(
     action_func: RunSyncActionFunc,
     *,
@@ -205,6 +210,7 @@ def run_sync_task_worker(
     active_snapshot_path: Path | None = None,
     record_task_event: RecordTaskEventFunc | None = None,
     upsert_sync_run: UpsertSyncRunFunc | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> None:
     started_dt = parse_iso(started_at) or now_utc()
     status = "ok"
@@ -314,6 +320,7 @@ def run_sync_task_worker(
         event_level: str = "muted",
         message: str = "",
     ) -> None:
+        _notify_progress(on_progress)
         write_live_task(
             phase_key=phase_key,
             phase_label=phase_label,

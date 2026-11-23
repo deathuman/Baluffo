@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
 from src.bridge.registry_service import RegistryPaths, RegistryService
@@ -516,6 +519,136 @@ def test_reconciled_discovery_auto_approval_survives_registry_load_safe_demotion
         }
     ]
     assert "discovery_registry_reconciled_from_terminal_report" in events
+
+
+def test_discovery_watch_retries_transient_heartbeat_and_terminal_write_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    _write_active_report(report_path, run_id="discovery_1", queued=2)
+    heartbeats: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    logs: list[tuple[str, str, dict[str, Any]]] = []
+    sleeps: list[float] = []
+
+    def bridge_log(level: str, event: str, **fields: Any) -> None:
+        logs.append((level, event, fields))
+
+    heartbeat_calls = 0
+
+    def heartbeat(run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        nonlocal heartbeat_calls
+        heartbeat_calls += 1
+        if heartbeat_calls == 1:
+            raise sqlite3.OperationalError("discovery heartbeat failed")
+        heartbeats.append({"runId": run_id, "taskType": task_type, **kwargs})
+        return {}
+
+    pid_checks = 0
+
+    def pid_is_running(_pid: int) -> bool:
+        nonlocal pid_checks
+        pid_checks += 1
+        return pid_checks <= 2
+
+    failure_calls = 0
+
+    def fail(run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        nonlocal failure_calls
+        failure_calls += 1
+        if failure_calls == 1:
+            raise sqlite3.OperationalError("discovery closeout failed")
+        failures.append({"runId": run_id, "taskType": task_type, **kwargs})
+        return {}
+
+    def no_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) > 10:
+            raise AssertionError("discovery watcher did not converge")
+
+    service = _make_service(
+        tmp_path,
+        report_path=report_path,
+        bridge_log=bridge_log,
+        pid_is_running=pid_is_running,
+        heartbeat_lifecycle_run=heartbeat,
+        fail_lifecycle_run=fail,
+    )
+    monkeypatch.setattr("src.bridge.discovery_service_watch.time.sleep", no_sleep)
+
+    service.watch_discovery_run_for_auto_sync("discovery_1", 123, "2026-03-20T12:00:00Z")
+
+    assert heartbeat_calls == 2
+    assert len(heartbeats) == 1
+    assert failure_calls == 2
+    assert len(failures) == 1
+    assert failures[0]["terminal_reason"] == "owner_inactive_without_terminal_report"
+    retries = [entry for entry in logs if entry[1] == "task_lifecycle_watch_retry"]
+    assert [(entry[0], entry[2]["stage"], entry[2]["taskType"]) for entry in retries] == [
+        ("warn", "heartbeat", "discovery"),
+        ("warn", "terminal_closeout", "discovery"),
+    ]
+    assert "discovery heartbeat failed" in retries[0][2]["error"]
+    assert "discovery closeout failed" in retries[1][2]["error"]
+    saved_report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert saved_report["finishedAt"] == "2026-03-20T12:04:00Z"
+    assert saved_report["taskProgress"]["active"] is False
+
+
+def test_discovery_watch_retries_transient_terminal_finalization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "runId": "discovery_1",
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "2026-03-20T12:05:00Z",
+                "summary": {"queuedCandidateCount": 0},
+                "runtime": {},
+                "candidates": [],
+                "failures": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    finalized: list[dict[str, Any]] = []
+    logs: list[tuple[str, str, dict[str, Any]]] = []
+    sleeps: list[float] = []
+    finalize_calls = 0
+
+    def finish(run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        nonlocal finalize_calls
+        finalize_calls += 1
+        if finalize_calls == 1:
+            raise sqlite3.OperationalError("discovery finalize failed")
+        finalized.append({"runId": run_id, "taskType": task_type, **kwargs})
+        return {}
+
+    def no_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) > 10:
+            raise AssertionError("discovery watcher did not converge")
+
+    service = _make_service(
+        tmp_path,
+        report_path=report_path,
+        bridge_log=lambda level, event, **fields: logs.append((level, event, fields)),
+        finish_lifecycle_run=finish,
+    )
+    monkeypatch.setattr("src.bridge.discovery_service_watch.time.sleep", no_sleep)
+
+    service.watch_discovery_run_for_auto_sync("discovery_1", 123, "2026-03-20T12:00:00Z")
+
+    assert finalize_calls == 2
+    assert len(finalized) == 1
+    assert finalized[0]["terminal_reason"] == "completed"
+    retries = [entry for entry in logs if entry[1] == "task_lifecycle_watch_retry"]
+    assert [(entry[0], entry[2]["stage"], entry[2]["taskType"]) for entry in retries] == [
+        ("warn", "finalize", "discovery")
+    ]
+    assert "discovery finalize failed" in retries[0][2]["error"]
 
 
 def test_reconcile_terminal_discovery_registry_skips_unsafe_finalization_mismatch(

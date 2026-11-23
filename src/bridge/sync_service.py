@@ -17,9 +17,11 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused sync service tes
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sqlite3
 import threading
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -58,6 +60,33 @@ _SYNC_SHARD_FIELD_NAMES = (
     "shardHashes",
 )
 _STARTUP_SYNC_ERRORS = (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError)
+# Progress-driven sync beat throttle. Keep it well below
+# lifecycle_cleanup.SYNC_STALL_CAP_SECONDS so a progressing sync refreshes its
+# row before the reaper's stall cap closes it.
+SYNC_LIFECYCLE_HEARTBEAT_S = 30.0
+
+
+def _beat_sync_lifecycle(
+    lifecycle: Any,
+    run_id: str,
+    *,
+    last_beat: list[float | None],
+    clock: Callable[[], float] = time.monotonic,
+) -> None:
+    """Refresh the sync row's lease from worker progress, at most once per interval.
+
+    The beat is driven by progress, not a timer: a wedged pull or push reports
+    nothing, so its heartbeat goes cold and the reaper's sync stall cap closes
+    it. Throttling keeps a per-shard progress stream from writing the ledger on
+    every event.
+    """
+    now = clock()
+    previous = last_beat[0]
+    if previous is not None and now - previous < SYNC_LIFECYCLE_HEARTBEAT_S:
+        return
+    last_beat[0] = now
+    with contextlib.suppress(*_STARTUP_SYNC_ERRORS):
+        lifecycle.heartbeat_run(run_id, "sync", heartbeat_at=now_iso())
 
 
 def _sync_shard_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -992,6 +1021,12 @@ class SyncService:
                     summary=summary,
                 )
 
+        last_beat: list[float | None] = [None]
+
+        def mark_progress() -> None:
+            if self._task_lifecycle is not None:
+                _beat_sync_lifecycle(self._task_lifecycle, run_id, last_beat=last_beat)
+
         _sync_task_flow.run_sync_task_worker(
             run_id=run_id,
             action=action,
@@ -1013,6 +1048,7 @@ class SyncService:
             active_snapshot_path=self._data_dir / "admin-active-task-snapshot.json",
             record_task_event=self._record_sync_task_event,
             upsert_sync_run=self._upsert_sync_run,
+            on_progress=mark_progress,
         )
 
     def start_sync_task(

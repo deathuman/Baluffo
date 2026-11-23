@@ -926,6 +926,7 @@ def get_task_abort_service(*, root_mod: Any) -> Any:
                 get_lifecycle_rows=root_mod.get_lifecycle_rows,
                 request_abort_run=root_mod._TASK_LIFECYCLE.request_abort_run,
                 cancel_lifecycle_run=root_mod.cancel_lifecycle_run,
+                fail_lifecycle_run=root_mod.fail_lifecycle_run,
                 pid_is_running=root_mod.pid_is_running,
                 process_registry=bridge_runtime_state.TASK_PROCESS_REGISTRY,
                 pipeline_service=root_mod._get_pipeline_service,

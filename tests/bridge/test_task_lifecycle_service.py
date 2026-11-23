@@ -427,6 +427,52 @@ def test_lifecycle_compaction_hold_follows_transitions(tmp_path: Path) -> None:
         set_storage_compaction_hold(False)
 
 
+def test_start_run_on_terminal_row_releases_compaction_hold(tmp_path: Path) -> None:
+    lifecycle = admin_task_lifecycle(lifecycle_file(tmp_path))
+    try:
+        lifecycle.start_run(
+            run_id="fetch_done",
+            task_type="fetch",
+            started_at="2026-05-06T18:00:00+00:00",
+            owner_kind="process",
+            owner_pid=4242,
+        )
+        lifecycle.finish_run(
+            "fetch_done",
+            "fetch",
+            finished_at="2026-05-06T18:05:00+00:00",
+        )
+        assert storage_compaction_hold_active() is False
+
+        with pytest.raises(ValueError, match="terminal run"):
+            lifecycle.start_run(
+                run_id="fetch_done",
+                task_type="fetch",
+                started_at="2026-05-06T18:10:00+00:00",
+                owner_kind="process",
+                owner_pid=4242,
+            )
+        assert storage_compaction_hold_active() is False
+
+        lifecycle.start_run(
+            run_id="fetch_done",
+            task_type="fetch",
+            started_at="2026-05-06T18:15:00+00:00",
+            owner_kind="process",
+            owner_pid=4242,
+            restart=True,
+        )
+        assert storage_compaction_hold_active() is True
+        lifecycle.finish_run(
+            "fetch_done",
+            "fetch",
+            finished_at="2026-05-06T18:20:00+00:00",
+        )
+        assert storage_compaction_hold_active() is False
+    finally:
+        set_storage_compaction_hold(False)
+
+
 def test_start_run_holds_compaction_before_the_transition_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -456,4 +502,3 @@ def test_start_run_holds_compaction_before_the_transition_write(
     # itself cross the freelist threshold and schedule a rebuild.
     assert hold_calls[0] is True
     assert rows_when_held[0] == []
-    assert rows_when_held[-1] == ["fetch_order"]

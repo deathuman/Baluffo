@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -130,6 +131,7 @@ class _TaskLifecycle:
         self.started: list[dict[str, Any]] = []
         self.finished: list[dict[str, Any]] = []
         self.failed: list[dict[str, Any]] = []
+        self.heartbeats: list[dict[str, Any]] = []
 
     def start_run(self, **kwargs: Any) -> dict[str, Any]:
         self.started.append(dict(kwargs))
@@ -143,6 +145,11 @@ class _TaskLifecycle:
     def fail_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
         row = {"runId": run_id, "taskType": task_type, **dict(kwargs)}
         self.failed.append(row)
+        return row
+
+    def heartbeat_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        row = {"runId": run_id, "taskType": task_type, **dict(kwargs)}
+        self.heartbeats.append(row)
         return row
 
 
@@ -278,6 +285,69 @@ def test_sync_service_pull_delegates_and_persists() -> None:
         assert persist_calls == 1
         second_status = svc.get_sync_status_payload()
         assert second_status["runtime"]["lastPullAt"]
+
+
+def test_sync_task_heartbeats_its_lifecycle_row_while_the_action_progresses(
+    monkeypatch: Any,
+) -> None:
+    """A long sync that keeps reporting progress keeps its lifecycle lease alive."""
+    with workspace_tmpdir("sync-service") as data_dir:
+        with SYNC_STATE_LOCK:
+            ACTIVE_SYNC_RUNS.clear()
+            ACTIVE_SYNC_THREADS.clear()
+        source_sync = _FakeSourceSync()
+        lifecycle = _TaskLifecycle()
+        pull_started = threading.Event()
+        release_pull = threading.Event()
+        original_pull = source_sync.pull_and_merge_sources
+
+        def progressing_pull(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            progress = kwargs.get("progress_callback")
+            pull_started.set()
+            while not release_pull.wait(0.01):
+                if callable(progress):
+                    progress(phase_key="download", phase_label="Downloading", message="tick")
+            return original_pull(*args, **kwargs)
+
+        monkeypatch.setattr(source_sync, "pull_and_merge_sources", progressing_pull)
+        monkeypatch.setattr("src.bridge.sync_service.SYNC_LIFECYCLE_HEARTBEAT_S", 0.01)
+
+        svc = SyncService(
+            data_dir=data_dir,
+            source_sync=source_sync,
+            bridge_log=lambda level, message, **fields: None,
+            load_state=lambda: dict(_EMPTY_REGISTRY_STATE),
+            persist_state=lambda state: state,
+            summarize_state=lambda _state: {
+                "activeCount": 0,
+                "pendingCount": 0,
+                "rejectedCount": 0,
+            },
+            ops_state_lock=threading.RLock(),
+            get_security_defaults=lambda: {"github_app_enabled_default": True},
+            task_lifecycle=lifecycle,
+        )
+        svc.update_saved_sync_settings({"enabled": True})
+        try:
+            assert svc.start_sync_task("pull")["started"] is True
+            assert pull_started.wait(5.0) is True
+            # The beat must land after the action is blocked and progressing:
+            # that is the window in which the lease would otherwise reap a
+            # legitimate sync. Stage progress may already have beaten once.
+            beats_before = len(lifecycle.heartbeats)
+            deadline = time.monotonic() + 5.0
+            while len(lifecycle.heartbeats) <= beats_before and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert len(lifecycle.heartbeats) > beats_before
+            assert lifecycle.finished == []
+        finally:
+            release_pull.set()
+            svc.wait_for_sync_tasks(timeout_s=5.0)
+
+    assert lifecycle.heartbeats[0]["runId"].startswith("sync_")
+    assert lifecycle.heartbeats[0]["taskType"] == "sync"
+    assert lifecycle.heartbeats[0]["heartbeat_at"]
+    assert lifecycle.finished and lifecycle.finished[0]["runId"].startswith("sync_")
 
 
 def test_sync_service_push_returns_and_persists_timing() -> None:

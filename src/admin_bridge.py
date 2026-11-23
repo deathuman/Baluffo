@@ -57,15 +57,9 @@ from src.bridge.admin_entrypoint_services import (
 )
 from src.bridge.admin_task_history import AdminTaskHistory
 from src.bridge.admin_task_lifecycle import AdminTaskLifecycle
-from src.bridge.discovery_service import (
-    DiscoveryDeps as _DiscoveryDeps,
-)
-from src.bridge.discovery_service import (
-    DiscoveryPaths as _DiscoveryPaths,
-)
-from src.bridge.discovery_service import (
-    DiscoveryService,
-)
+from src.bridge.discovery_service import DiscoveryDeps as _DiscoveryDeps
+from src.bridge.discovery_service import DiscoveryPaths as _DiscoveryPaths
+from src.bridge.discovery_service import DiscoveryService
 from src.bridge.lifecycle_cleanup import cleanup_orphaned_startup_tasks
 from src.bridge.pipeline_service import PipelineService
 from src.bridge.registry_service import RegistryPaths as _RegistryPaths
@@ -557,7 +551,7 @@ migrate_legacy_task_state_to_lifecycle = _bind_admin_root(
 )
 
 
-def cleanup_stale_startup_tasks() -> dict[str, Any]:
+def cleanup_stale_startup_tasks(*, startup: bool = True) -> dict[str, Any]:
     return cleanup_orphaned_startup_tasks(
         Path(RUNTIME_CONFIG.data_dir).resolve(),
         pid_is_running=pid_is_running,
@@ -565,6 +559,8 @@ def cleanup_stale_startup_tasks() -> dict[str, Any]:
         current_runs=_TASK_LIFECYCLE.get_current_runs,
         orphan_run=_TASK_LIFECYCLE.orphan_run,
         cancel_run=_TASK_LIFECYCLE.cancel_run,
+        sync_compaction_hold=_TASK_LIFECYCLE.sync_compaction_hold,
+        startup=startup,
     )
 
 

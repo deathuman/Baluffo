@@ -1,31 +1,20 @@
 import json
 import threading
-from datetime import datetime
 from pathlib import Path
+from typing import Any
 
+from src.admin_bridge import MAX_HISTORY_ROWS
 from src.bridge.admin_task_lifecycle import AdminTaskLifecycle
-from src.bridge.lifecycle_cleanup import cleanup_orphaned_startup_tasks, reset_admin_task_lifecycle
+from src.bridge.lifecycle_cleanup import reset_admin_task_lifecycle
+from src.bridge.storage_health import storage_compaction_hold_active
 from src.storage import BaluffoStore, TaskRuntimeStore
-
-
-def _save_json(path: Path, payload: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-
-def _load_json_object(path: Path, default: dict[str, object]) -> dict[str, object]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return dict(default)
-    return dict(payload) if isinstance(payload, dict) else dict(default)
-
-
-def _parse_iso(value: object) -> datetime | None:
-    try:
-        return datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
-    except ValueError:
-        return None
+from tests.bridge._lifecycle_reaper_support import (
+    _load_json_object,
+    _parse_iso,
+    _save_json,
+    build_lifecycle,
+)
+from tests.bridge._lifecycle_reaper_support import reap as _reap
 
 
 def test_cleanup_orphaned_startup_tasks_closes_dead_pipeline_discovery(
@@ -56,6 +45,7 @@ def test_cleanup_orphaned_startup_tasks_closes_dead_pipeline_discovery(
                         "runId": "pipeline_1",
                         "taskType": "pipeline",
                         "status": "running",
+                        "ownerKind": "pipeline",
                         "startedAt": "2026-05-07T08:18:43+00:00",
                     },
                     {
@@ -107,7 +97,7 @@ def test_cleanup_orphaned_startup_tasks_closes_dead_pipeline_discovery(
         encoding="utf-8",
     )
 
-    result = cleanup_orphaned_startup_tasks(
+    result = _reap(
         tmp_path,
         pid_is_running=lambda _pid: False,
         now_iso=lambda: fixed_now,
@@ -167,7 +157,7 @@ def test_cleanup_orphaned_startup_tasks_closes_bridge_thread_sync(
         encoding="utf-8",
     )
 
-    result = cleanup_orphaned_startup_tasks(
+    result = _reap(
         tmp_path,
         pid_is_running=lambda _pid: True,
         now_iso=lambda: fixed_now,
@@ -185,6 +175,7 @@ def test_cleanup_orphaned_startup_tasks_closes_bridge_thread_sync(
         "automatic": True,
         "reason": "startup",
         "error": "owner_inactive_without_terminal_report",
+        "orphanReason": "owner_kind_restart",
     }
 
 
@@ -198,7 +189,7 @@ def test_cleanup_orphaned_startup_tasks_closes_service_current_bridge_thread_row
         orphan_calls.append({"runId": run_id, "taskType": task_type, **kwargs})
         return {}
 
-    result = cleanup_orphaned_startup_tasks(
+    result = _reap(
         tmp_path,
         pid_is_running=lambda _pid: True,
         now_iso=lambda: fixed_now,
@@ -226,7 +217,11 @@ def test_cleanup_orphaned_startup_tasks_closes_service_current_bridge_thread_row
             "taskType": "sync",
             "finished_at": fixed_now,
             "terminal_reason": "owner_inactive_without_terminal_report",
-            "summary": {"action": "pull", "error": "owner_inactive_without_terminal_report"},
+            "summary": {
+                "action": "pull",
+                "error": "owner_inactive_without_terminal_report",
+                "orphanReason": "owner_kind_restart",
+            },
             "progress": {
                 "active": False,
                 "phaseKey": "remote_read",
@@ -246,7 +241,7 @@ def test_cleanup_orphaned_startup_tasks_updates_sqlite_authoritative_task_runs(
         runtime = TaskRuntimeStore(store, now_iso=lambda: fixed_now)
         lifecycle = AdminTaskLifecycle(
             lifecycle_path=lambda: lifecycle_path,
-            max_rows=lambda: 240,
+            max_rows=lambda: MAX_HISTORY_ROWS,
             lock=threading.RLock(),
             load_json_object=_load_json_object,
             save_json_atomic=_save_json,
@@ -268,12 +263,13 @@ def test_cleanup_orphaned_startup_tasks_updates_sqlite_authoritative_task_runs(
             {"schemaVersion": 1, "updatedAt": "2026-05-15T01:32:33+02:00", "rows": []},
         )
 
-        result = cleanup_orphaned_startup_tasks(
+        result = _reap(
             tmp_path,
             pid_is_running=lambda _pid: True,
             now_iso=lambda: fixed_now,
             current_runs=lifecycle.get_current_runs,
             orphan_run=lifecycle.orphan_run,
+            sync_compaction_hold=lifecycle.sync_compaction_hold,
         )
 
         assert result["ok"] is True
@@ -333,7 +329,7 @@ def test_cleanup_orphaned_startup_tasks_overwrites_finished_abort_evidence(
         },
     )
 
-    result = cleanup_orphaned_startup_tasks(
+    result = _reap(
         tmp_path,
         pid_is_running=lambda _pid: False,
         now_iso=lambda: fixed_now,
@@ -376,7 +372,7 @@ def test_cleanup_orphaned_startup_tasks_keeps_running_process_owned_task(
         encoding="utf-8",
     )
 
-    result = cleanup_orphaned_startup_tasks(
+    result = _reap(
         tmp_path,
         pid_is_running=lambda _pid: True,
         now_iso=lambda: "2026-05-07T09:00:00+00:00",
@@ -428,7 +424,7 @@ def test_cleanup_orphaned_startup_tasks_reaps_pidless_sqlite_row_with_cold_heart
             {"schemaVersion": 1, "updatedAt": fixed_now, "rows": []},
         )
 
-        result = cleanup_orphaned_startup_tasks(
+        result = _reap(
             tmp_path,
             pid_is_running=lambda _pid: True,
             now_iso=lambda: fixed_now,
@@ -515,3 +511,263 @@ def test_reset_admin_task_lifecycle_resets_runtime_artifacts_and_keeps_runid_his
         str(((discovery_report.get("runtime") or {}).get("lifecycle") or {}).get("owner") or "")
         == "discovery_report"
     )
+
+
+def test_cleanup_without_stale_rows_does_not_rehold_run_finished_mid_tick(
+    tmp_path: Path,
+) -> None:
+    """A fresh row is not stale, so the no-stale path must ask the service for the hold.
+
+    A live run can finish while the tick runs: the entry snapshot still lists it
+    as active, so a hold derived from those rows would re-take a hold the run
+    already released and report it active.
+    """
+    now = "2026-05-15T03:00:00+00:00"
+    lifecycle = build_lifecycle(tmp_path, now_iso=lambda: now)
+
+    def current_runs() -> list[dict[str, Any]]:
+        rows = lifecycle.get_current_runs()
+        # The live owner reports its terminal transition while the tick runs.
+        lifecycle.finish_run(
+            "fetch_live_tick",
+            "fetch",
+            finished_at="2026-05-15T03:00:02+00:00",
+            terminal_reason="completed",
+        )
+        return rows
+
+    lifecycle.start_run(
+        run_id="fetch_live_tick",
+        task_type="fetch",
+        started_at="2026-05-15T02:59:00+00:00",
+        owner_kind="process",
+        owner_pid=456,
+    )
+    assert storage_compaction_hold_active() is True
+
+    result = _reap(
+        tmp_path,
+        pid_is_running=lambda _pid: True,
+        now_iso=lambda: now,
+        current_runs=current_runs,
+        sync_compaction_hold=lifecycle.sync_compaction_hold,
+        startup=False,
+    )
+
+    assert result["orphaned"] == 0
+    assert result["compactionHold"]["hasActiveTask"] is False
+    assert storage_compaction_hold_active() is False
+
+
+def test_cleanup_without_stale_rows_takes_hold_for_run_started_mid_tick(
+    tmp_path: Path,
+) -> None:
+    """The no-stale path must also take the hold for a run that starts mid-tick."""
+    now = "2026-05-15T03:00:00+00:00"
+    lifecycle = build_lifecycle(tmp_path, now_iso=lambda: now)
+
+    def current_runs() -> list[dict[str, Any]]:
+        # The live owner starts its run while the tick is reading the ledger.
+        lifecycle.start_run(
+            run_id="fetch_started_mid_tick",
+            task_type="fetch",
+            started_at="2026-05-15T02:59:00+00:00",
+            owner_kind="process",
+            owner_pid=456,
+            hold_compaction=False,
+        )
+        return []
+
+    assert storage_compaction_hold_active() is False
+    result = _reap(
+        tmp_path,
+        pid_is_running=lambda _pid: True,
+        now_iso=lambda: now,
+        current_runs=current_runs,
+        sync_compaction_hold=lifecycle.sync_compaction_hold,
+        startup=False,
+    )
+
+    assert result["orphaned"] == 0
+    assert result["compactionHold"]["hasActiveTask"] is True
+    assert result["compactionHold"]["activeRunIds"] == ["fetch_started_mid_tick"]
+    assert storage_compaction_hold_active() is True
+
+
+def test_startup_cleanup_resets_active_task_snapshot(tmp_path: Path) -> None:
+    """The startup pass wipes the hot snapshot so a dead task cannot linger."""
+    snapshot_path = tmp_path / "admin-active-task-snapshot.json"
+    _save_json(
+        snapshot_path,
+        {
+            "schemaVersion": 1,
+            "summary": True,
+            "source": "hot-active-snapshot",
+            "snapshotAt": "2026-05-15T02:59:00+00:00",
+            "tasks": [{"runId": "fetch_previous", "taskType": "fetch"}],
+            "count": 1,
+        },
+    )
+
+    _reap(
+        tmp_path,
+        pid_is_running=lambda _pid: True,
+        now_iso=lambda: "2026-05-15T03:00:00+00:00",
+    )
+
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot["snapshotAt"] == ""
+    assert snapshot["tasks"] == []
+    assert snapshot["count"] == 0
+    assert snapshot["source"] == "hot-active-snapshot"
+
+
+def test_cleanup_reports_compaction_hold_read_error_without_losing_reap(
+    tmp_path: Path,
+) -> None:
+    """A hold read failure is carried in the result, not raised over the reap."""
+    fixed_now = "2026-05-15T01:40:00+02:00"
+    _save_json(
+        tmp_path / "admin-task-lifecycle.json",
+        {
+            "schemaVersion": 1,
+            "updatedAt": "2026-05-15T01:32:33+02:00",
+            "rows": [
+                {
+                    "runId": "fetch_stale",
+                    "taskType": "fetch",
+                    "status": "running",
+                    "ownerKind": "process",
+                    "ownerPid": 4321,
+                    "startedAt": "2026-05-15T01:32:33+02:00",
+                }
+            ],
+        },
+    )
+
+    result = _reap(
+        tmp_path,
+        pid_is_running=lambda _pid: False,
+        now_iso=lambda: fixed_now,
+        sync_compaction_hold=lambda: {
+            "hasActiveTask": False,
+            "activeTaskCount": 0,
+            "activeTaskTypes": [],
+            "activeRunIds": [],
+            "held": False,
+            "changed": False,
+            "error": "ledger read failed",
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["orphaned"] == 1
+    assert result["reaped"] == [
+        {
+            "runId": "fetch_stale",
+            "taskType": "fetch",
+            "reason": "owner_pid_dead",
+            "aborted": False,
+        }
+    ]
+    assert result["compactionHold"]["error"] == "ledger read failed"
+    assert result["compactionHold"]["hasActiveTask"] is False
+
+
+def test_tick_keeps_live_sync_and_pipeline_owners(tmp_path: Path) -> None:
+    """A periodic tick judges a long-running in-process owner by its heartbeat."""
+    now = "2026-05-15T03:00:00+00:00"
+    _save_json(
+        tmp_path / "admin-task-lifecycle.json",
+        {
+            "schemaVersion": 1,
+            "updatedAt": now,
+            "rows": [
+                {
+                    "runId": "sync_live",
+                    "taskType": "sync",
+                    "status": "running",
+                    "stage": "pull",
+                    "ownerKind": "bridge_thread",
+                    "startedAt": "2026-05-15T00:00:00+00:00",
+                    "heartbeatAt": "2026-05-15T02:59:30+00:00",
+                    "summary": {"action": "pull"},
+                },
+                {
+                    "runId": "pipeline_live",
+                    "taskType": "pipeline",
+                    "status": "running",
+                    "stage": "starting",
+                    "ownerKind": "pipeline",
+                    "startedAt": "2026-05-15T02:59:00+00:00",
+                    "heartbeatAt": "2026-05-15T02:59:30+00:00",
+                },
+            ],
+        },
+    )
+
+    result = _reap(
+        tmp_path,
+        pid_is_running=lambda _pid: True,
+        now_iso=lambda: now,
+        startup=False,
+    )
+
+    assert result["orphaned"] == 0
+    assert result["reaped"] == []
+    assert storage_compaction_hold_active() is True
+    payload = json.loads((tmp_path / "admin-task-lifecycle.json").read_text(encoding="utf-8"))
+    rows = {row["runId"]: row for row in payload["rows"]}
+    assert rows["sync_live"]["status"] == "running"
+    assert rows["pipeline_live"]["status"] == "running"
+
+
+def test_startup_reaps_previous_process_owners_with_fresh_heartbeats(tmp_path: Path) -> None:
+    """The startup pass still treats in-process owner kinds as restart evidence."""
+    now = "2026-05-15T03:00:00+00:00"
+    _save_json(
+        tmp_path / "admin-task-lifecycle.json",
+        {
+            "schemaVersion": 1,
+            "updatedAt": now,
+            "rows": [
+                {
+                    "runId": "sync_previous",
+                    "taskType": "sync",
+                    "status": "running",
+                    "stage": "pull",
+                    "ownerKind": "bridge_thread",
+                    "startedAt": "2026-05-15T02:59:00+00:00",
+                    "heartbeatAt": "2026-05-15T02:59:30+00:00",
+                    "summary": {"action": "pull"},
+                },
+                {
+                    "runId": "pipeline_previous",
+                    "taskType": "pipeline",
+                    "status": "running",
+                    "stage": "starting",
+                    "ownerKind": "pipeline",
+                    "startedAt": "2026-05-15T02:59:00+00:00",
+                    "heartbeatAt": "2026-05-15T02:59:30+00:00",
+                },
+            ],
+        },
+    )
+
+    result = _reap(
+        tmp_path,
+        pid_is_running=lambda _pid: True,
+        now_iso=lambda: now,
+    )
+
+    assert result["orphaned"] == 2
+    assert {item["runId"] for item in result["reaped"]} == {
+        "sync_previous",
+        "pipeline_previous",
+    }
+    payload = json.loads((tmp_path / "admin-task-lifecycle.json").read_text(encoding="utf-8"))
+    rows = {row["runId"]: row for row in payload["rows"]}
+    assert rows["sync_previous"]["status"] == "orphaned"
+    assert rows["pipeline_previous"]["status"] == "orphaned"
+    assert rows["sync_previous"]["summary"]["orphanReason"] == "owner_kind_restart"
+    assert rows["pipeline_previous"]["summary"]["orphanReason"] == "owner_kind_restart"

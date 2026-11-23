@@ -36,6 +36,14 @@ def _schema_version_int() -> int:
 
 _parse_iso = _shared_parse_iso_from_utils
 
+HEARTBEAT_LEASE_SECONDS = 3600.0
+# Sync rows beat only while the worker reports progress, so a wedged pull or
+# push stops refreshing its heartbeat. Cap the sync lease well below the hour
+# so the stalled row is reaped while a long sync that keeps progressing lives.
+# Keep it well above sync_service.SYNC_LIFECYCLE_HEARTBEAT_S so a progressing
+# sync always refreshes its row between beats.
+SYNC_STALL_CAP_SECONDS = 900.0
+
 
 def _normalize_history_duration(row: dict[str, Any]) -> dict[str, Any]:
     started_at = str(row.get("startedAt") or "").strip()
@@ -76,12 +84,26 @@ def _run_key(row: dict[str, Any]) -> tuple[str, str]:
     )
 
 
+def _owner_pid(row: dict[str, Any]) -> int:
+    """Return the first usable owner pid, preferring ownerPid over the legacy pid."""
+    for key in ("ownerPid", "pid"):
+        try:
+            pid = int(row.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if pid > 0:
+            return pid
+    return 0
+
+
 def _pid_dead(row: dict[str, Any], pid_is_running: Callable[[int], bool]) -> bool:
-    try:
-        pid = int(row.get("ownerPid") or row.get("pid") or 0)
-    except (TypeError, ValueError):
-        pid = 0
+    pid = _owner_pid(row)
     return bool(pid > 0 and not pid_is_running(pid))
+
+
+def _is_ownerless_row(row: dict[str, Any]) -> bool:
+    """True when neither an owner kind nor a pid can reap the row."""
+    return not str(row.get("ownerKind") or "").strip() and _owner_pid(row) <= 0
 
 
 def _terminalize_report(
@@ -185,51 +207,85 @@ def _terminalize_fetch_tasks(
     return True
 
 
-def _row_is_stale_after_restart(
-    row: dict[str, Any], pid_is_running: Callable[[int], bool], *, now_utc: datetime
-) -> bool:
-    owner_kind = str(row.get("ownerKind") or "").strip().lower()
-    if owner_kind in {"pipeline", "bridge_thread"} or _pid_dead(row, pid_is_running):
-        return True
-    return _pidless_row_is_heartbeat_stale(row, now_utc=now_utc)
+def _row_orphan_reason(
+    row: dict[str, Any],
+    pid_is_running: Callable[[int], bool],
+    *,
+    now_utc: datetime,
+    reap_restart_owners: bool,
+) -> str:
+    """Return why an active row's owner lease is no longer valid.
 
+    A restart invalidates in-process owners even if their last heartbeat is
+    fresh, a dead pid invalidates a process owner, and every remaining owner
+    must keep its heartbeat lease alive. The heartbeat lease applies to
+    pid-bearing rows too: a live pid can still belong to a hung or wedged
+    worker that will never write a terminal report.
 
-def _pidless_row_is_heartbeat_stale(
-    row: dict[str, Any], *, now_utc: datetime, max_age_hours: float = 1.0
-) -> bool:
-    """Treat pid-less running rows as stale once their heartbeat goes cold.
-
-    Rows written by older bridges (or pre-migration data) can carry no
-    ownerKind and no ownerPid, so neither the owner-kind allowlist nor the
-    pid check can ever reap them; such rows block task launches forever.
-    If such a row has not heartbeated within max_age_hours, no living
-    worker can still own it: sync workers finish in minutes and only
-    heartbeat at start/end, pipeline wait gates declare children dead
-    after 15-20 minutes of quiet, and control-status heartbeats run on a
-    ~10s cadence. One hour is far above every real cadence while still
-    unblocking the queue within an hour of a crash.
+    The restart rule is startup evidence only: a periodic tick runs in the same
+    process as a live ``bridge_thread``/``pipeline`` owner, so it judges those
+    rows by pid and heartbeat instead.
     """
+    owner_kind = str(row.get("ownerKind") or "").strip().lower()
+    if reap_restart_owners and owner_kind in {"pipeline", "bridge_thread"}:
+        return "owner_kind_restart"
+    if _pid_dead(row, pid_is_running):
+        return "owner_pid_dead"
+    if _row_heartbeat_lease_expired(row, now_utc=now_utc):
+        return "heartbeat_lease_expired"
+    return ""
 
-    if int(row.get("ownerPid") or row.get("pid") or 0) > 0:
-        return False  # pid-bearing rows are the pid check's responsibility
+
+def _row_heartbeat_lease_expired(
+    row: dict[str, Any],
+    *,
+    now_utc: datetime,
+) -> bool:
+    """Treat any active row as stale once its heartbeat lease expires.
+
+    Rows written by older bridges can carry no ownerKind and no ownerPid, so
+    neither the owner-kind allowlist nor the pid check can reap them. A
+    pid-bearing row can also outlive its useful work when the process is hung.
+    If the row has not heartbeated within the lease, no living worker can still
+    own it: fetch/discovery watchers and control-status heartbeats run on a
+    seconds cadence. One hour is far above every real cadence while still
+    unblocking the queue within an hour of a crash.
+
+    A sync row is capped at `SYNC_STALL_CAP_SECONDS` instead of the hour: its
+    heartbeat is progress-gated, so a wedged worker stops beating long before
+    the generic lease would close it.
+
+    A row with neither a heartbeat nor a start time has no lease at all. With no
+    pid either, nothing can ever prove it alive, so it counts as expired. A live
+    pid keeps it active; the dead-pid check runs before this one.
+    """
     started_at = str(row.get("startedAt") or row.get("started_at") or "").strip()
     heartbeat_at = str(row.get("heartbeatAt") or row.get("heartbeat_at") or "").strip()
     last_seen_text = heartbeat_at or started_at
     if not last_seen_text:
-        return False
+        return _owner_pid(row) <= 0
     last_seen = _parse_iso(last_seen_text)
     if last_seen is None:
         return False
-    max_age = timedelta(hours=max_age_hours)
-    return bool((now_utc - last_seen) > max_age)
+    if getattr(last_seen, "tzinfo", None) is None:
+        last_seen = last_seen.replace(tzinfo=UTC)
+    current = (
+        now_utc if getattr(now_utc, "tzinfo", None) is not None else now_utc.replace(tzinfo=UTC)
+    )
+    lease_seconds = HEARTBEAT_LEASE_SECONDS
+    if str(row.get("taskType") or row.get("type") or "").strip().lower() == "sync":
+        lease_seconds = SYNC_STALL_CAP_SECONDS
+    return bool((current - last_seen) > timedelta(seconds=lease_seconds))
 
 
 def _record_stale_row(
     row: dict[str, Any],
     *,
+    reason: str,
     stale_keys: set[tuple[str, str]],
     aborted_keys: set[tuple[str, str]],
     stale_rows_by_key: dict[tuple[str, str], dict[str, Any]],
+    stale_reasons_by_key: dict[tuple[str, str], str],
 ) -> tuple[str, str] | None:
     task_type, run_id = _run_key(row)
     if not task_type or not run_id:
@@ -237,9 +293,38 @@ def _record_stale_row(
     key = (task_type, run_id)
     stale_keys.add(key)
     stale_rows_by_key.setdefault(key, dict(row))
+    stale_reasons_by_key.setdefault(key, reason)
     if row_abort_requested(row):
         aborted_keys.add(key)
     return key
+
+
+def _close_ownerless_stale_parents(
+    *,
+    stale_keys: set[tuple[str, str]],
+    directly_stale_run_ids: set[str],
+    stale_rows_by_key: dict[tuple[str, str], dict[str, Any]],
+    rows_by_run_id: dict[str, dict[str, Any]],
+    aborted_keys: set[tuple[str, str]],
+    stale_reasons_by_key: dict[tuple[str, str], str],
+) -> None:
+    """Close an ownerless parent whose stale child is its only liveness evidence."""
+    for task_type, run_id in sorted(stale_keys):
+        if run_id not in directly_stale_run_ids:
+            continue
+        child_row = stale_rows_by_key[(task_type, run_id)]
+        parent_run_id = str(child_row.get("parentRunId") or "").strip()
+        parent_row = rows_by_run_id.get(parent_run_id)
+        if parent_row is None or not _is_ownerless_row(parent_row):
+            continue
+        _record_stale_row(
+            parent_row,
+            reason="child_owner_stale",
+            stale_keys=stale_keys,
+            aborted_keys=aborted_keys,
+            stale_rows_by_key=stale_rows_by_key,
+            stale_reasons_by_key=stale_reasons_by_key,
+        )
 
 
 def _collect_stale_lifecycle_rows(
@@ -247,40 +332,77 @@ def _collect_stale_lifecycle_rows(
     *,
     pid_is_running: Callable[[int], bool],
     now_utc: datetime,
+    reap_restart_owners: bool,
 ) -> tuple[
     set[tuple[str, str]],
     set[tuple[str, str]],
     dict[tuple[str, str], dict[str, Any]],
+    dict[tuple[str, str], str],
 ]:
     stale_keys: set[tuple[str, str]] = set()
     aborted_keys: set[tuple[str, str]] = set()
     stale_rows_by_key: dict[tuple[str, str], dict[str, Any]] = {}
-    stale_parent_run_ids: set[str] = set()
+    stale_reasons_by_key: dict[tuple[str, str], str] = {}
+    directly_stale_run_ids: set[str] = set()
+    rows_by_run_id: dict[str, dict[str, Any]] = {}
 
     for row in running_rows:
-        if not _row_is_stale_after_restart(row, pid_is_running, now_utc=now_utc):
+        run_id = str(row.get("runId") or row.get("id") or "").strip()
+        if run_id:
+            rows_by_run_id.setdefault(run_id, row)
+        reason = _row_orphan_reason(
+            row,
+            pid_is_running,
+            now_utc=now_utc,
+            reap_restart_owners=reap_restart_owners,
+        )
+        if not reason:
             continue
         key = _record_stale_row(
             row,
+            reason=reason,
             stale_keys=stale_keys,
             aborted_keys=aborted_keys,
             stale_rows_by_key=stale_rows_by_key,
+            stale_reasons_by_key=stale_reasons_by_key,
         )
-        parent_run_id = str(row.get("parentRunId") or "").strip()
-        if key is not None and parent_run_id:
-            stale_parent_run_ids.add(parent_run_id)
+        if key is not None:
+            directly_stale_run_ids.add(key[1])
 
+    # A stale parent orphans its remaining children. Only a parent stale on its
+    # own evidence cascades: one closed because a child was stale may still be
+    # healthy for its other children.
     for row in running_rows:
-        if str(row.get("runId") or row.get("id") or "").strip() not in stale_parent_run_ids:
+        key = _run_key(row)
+        if key in stale_keys:
+            continue
+        parent_run_id = str(row.get("parentRunId") or "").strip()
+        if not parent_run_id or parent_run_id not in directly_stale_run_ids:
             continue
         _record_stale_row(
             row,
+            reason="parent_owner_stale",
             stale_keys=stale_keys,
             aborted_keys=aborted_keys,
             stale_rows_by_key=stale_rows_by_key,
+            stale_reasons_by_key=stale_reasons_by_key,
         )
 
-    return stale_keys, aborted_keys, stale_rows_by_key
+    # A stale child is not evidence about its parent: the parent's own heartbeat
+    # lease closes it, so there is no general child->parent closeout. An ownerless
+    # parent is the exception (no owner kind or pid to reap it); a stale child
+    # closes it, but the closeout stops there because its other children keep
+    # their own liveness evidence. An already-stale parent keeps its first reason.
+    _close_ownerless_stale_parents(
+        stale_keys=stale_keys,
+        directly_stale_run_ids=directly_stale_run_ids,
+        stale_rows_by_key=stale_rows_by_key,
+        rows_by_run_id=rows_by_run_id,
+        aborted_keys=aborted_keys,
+        stale_reasons_by_key=stale_reasons_by_key,
+    )
+
+    return stale_keys, aborted_keys, stale_rows_by_key, stale_reasons_by_key
 
 
 def _clear_stale_task_state(
@@ -309,6 +431,7 @@ def _stale_terminal_kwargs(
     aborted: bool,
     finished_at: str,
     error: str,
+    orphan_reason: str,
 ) -> dict[str, Any]:
     progress = _progress_dict(row.get("progress") or row.get("taskProgress"))
     payload: dict[str, Any] = {
@@ -321,7 +444,11 @@ def _stale_terminal_kwargs(
                 "terminalReason": ABORT_TERMINAL_REASON,
             }
             if aborted
-            else {**_summary_dict(row.get("summary")), "error": error}
+            else {
+                **_summary_dict(row.get("summary")),
+                "error": error,
+                "orphanReason": orphan_reason,
+            }
         ),
     }
     if progress:
@@ -329,100 +456,12 @@ def _stale_terminal_kwargs(
     return payload
 
 
-def _close_stale_lifecycle_callbacks(
-    *,
-    lifecycle_path: Path,
-    stale_keys: set[tuple[str, str]],
-    aborted_keys: set[tuple[str, str]],
-    stale_rows_by_key: dict[tuple[str, str], dict[str, Any]],
-    finished_at: str,
-    error: str,
-    orphan_run: Callable[..., dict[str, Any] | None] | None,
-    cancel_run: Callable[..., dict[str, Any] | None] | None,
-) -> dict[str, Any] | None:
-    if orphan_run is None and cancel_run is None:
-        return None
-    for task_type, run_id in sorted(stale_keys):
-        row = stale_rows_by_key.get((task_type, run_id), {})
-        aborted = (task_type, run_id) in aborted_keys
-        kwargs = _stale_terminal_kwargs(row, aborted=aborted, finished_at=finished_at, error=error)
-        if aborted and cancel_run is not None:
-            cancel_run(run_id, task_type, **kwargs)
-        elif orphan_run is not None:
-            orphan_run(run_id, task_type, **kwargs)
-    return _load_json_object(
-        lifecycle_path,
-        {"schemaVersion": _schema_version_int(), "updatedAt": "", "rows": []},
-    )
-
-
-def _updated_stale_lifecycle_row(
-    row: dict[str, Any],
-    *,
-    aborted: bool,
-    finished_at: str,
-    error: str,
-) -> dict[str, Any]:
-    return {
-        **row,
-        "status": "canceled" if aborted else "orphaned",
-        "finishedAt": finished_at,
-        "terminalReason": ABORT_TERMINAL_REASON if aborted else error,
-        "summary": (
-            {
-                **_summary_dict(row.get("summary")),
-                "status": "canceled",
-                "terminalReason": ABORT_TERMINAL_REASON,
-            }
-            if aborted
-            else {**_summary_dict(row.get("summary")), "error": error}
-        ),
-    }
-
-
-def _write_stale_lifecycle_rows(
-    lifecycle_path: Path,
-    lifecycle_payload: dict[str, Any],
-    *,
-    stale_keys: set[tuple[str, str]],
-    aborted_keys: set[tuple[str, str]],
-    finished_at: str,
-    error: str,
-) -> None:
-    rows = lifecycle_payload.get("rows") if isinstance(lifecycle_payload, dict) else []
-    next_rows: list[dict[str, Any]] = []
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict):
-            continue
-        key = _run_key(row)
-        status = str(row.get("status") or "").strip().lower()
-        if key in stale_keys and status in {"queued", "running"}:
-            next_rows.append(
-                _updated_stale_lifecycle_row(
-                    row,
-                    aborted=key in aborted_keys,
-                    finished_at=finished_at,
-                    error=error,
-                )
-            )
-            continue
-        next_rows.append(dict(row))
-    _write_json(
-        lifecycle_path,
-        {
-            **lifecycle_payload,
-            "schemaVersion": _schema_version_int(),
-            "updatedAt": finished_at,
-            "rows": next_rows,
-        },
-    )
-
-
 def _write_stale_history_rows(
     history_path: Path,
     *,
     stale_keys: set[tuple[str, str]],
     aborted_keys: set[tuple[str, str]],
+    stale_reasons_by_key: dict[tuple[str, str], str],
     finished_at: str,
     error: str,
 ) -> None:
@@ -445,7 +484,11 @@ def _write_stale_history_rows(
                 "terminalReason": ABORT_TERMINAL_REASON,
             }
             if aborted
-            else {**_summary_dict(row.get("summary")), "error": error}
+            else {
+                **_summary_dict(row.get("summary")),
+                "error": error,
+                "orphanReason": stale_reasons_by_key[key],
+            }
         )
         history_changed = True
     if history_changed:
@@ -503,10 +546,26 @@ def cleanup_orphaned_startup_tasks(
     pid_is_running: Callable[[int], bool],
     now_iso: Callable[[], str],
     current_runs: Callable[[], list[dict[str, Any]]] | None = None,
-    orphan_run: Callable[..., dict[str, Any] | None] | None = None,
-    cancel_run: Callable[..., dict[str, Any] | None] | None = None,
+    orphan_run: Callable[..., dict[str, Any] | None],
+    cancel_run: Callable[..., dict[str, Any] | None],
+    sync_compaction_hold: Callable[[], dict[str, Any]],
+    startup: bool = True,
 ) -> dict[str, Any]:
-    """Close stale task rows that cannot survive a desktop bridge restart."""
+    """Close stale task rows whose owner lease is no longer valid.
+
+    Every reap terminalizes through the lifecycle transitions
+    (`AdminTaskLifecycle.orphan_run` and `cancel_run`), so terminal rows are
+    written under the lifecycle service lock and a periodic tick can never
+    rewrite the ledger from the snapshot it read over a live task transition.
+    The returned compaction hold is re-derived by the lifecycle service after
+    the tick, so a live run that finishes mid-tick cannot be re-held from the
+    entry snapshot.
+
+    Startup callers (the default) reset the hot active-task snapshot and may
+    reap in-process owners a restart invalidated. The periodic tick passes
+    ``startup=False``: live writers keep the snapshot current, and a live
+    ``bridge_thread``/``pipeline`` owner belongs to this process.
+    """
 
     root = Path(data_dir).resolve()
     lifecycle_path = root / "admin-task-lifecycle.json"
@@ -518,17 +577,18 @@ def cleanup_orphaned_startup_tasks(
     discovery_report_path = root / "source-discovery-report.json"
     finished_at = str(now_iso() or "")
     error = "owner_inactive_without_terminal_report"
-    _write_json(
-        active_snapshot_path,
-        {
-            "schemaVersion": _schema_version_int(),
-            "summary": True,
-            "source": "hot-active-snapshot",
-            "snapshotAt": "",
-            "tasks": [],
-            "count": 0,
-        },
-    )
+    if startup:
+        _write_json(
+            active_snapshot_path,
+            {
+                "schemaVersion": _schema_version_int(),
+                "summary": True,
+                "source": "hot-active-snapshot",
+                "snapshotAt": "",
+                "tasks": [],
+                "count": 0,
+            },
+        )
 
     lifecycle_payload = _load_json_object(
         lifecycle_path,
@@ -539,39 +599,49 @@ def cleanup_orphaned_startup_tasks(
     if current_runs is not None:
         running_rows.extend(_running_lifecycle_rows({"rows": current_runs()}))
     now_utc = _parse_iso(finished_at) or datetime.now(UTC)
-    stale_keys, aborted_keys, stale_rows_by_key = _collect_stale_lifecycle_rows(
-        running_rows,
-        pid_is_running=pid_is_running,
-        now_utc=now_utc,
+    stale_keys, aborted_keys, stale_rows_by_key, stale_reasons_by_key = (
+        _collect_stale_lifecycle_rows(
+            running_rows,
+            pid_is_running=pid_is_running,
+            now_utc=now_utc,
+            reap_restart_owners=startup,
+        )
     )
-
     if not stale_keys:
-        return {"ok": True, "dataDir": str(root), "orphaned": 0, "clearedTaskState": 0}
+        # Re-derive from the service, not this tick's entry snapshot: a live
+        # run can finish while the tick runs and release the hold.
+        compaction_hold = sync_compaction_hold()
+        return {
+            "ok": True,
+            "dataDir": str(root),
+            "orphaned": 0,
+            "clearedTaskState": 0,
+            "reaped": [],
+            "compactionHold": compaction_hold,
+        }
 
     cleared_task_state = _clear_stale_task_state(task_state_path, task_state, stale_keys)
-    callback_payload = _close_stale_lifecycle_callbacks(
-        lifecycle_path=lifecycle_path,
-        stale_keys=stale_keys,
-        aborted_keys=aborted_keys,
-        stale_rows_by_key=stale_rows_by_key,
-        finished_at=finished_at,
-        error=error,
-        orphan_run=orphan_run,
-        cancel_run=cancel_run,
-    )
-    lifecycle_payload = callback_payload or lifecycle_payload
-    _write_stale_lifecycle_rows(
-        lifecycle_path,
-        lifecycle_payload,
-        stale_keys=stale_keys,
-        aborted_keys=aborted_keys,
-        finished_at=finished_at,
-        error=error,
-    )
+    # Terminalize under the lifecycle service lock: each transition writes the
+    # ledger, so a heartbeat or terminal report that lands during a tick stays.
+    for task_type, run_id in sorted(stale_keys):
+        row = stale_rows_by_key[(task_type, run_id)]
+        aborted = (task_type, run_id) in aborted_keys
+        kwargs = _stale_terminal_kwargs(
+            row,
+            aborted=aborted,
+            finished_at=finished_at,
+            error=error,
+            orphan_reason=stale_reasons_by_key[(task_type, run_id)],
+        )
+        if aborted:
+            cancel_run(run_id, task_type, **kwargs)
+        else:
+            orphan_run(run_id, task_type, **kwargs)
     _write_stale_history_rows(
         history_path,
         stale_keys=stale_keys,
         aborted_keys=aborted_keys,
+        stale_reasons_by_key=stale_reasons_by_key,
         finished_at=finished_at,
         error=error,
     )
@@ -584,12 +654,25 @@ def cleanup_orphaned_startup_tasks(
         fetch_report_path=fetch_report_path,
         fetch_tasks_path=fetch_tasks_path,
     )
+    # The transitions already synced the hold; read the service's fresh
+    # derivation instead of re-deriving it from the entry snapshot.
+    compaction_hold = sync_compaction_hold()
 
     return {
         "ok": True,
         "dataDir": str(root),
         "orphaned": len(stale_keys),
         "clearedTaskState": cleared_task_state,
+        "reaped": [
+            {
+                "runId": run_id,
+                "taskType": task_type,
+                "reason": stale_reasons_by_key[(task_type, run_id)],
+                "aborted": (task_type, run_id) in aborted_keys,
+            }
+            for task_type, run_id in sorted(stale_keys)
+        ],
+        "compactionHold": compaction_hold,
     }
 
 

@@ -11,6 +11,7 @@ from typing import Any, Protocol, cast
 from src.bridge import startup_work_budget
 from src.bridge.fetch_report_summary import FETCH_REPORT_SUMMARY_FILE_NAME
 from src.bridge.job_availability_service import refresh_priority_manifest_in_background
+from src.bridge.lifecycle_reaper import start_lifecycle_reaper
 from src.shared.fetch_report_identity import fetch_report_identity
 from src.source_registry_io import (
     cleanup_runtime_evidence_journals,
@@ -121,6 +122,7 @@ class _AdminTaskRuntimeRoot(Protocol):
     start_sync_task: Callable[..., JsonObject]
     _set_sync_status: Callable[..., None]
     bridge_log: Callable[..., Any]
+    cleanup_stale_startup_tasks: Callable[..., JsonObject]
     SYNC_LIVE_TASK_PATH: Any
     SCHEMA_VERSION: int
     append_run_history: Callable[..., Any]
@@ -328,6 +330,12 @@ def on_bridge_started(*, root_mod: Any) -> JsonObject:
         lambda: root_mod.admin_entrypoint_services_mod.get_pipeline_schedule_service(
             root_mod=root_mod
         ).start_background_polling(),
+    )
+    start_lifecycle_reaper(
+        cleanup=lambda: root_mod.cleanup_stale_startup_tasks(startup=False),
+        on_error=lambda exc: root_mod.bridge_log(
+            "warn", "lifecycle_reaper_tick_failed", error=str(exc)
+        ),
     )
     return {
         "compactionHold": compaction_hold,

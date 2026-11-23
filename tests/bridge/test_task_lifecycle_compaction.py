@@ -207,6 +207,7 @@ def test_lifecycle_generic_rows_drop_nested_hot_payloads_but_keep_scalar_evidenc
         "discovery",
         finished_at="2026-05-06T17:11:00+00:00",
         terminal_reason="probe_failed",
+        allow_terminal_override=True,
     )
 
     row = json.loads(lifecycle_path.read_text(encoding="utf-8"))["rows"][0]

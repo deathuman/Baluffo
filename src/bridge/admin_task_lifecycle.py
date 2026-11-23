@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import threading
 from collections.abc import Callable
@@ -11,7 +12,7 @@ from typing import Any, cast
 from src.bridge import storage_health as storage_health_mod
 from src.bridge import storage_reclaim_triggers
 from src.bridge.storage_task_rows import STORAGE_TASK_TYPES
-from src.bridge.task_lifecycle import TaskLifecycleService
+from src.bridge.task_lifecycle import TERMINAL_STATUSES, TaskLifecycleService
 from src.storage.task_runtime import TaskRuntimeStore
 
 
@@ -99,13 +100,29 @@ class AdminTaskLifecycle:
     def _authority_mode(self, runtime_store: TaskRuntimeStore, surface: str) -> str:
         return str(runtime_store.store.get_authority_modes().get(surface) or "json").strip().lower()
 
-    def _rollback_surface(self, runtime_store: TaskRuntimeStore, surface: str, reason: str) -> None:
-        runtime_store.store.set_authority_mode(surface, "json", reason=reason)
+    def _rollback_surface(
+        self,
+        runtime_store: TaskRuntimeStore,
+        surface: str,
+        *,
+        message: str,
+    ) -> None:
+        """Attempt the JSON rollback and record its one read-failure diagnostic.
+
+        A failed rollback must not escape: the caller still returns its JSON
+        fallback, and the read failure is the diagnostic either way.
+        """
+        code = f"{surface}_sqlite_read_failed"
+        detail = message.strip() or f"{surface} SQLite read failed"
+        try:
+            runtime_store.store.set_authority_mode(surface, "json", reason=code)
+        except (AttributeError, RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
+            detail = f"{detail}; rollback failed: {exc}"
         self._record_diagnostic(
             surface=surface,
-            code=reason,
+            code=code,
             ok=False,
-            message=f"{surface} read authority rolled back to JSON",
+            message=detail,
         )
 
     def _read_task_rows(
@@ -133,13 +150,7 @@ class AdminTaskLifecycle:
         try:
             sqlite_rows = sqlite_reader(runtime_store)
         except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            self._rollback_surface(runtime_store, surface, f"{surface}_sqlite_read_failed")
-            self._record_diagnostic(
-                surface=surface,
-                code=f"{surface}_sqlite_read_failed",
-                ok=False,
-                message=str(exc),
-            )
+            self._rollback_surface(runtime_store, surface, message=str(exc))
             return json_rows()
         return sqlite_rows
 
@@ -261,8 +272,16 @@ class AdminTaskLifecycle:
         # arrives too late to stop it. Storage rows that own the gate pass False.
         if hold_compaction:
             self._hold_compaction()
-        result = self._get_service().start_run(**kwargs)
-        self._sync_compaction_hold()
+        try:
+            result = self._get_service().start_run(**kwargs)
+        except Exception:
+            # Release the hold on a failed start. Re-derive it from the ledger,
+            # but never let a hold-sync error replace the write failure. A failed
+            # re-derive is ignored; the next transition retries.
+            if hold_compaction:
+                with contextlib.suppress(Exception):
+                    self._sync_compaction_hold()
+            raise
         return result
 
     def heartbeat_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any] | None:
@@ -288,6 +307,11 @@ class AdminTaskLifecycle:
 
     def orphan_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
         result = self._get_service().orphan_run(run_id, task_type, **kwargs)
+        self._sync_compaction_hold()
+        return result
+
+    def repair_terminal_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        result = self._get_service().repair_terminal_run(run_id, task_type, **kwargs)
         self._sync_compaction_hold()
         return result
 
@@ -336,13 +360,7 @@ class AdminTaskLifecycle:
         try:
             return runtime_store.task_events(run_id=run_id, task_type=task_type, limit=limit)
         except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
-            self._rollback_surface(runtime_store, "taskEvents", "taskEvents_sqlite_read_failed")
-            self._record_diagnostic(
-                surface="taskEvents",
-                code="taskEvents_sqlite_read_failed",
-                ok=False,
-                message=str(exc),
-            )
+            self._rollback_surface(runtime_store, "taskEvents", message=str(exc))
             return []
 
     def reconcile_from_legacy(self, **kwargs: Any) -> list[dict[str, Any]]:
@@ -379,6 +397,20 @@ class AdminTaskLifecycle:
         # lifecycle_cleanup reaps owner_kind="bridge_thread" rows on every
         # restart, which is correct because a mirrored history entry without a
         # finishedAt only represents a worker the current process spawned.
+        existing = next(
+            (
+                item
+                for item in self.rows()
+                if str(item.get("runId") or "").strip() == run_id
+                and str(item.get("taskType") or "").strip().lower() == task_type
+            ),
+            None,
+        )
+        if (
+            existing is not None
+            and str(existing.get("status") or "").strip().lower() in TERMINAL_STATUSES
+        ):
+            return
         self.start_run(
             run_id=run_id,
             task_type=task_type,

@@ -306,16 +306,7 @@ class OpsApiTaskStateMixin(OpsApiState):
             parent_run_id = str(row.get("parentRunId") or "").strip()
             if parent_task_type == "pipeline":
                 parent_stage = parent_stage_by_run_id.get(parent_run_id, "")
-                if not parent_stage and row_abort_requested(row):
-                    diagnostics.append(
-                        {
-                            "code": "pipeline_child_parent_inactive_after_abort",
-                            "taskType": task_type,
-                            "runId": run_id,
-                            "parentRunId": parent_run_id,
-                        }
-                    )
-                elif not parent_stage or parent_stage != task_type:
+                if parent_stage and parent_stage != task_type:
                     diagnostics.append(
                         {
                             "code": "pipeline_child_stage_mismatch",
@@ -326,6 +317,15 @@ class OpsApiTaskStateMixin(OpsApiState):
                         }
                     )
                     continue
+                if not parent_stage and row_abort_requested(row):
+                    diagnostics.append(
+                        {
+                            "code": "pipeline_child_parent_inactive_after_abort",
+                            "taskType": task_type,
+                            "runId": run_id,
+                            "parentRunId": parent_run_id,
+                        }
+                    )
             route_row = {**row, "active": True, "finishedAt": ""}
             route_row = _enrich_active_row_for_type(
                 route_row,
@@ -434,16 +434,7 @@ class OpsApiTaskStateMixin(OpsApiState):
             parent_run_id = str(row.get("parentRunId") or "").strip()
             if parent_task_type == "pipeline":
                 parent_stage = parent_stage_by_run_id.get(parent_run_id, "")
-                if not parent_stage and row_abort_requested(row):
-                    diagnostics.append(
-                        {
-                            "code": "pipeline_child_parent_inactive_after_abort",
-                            "taskType": task_type,
-                            "runId": run_id,
-                            "parentRunId": parent_run_id,
-                        }
-                    )
-                elif not parent_stage or parent_stage != task_type:
+                if parent_stage and parent_stage != task_type:
                     diagnostics.append(
                         {
                             "code": "pipeline_child_stage_mismatch",
@@ -454,6 +445,15 @@ class OpsApiTaskStateMixin(OpsApiState):
                         }
                     )
                     continue
+                if not parent_stage and row_abort_requested(row):
+                    diagnostics.append(
+                        {
+                            "code": "pipeline_child_parent_inactive_after_abort",
+                            "taskType": task_type,
+                            "runId": run_id,
+                            "parentRunId": parent_run_id,
+                        }
+                    )
             route_row = {
                 **row,
                 "id": run_id,

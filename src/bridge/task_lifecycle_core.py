@@ -28,6 +28,24 @@ _LedgerSignature = tuple[int, int, int, int]
 _LedgerCacheKey = tuple[str, _LedgerSignature, int]
 
 
+def _trim_lifecycle_rows(rows: list[dict[str, Any]], max_rows: int) -> list[dict[str, Any]]:
+    """Keep every non-terminal row and only trim the oldest terminal rows.
+
+    Active rows are live state: dropping one would hide the run from Current
+    Runs, release the compaction hold, and make abort or watcher closeout lose
+    the run. Non-terminal rows therefore override the cap when they alone
+    exceed it; terminal rows fill the remaining budget. Rows are expected in
+    chronological order, so the last terminal rows are the newest.
+    """
+    terminal_flags = [_clean_text(row.get("status")).lower() in TERMINAL_STATUSES for row in rows]
+    terminal_budget = max(0, max_rows - (len(rows) - sum(terminal_flags)))
+    terminal_indexes = [index for index, terminal in enumerate(terminal_flags) if terminal]
+    keep_terminal = set(terminal_indexes[-terminal_budget:]) if terminal_budget else set()
+    return [
+        row for index, row in enumerate(rows) if not terminal_flags[index] or index in keep_terminal
+    ]
+
+
 def _ledger_signature(path: Path) -> _LedgerSignature | None:
     try:
         stat = path.stat()
@@ -54,7 +72,9 @@ class TaskLifecycleState:
     def _load_rows_locked(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
-    def _save_rows_locked(self, rows: list[dict[str, Any]]) -> None:
+    def _save_rows_locked(
+        self, rows: list[dict[str, Any]], *, allow_terminal_override: bool = False
+    ) -> None:
         raise NotImplementedError
 
     def _write_rows_json_locked(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -86,7 +106,7 @@ class TaskLifecycleCoreMixin(TaskLifecycleState):
             else []
         )
         rows.sort(key=lambda row: _clean_text(row.get("startedAt") or row.get("finishedAt")))
-        trimmed = rows[-self._max_rows :]
+        trimmed = _trim_lifecycle_rows(rows, self._max_rows)
         self._register_rows_cache(trimmed)
         return trimmed
 
@@ -106,14 +126,16 @@ class TaskLifecycleCoreMixin(TaskLifecycleState):
         self._rows_cache_key = (str(self._path), signature, self._max_rows)
         self._rows_cache = tuple(dict(row) for row in rows)
 
-    def _save_rows_locked(self, rows: list[dict[str, Any]]) -> None:
+    def _save_rows_locked(
+        self, rows: list[dict[str, Any]], *, allow_terminal_override: bool = False
+    ) -> None:
         trimmed = self._write_rows_json_locked(rows)
-        self._mirror_rows_to_storage(trimmed)
+        self._mirror_rows_to_storage(trimmed, allow_terminal_override=allow_terminal_override)
 
     def _write_rows_json_locked(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         rows = [self._normalize_row(row) for row in rows if isinstance(row, dict)]
         rows.sort(key=lambda row: _clean_text(row.get("startedAt") or row.get("finishedAt")))
-        trimmed = rows[-self._max_rows :]
+        trimmed = _trim_lifecycle_rows(rows, self._max_rows)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._save_json_atomic(
             self._path,
@@ -284,7 +306,9 @@ class TaskLifecycleCoreMixin(TaskLifecycleState):
             details={"rowCount": len(json_projection)},
         )
 
-    def _mirror_rows_to_storage(self, rows: list[dict[str, Any]]) -> None:
+    def _mirror_rows_to_storage(
+        self, rows: list[dict[str, Any]], *, allow_terminal_override: bool = False
+    ) -> None:
         runtime_store = self._runtime_store()
         if runtime_store is None:
             return
@@ -299,10 +323,16 @@ class TaskLifecycleCoreMixin(TaskLifecycleState):
             # keeps the same rows with a single commit.
             upsert_many = getattr(runtime_store, "upsert_task_runs", None)
             if callable(upsert_many):
-                upsert_many(rows)
+                if allow_terminal_override:
+                    upsert_many(rows, allow_terminal_override=True)
+                else:
+                    upsert_many(rows)
             else:
                 for row in rows:
-                    runtime_store.upsert_task_run(row)
+                    if allow_terminal_override:
+                        runtime_store.upsert_task_run(row, allow_terminal_override=True)
+                    else:
+                        runtime_store.upsert_task_run(row)
             self._compare_storage_projection(runtime_store, rows)
         except (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError) as exc:
             self._rollback_task_runs_to_json(

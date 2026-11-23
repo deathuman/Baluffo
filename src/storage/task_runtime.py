@@ -104,11 +104,16 @@ ON CONFLICT(run_id) DO UPDATE SET
     heartbeat_at = excluded.heartbeat_at,
     terminal_reason = excluded.terminal_reason,
     owner_kind = excluded.owner_kind
-WHERE NOT (task_runs.status = 'canceled' AND excluded.status <> 'canceled')
+WHERE ? = 1 OR NOT (
+    task_runs.status IN ('succeeded', 'failed', 'canceled', 'orphaned')
+    AND task_runs.terminal_reason <> 'event_only'
+)
 """
 
 
-def _task_run_upsert_params(record: Mapping[str, Any]) -> tuple[Any, ...]:
+def _task_run_upsert_params(
+    record: Mapping[str, Any], *, allow_terminal_override: bool = False
+) -> tuple[Any, ...]:
     return (
         record["run_id"],
         record["task_type"],
@@ -127,6 +132,7 @@ def _task_run_upsert_params(record: Mapping[str, Any]) -> tuple[Any, ...]:
         _clean_text(record.get("heartbeat_at")),
         _clean_text(record.get("terminal_reason")),
         _clean_text(record.get("owner_kind")),
+        1 if allow_terminal_override else 0,
     )
 
 
@@ -346,18 +352,21 @@ class TaskRuntimeStore:
         self.event_limit = max(1, int(event_limit or 1))
         self.sync_row_limit = max(1, int(sync_row_limit or 1))
 
-    def upsert_task_run(self, entry: Mapping[str, Any]) -> dict[str, Any]:
+    def upsert_task_run(
+        self, entry: Mapping[str, Any], *, allow_terminal_override: bool = False
+    ) -> dict[str, Any]:
         record = _task_record_from_entry(entry, now_iso=self._now_iso)
         if not record["run_id"] or not record["task_type"]:
             raise ValueError("task run requires runId and taskType")
         current = self._task_record(record["run_id"], record["task_type"])
         if (
             current is not None
-            and current["status"] == "canceled"
-            and record["status"] != "canceled"
+            and not allow_terminal_override
+            and current["status"] in TERMINAL_STATUSES
+            and _clean_text(current.get("terminal_reason")) != "event_only"
         ):
             return _task_route_row(current, active=False)
-        self._write_task_record(record)
+        self._write_task_record(record, allow_terminal_override=allow_terminal_override)
         active = record["status"] in ACTIVE_STATUSES
         return _task_route_row(
             {
@@ -418,9 +427,15 @@ class TaskRuntimeStore:
         summary: Mapping[str, Any] | None = None,
         progress: Mapping[str, Any] | None = None,
         error: str = "",
+        allow_terminal_override: bool = False,
     ) -> dict[str, Any]:
         current = self._task_record(run_id, task_type) or {}
-        if current and current.get("status") == "canceled" and _task_status(status) != "canceled":
+        if (
+            current
+            and not allow_terminal_override
+            and current.get("status") in TERMINAL_STATUSES
+            and _clean_text(current.get("terminal_reason")) != "event_only"
+        ):
             return _task_route_row(current, active=False)
         record = _task_record_from_entry(
             {
@@ -446,7 +461,7 @@ class TaskRuntimeStore:
             },
             now_iso=self._now_iso,
         )
-        self._write_task_record(record)
+        self._write_task_record(record, allow_terminal_override=allow_terminal_override)
         return _task_route_row(
             {
                 **record,
@@ -692,24 +707,34 @@ class TaskRuntimeStore:
         )
         return None if not rows else _task_record_from_sql(rows[0])
 
-    def _write_task_record(self, record: Mapping[str, Any]) -> None:
+    def _write_task_record(
+        self, record: Mapping[str, Any], *, allow_terminal_override: bool = False
+    ) -> None:
         self.store.write(
-            lambda conn: conn.execute(_TASK_RUN_UPSERT_SQL, _task_run_upsert_params(record))
+            lambda conn: conn.execute(
+                _TASK_RUN_UPSERT_SQL,
+                _task_run_upsert_params(record, allow_terminal_override=allow_terminal_override),
+            )
         )
 
-    def upsert_task_runs(self, entries: list[Mapping[str, Any]]) -> None:
+    def upsert_task_runs(
+        self, entries: list[Mapping[str, Any]], *, allow_terminal_override: bool = False
+    ) -> None:
         """Mirror many lifecycle rows in one commit.
 
         Same rows and same canceled-is-terminal guard as repeated
         `upsert_task_run()` calls, but one `BaluffoStore.write()` transaction.
-        Callers that need the route projection read it back separately.
+        The explicit repair override is only for an operator repair that has
+        already been authorized at the lifecycle layer.
         """
         params: list[tuple[Any, ...]] = []
         for entry in entries:
             record = _task_record_from_entry(entry, now_iso=self._now_iso)
             if not record["run_id"] or not record["task_type"]:
                 raise ValueError("task run requires runId and taskType")
-            params.append(_task_run_upsert_params(record))
+            params.append(
+                _task_run_upsert_params(record, allow_terminal_override=allow_terminal_override)
+            )
         if not params:
             return
         self.store.write(lambda conn: conn.executemany(_TASK_RUN_UPSERT_SQL, params))

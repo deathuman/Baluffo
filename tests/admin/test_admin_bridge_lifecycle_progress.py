@@ -434,3 +434,79 @@ def test_task_state_keeps_aborting_pipeline_child_when_parent_is_inactive() -> N
         str(item.get("code") or "") == "pipeline_child_parent_inactive_after_abort"
         for item in summary_payload.get("diagnostics") or []
     )
+
+
+def test_task_state_keeps_healthy_pipeline_child_when_parent_is_terminal() -> None:
+    """A terminal legacy parent must not hide its still-running child."""
+    started_at = admin_bridge.now_iso()
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_LIFECYCLE_PATH,
+        {"schemaVersion": 1, "updatedAt": "", "rows": []},
+    )
+    admin_bridge.bridge_runtime_state.PIPELINE_STATUS.update(
+        {
+            "active": False,
+            "runId": "pipeline_legacy_terminal_1",
+            "stage": "completed",
+            "startedAt": started_at,
+            "finishedAt": started_at,
+            "progress": {
+                "currentStep": 3,
+                "totalSteps": 3,
+                "percent": 100,
+                "label": "Pipeline completed",
+            },
+        }
+    )
+    try:
+        admin_bridge.start_lifecycle_run(
+            run_id="pipeline_legacy_terminal_1",
+            task_type="pipeline",
+            started_at=started_at,
+            stage="fetch",
+            owner_kind="",
+            summary={"stage": "fetch"},
+        )
+        admin_bridge.start_lifecycle_run(
+            run_id="fetch_healthy_child_1",
+            task_type="fetch",
+            started_at=started_at,
+            stage="fetch",
+            owner_kind="pipeline",
+            parent_run_id="pipeline_legacy_terminal_1",
+            parent_task_type="pipeline",
+            progress=active_progress("fetch", "Fetching jobs", {"completedTasks": 10}),
+            summary={"sourceCount": 100},
+        )
+        admin_bridge.finish_lifecycle_run(
+            "pipeline_legacy_terminal_1",
+            "pipeline",
+            finished_at=started_at,
+            terminal_reason="child_owner_stale",
+            summary={"orphanReason": "child_owner_stale"},
+        )
+
+        api = admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG)
+        full_payload = api.get_current_task_state_payload()
+        summary_payload = api.get_current_task_state_summary_payload()
+    finally:
+        admin_bridge.bridge_runtime_state.PIPELINE_STATUS.update(
+            {
+                "active": False,
+                "runId": "",
+                "stage": "idle",
+                "startedAt": "",
+                "finishedAt": "",
+                "progress": {
+                    "currentStep": 0,
+                    "totalSteps": 3,
+                    "percent": 0,
+                    "label": "Idle",
+                },
+            }
+        )
+
+    assert {str(row.get("taskType") or "") for row in full_payload.get("tasks") or []} == {"fetch"}
+    assert {str(row.get("taskType") or "") for row in summary_payload.get("tasks") or []} == {
+        "fetch"
+    }

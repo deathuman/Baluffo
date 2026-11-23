@@ -100,6 +100,15 @@ def _clear_baluffo_runtime_env_each_test() -> Generator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _stop_lifecycle_reaper_each_test() -> Generator[None]:
+    from src.bridge.lifecycle_reaper import stop_lifecycle_reaper
+
+    stop_lifecycle_reaper()
+    yield
+    stop_lifecycle_reaper()
+
+
+@pytest.fixture(autouse=True)
 def _reset_storage_compaction_hold_each_test() -> Generator[None]:
     """Start every test with background VACUUMs unheld.
 

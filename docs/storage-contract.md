@@ -146,7 +146,11 @@ WAL checkpoint and VACUUM scheduling is threshold-driven and asynchronous:
   transition (`start_run`, `finish_run`, `fail_run`, `cancel_run`, `orphan_run`),
   and `admin_task_runtime.on_bridge_started` seeds it from the ledger before the
   startup steps, so a task that was already running when the bridge started is
-  covered. That seed is the first startup step (`compaction_hold_seed`); its
+  covered. The startup and periodic heartbeat/owner-lease reaper re-derive the
+  hold after orphaning stale active rows through the lifecycle transitions, which
+  write under the lifecycle lock, so a crashed task cannot keep VACUUMs held and
+  a tick cannot rewrite the ledger over a live transition. That
+  seed is the first startup step (`compaction_hold_seed`); its
   `desktop_bridge_startup_step_finished` row carries `seededFromActiveTask`,
   `held`, `activeTaskTypes`, and `activeRunIds`, so a launch-time held rebuild is
   visible in the startup journal as well as in `/ops/storage-health`. While held,
@@ -492,7 +496,7 @@ Rollback triggers include failed migration, failed `quick_check` or integrity ch
 
 Milestone 3 cutover is complete for `taskRuns`, `taskEvents`, and `syncRuns`: new stores seed those authority modes as `sqlite`, while projection mismatches or SQLite read/write failures persistently roll the affected surface back to `json`.
 
-Every lifecycle save mirrors the bounded `taskRuns` projection into SQLite in **one transaction** (`TaskRuntimeStore.upsert_task_runs`), not one commit per row. The projection is bounded by `task_row_limit` (240), so per-row commits cost a full WAL commit each — ~90 ms apiece on a mature runtime database, which made a single lifecycle transition take ~15 s and held the bridge's `startup_sync_schedule` startup step for that long. The batched upsert keeps the same rows and the same canceled-is-terminal guard (in the `ON CONFLICT` update predicate) with one commit; the parity comparison still runs against the JSON projection afterwards.
+Every lifecycle save mirrors the bounded `taskRuns` projection into SQLite in **one transaction** (`TaskRuntimeStore.upsert_task_runs`), not one commit per row. The projection is bounded by `task_row_limit` (240), so per-row commits cost a full WAL commit each — ~90 ms apiece on a mature runtime database, which made a single lifecycle transition take ~15 s and held the bridge's `startup_sync_schedule` startup step for that long. The batched upsert keeps the same rows and the same terminal-immutability guard (in the `ON CONFLICT` update predicate, with the synthetic `event_only` placeholder exception) with one commit; the parity comparison still runs against the JSON projection afterwards. An explicit lifecycle terminal repair or `start_run(restart=True)` passes an override through the batch so a terminal row can be corrected or replaced without leaving the projection on the old state.
 
 Milestone 4 cutover is complete for `sourceRuns`: new stores seed `sourceRuns=sqlite`, terminal bridge-started fetch reports mirror source rows into `source_runs`, and source-run read/write/parity failures persistently roll the surface back to `json`.
 

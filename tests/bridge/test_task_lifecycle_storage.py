@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.bridge.lifecycle_cleanup import _row_is_stale_after_restart
+from src.bridge.lifecycle_cleanup import _row_orphan_reason
 from src.storage import BaluffoStore
 from src.storage.task_runtime import TaskRuntimeStore
 from tests.helpers.task_lifecycle import (
@@ -51,6 +51,77 @@ def test_lifecycle_shadow_writes_task_runs_when_storage_mode_enabled(tmp_path: P
         )
 
         assert service.get_recent_runs() == runtime.recent_task_runs()
+        assert diagnostics[-1]["code"] == "task_runs_projection_match"
+        assert diagnostics[-1]["ok"] is True
+
+
+def test_lifecycle_terminal_repair_keeps_sqlite_projection_in_sync(tmp_path: Path) -> None:
+    diagnostics: list[dict[str, Any]] = []
+    with BaluffoStore(tmp_path / "data") as store:
+        store.set_authority_mode("taskRuns", "shadow", reason="test-shadow")
+        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
+        service = task_lifecycle_service(
+            lifecycle_file(tmp_path),
+            task_runtime_store=lambda: runtime,
+            record_storage_diagnostic=lambda **fields: diagnostics.append(dict(fields)),
+        )
+
+        service.start_run(
+            run_id="fetch_repair",
+            task_type="fetch",
+            started_at="2026-05-06T18:00:00+00:00",
+        )
+        service.cancel_run(
+            "fetch_repair",
+            "fetch",
+            finished_at="2026-05-06T18:05:00+00:00",
+            terminal_reason="user_abort_requested",
+        )
+        service.repair_terminal_run(
+            "fetch_repair",
+            "fetch",
+            status="succeeded",
+            finished_at="2026-05-06T18:06:00+00:00",
+            terminal_reason="operator_repair",
+            repair_reason="test_repair",
+        )
+
+        assert service.get_recent_runs() == runtime.recent_task_runs()
+        assert diagnostics[-1]["code"] == "task_runs_projection_match"
+        assert diagnostics[-1]["ok"] is True
+
+
+def test_lifecycle_terminal_restart_keeps_sqlite_projection_in_sync(tmp_path: Path) -> None:
+    diagnostics: list[dict[str, Any]] = []
+    with BaluffoStore(tmp_path / "data") as store:
+        store.set_authority_mode("taskRuns", "shadow", reason="test-shadow")
+        runtime = TaskRuntimeStore(store, now_iso=lambda: "2026-05-06T19:00:00+00:00")
+        service = task_lifecycle_service(
+            lifecycle_file(tmp_path),
+            task_runtime_store=lambda: runtime,
+            record_storage_diagnostic=lambda **fields: diagnostics.append(dict(fields)),
+        )
+
+        service.start_run(
+            run_id="fetch_restart",
+            task_type="fetch",
+            started_at="2026-05-06T18:00:00+00:00",
+        )
+        service.fail_run(
+            "fetch_restart",
+            "fetch",
+            finished_at="2026-05-06T18:05:00+00:00",
+            terminal_reason="launch_failed",
+        )
+        service.start_run(
+            run_id="fetch_restart",
+            task_type="fetch",
+            started_at="2026-05-06T18:10:00+00:00",
+            stage="restart",
+            restart=True,
+        )
+
+        assert service.get_current_runs() == runtime.current_task_runs()
         assert diagnostics[-1]["code"] == "task_runs_projection_match"
         assert diagnostics[-1]["ok"] is True
 
@@ -294,8 +365,12 @@ def test_mirror_history_row_without_finished_at_is_reaped_as_stale_after_restart
             None,
         )
         assert row is not None
-        assert _row_is_stale_after_restart(
-            row,
-            lambda pid: False,
-            now_utc=datetime(2026, 5, 6, 19, 5, tzinfo=UTC),
+        assert (
+            _row_orphan_reason(
+                row,
+                lambda pid: False,
+                now_utc=datetime(2026, 5, 6, 19, 5, tzinfo=UTC),
+                reap_restart_owners=True,
+            )
+            == "owner_kind_restart"
         )

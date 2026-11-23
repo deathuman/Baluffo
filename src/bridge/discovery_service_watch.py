@@ -8,6 +8,7 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused discovery servic
 
 from __future__ import annotations
 
+import sqlite3
 import time
 from typing import Any
 
@@ -16,7 +17,8 @@ from src.bridge.discovery_service_core import DiscoveryServiceState
 from src.bridge.task_abort_evidence import row_abort_requested
 from src.shared.json_shapes import as_json_object
 
-_DISCOVERY_WATCH_ERRORS = (RuntimeError, OSError, TypeError, ValueError)
+DISCOVERY_WATCH_RETRY_S = 1.0
+_DISCOVERY_WATCH_ERRORS = (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError)
 
 
 class DiscoveryServiceWatchMixin(DiscoveryServiceState):
@@ -85,6 +87,20 @@ class DiscoveryServiceWatchMixin(DiscoveryServiceState):
         summary = (row or {}).get("summary")
         return str((summary if isinstance(summary, dict) else {}).get("abortReason") or "")
 
+    def _log_lifecycle_watch_retry(self, *, run_id: str, stage: str, error: Exception) -> None:
+        try:
+            self._deps.bridge_log(
+                "warn",
+                "task_lifecycle_watch_retry",
+                taskType="discovery",
+                runId=run_id,
+                stage=stage,
+                error=str(error),
+                retryInMs=int(DISCOVERY_WATCH_RETRY_S * 1000),
+            )
+        except _DISCOVERY_WATCH_ERRORS:
+            return
+
     def _wait_for_discovery_watch_report(
         self,
         *,
@@ -94,46 +110,56 @@ class DiscoveryServiceWatchMixin(DiscoveryServiceState):
         started_dt: Any,
     ) -> dict[str, Any] | None:
         while True:
-            lifecycle_row = self._deps.get_lifecycle_row(run_id, "discovery")
-            report = self._deps.normalize_discovery_report_contract(self._read_discovery_report())
-            if self._discovery_report_finished_since(
-                report, started_dt
-            ) and self._discovery_report_finalization_settled(report):
-                return report
-            if not self._deps.pid_is_running(pid):
-                if row_abort_requested(lifecycle_row):
-                    self._cancel_discovery_run(
-                        run_id=run_id,
-                        reason=self._abort_reason_from_row(lifecycle_row),
+            stage = "watch"
+            try:
+                lifecycle_row = self._deps.get_lifecycle_row(run_id, "discovery")
+                report = self._deps.normalize_discovery_report_contract(
+                    self._read_discovery_report()
+                )
+                if self._discovery_report_finished_since(
+                    report, started_dt
+                ) and self._discovery_report_finalization_settled(report):
+                    return report
+                if not self._deps.pid_is_running(pid):
+                    stage = "terminal_closeout"
+                    if row_abort_requested(lifecycle_row):
+                        self._cancel_discovery_run(
+                            run_id=run_id,
+                            reason=self._abort_reason_from_row(lifecycle_row),
+                        )
+                        return None
+                    failed_at = self._deps.now_iso()
+                    self._deps.fail_lifecycle_run(
+                        run_id,
+                        "discovery",
+                        finished_at=failed_at,
+                        terminal_reason="owner_inactive_without_terminal_report",
+                        summary={"error": "owner_inactive_without_terminal_report"},
+                    )
+                    self._repair_terminal_discovery_report_from_row(
+                        {
+                            "runId": run_id,
+                            "taskType": "discovery",
+                            "status": "failed",
+                            "finishedAt": failed_at,
+                            "terminalReason": "owner_inactive_without_terminal_report",
+                            "summary": {"error": "owner_inactive_without_terminal_report"},
+                        },
+                        report,
+                        finished_at=failed_at,
                     )
                     return None
-                failed_at = self._deps.now_iso()
-                self._deps.fail_lifecycle_run(
-                    run_id,
-                    "discovery",
-                    finished_at=failed_at,
-                    terminal_reason="owner_inactive_without_terminal_report",
-                    summary={"error": "owner_inactive_without_terminal_report"},
+                stage = "heartbeat"
+                self._refresh_discovery_task_heartbeat(
+                    run_id=run_id,
+                    pid=pid,
+                    started_at=started_at,
+                    report=report,
                 )
-                self._repair_terminal_discovery_report_from_row(
-                    {
-                        "runId": run_id,
-                        "taskType": "discovery",
-                        "status": "failed",
-                        "finishedAt": failed_at,
-                        "terminalReason": "owner_inactive_without_terminal_report",
-                        "summary": {"error": "owner_inactive_without_terminal_report"},
-                    },
-                    report,
-                    finished_at=failed_at,
-                )
-                return None
-            self._refresh_discovery_task_heartbeat(
-                run_id=run_id,
-                pid=pid,
-                started_at=started_at,
-                report=report,
-            )
+            except _DISCOVERY_WATCH_ERRORS as exc:
+                self._log_lifecycle_watch_retry(run_id=run_id, stage=stage, error=exc)
+                time.sleep(DISCOVERY_WATCH_RETRY_S)
+                continue
             time.sleep(0.8)
 
     def _handle_discovery_completion_auto_sync(
@@ -193,26 +219,37 @@ class DiscoveryServiceWatchMixin(DiscoveryServiceState):
         )
         if report is None:
             return
-        try:
-            finished_at = str(report.get("finishedAt") or "")
-            finished_dt = self._deps.parse_iso(finished_at)
-            if not finished_dt or finished_dt < started_dt:
-                return
-            lifecycle_row = self._deps.get_lifecycle_row(run_id, "discovery")
-            if row_abort_requested(lifecycle_row):
-                self._cancel_discovery_run(
+        finished_at = ""
+        summary: dict[str, Any] = {}
+        while True:
+            stage = "finalize"
+            try:
+                finished_at = str(report.get("finishedAt") or "")
+                finished_dt = self._deps.parse_iso(finished_at)
+                if not finished_dt or finished_dt < started_dt:
+                    return
+                lifecycle_row = self._deps.get_lifecycle_row(run_id, "discovery")
+                if row_abort_requested(lifecycle_row):
+                    stage = "abort_closeout"
+                    self._cancel_discovery_run(
+                        run_id=run_id,
+                        finished_at=self._deps.now_iso(),
+                        reason=self._abort_reason_from_row(lifecycle_row),
+                    )
+                    return
+                summary = as_json_object(report.get("summary"))
+                self._finalize_discovery_run(
                     run_id=run_id,
-                    finished_at=self._deps.now_iso(),
-                    reason=self._abort_reason_from_row(lifecycle_row),
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    summary=summary,
                 )
-                return
-            summary = as_json_object(report.get("summary"))
-            self._finalize_discovery_run(
-                run_id=run_id,
-                started_at=started_at,
-                finished_at=finished_at,
-                summary=summary,
-            )
+                break
+            except _DISCOVERY_WATCH_ERRORS as exc:
+                self._log_lifecycle_watch_retry(run_id=run_id, stage=stage, error=exc)
+                time.sleep(DISCOVERY_WATCH_RETRY_S)
+                continue
+        try:
             self._handle_discovery_completion_auto_sync(
                 run_id=run_id,
                 finished_at=finished_at,

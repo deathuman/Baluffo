@@ -10,6 +10,7 @@ No coordinator import.
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 import time
 from collections.abc import Callable
@@ -31,6 +32,8 @@ FETCH_LAUNCH_FAILURE_REPORT_NAME = "jobs-fetch-report.launch-failure.json"
 
 FETCH_LIFECYCLE_HEARTBEAT_MIN_INTERVAL_S = 30.0
 FETCH_LIFECYCLE_RUNNING_SOURCE_NAME_LIMIT = 3
+FETCH_LIFECYCLE_WATCH_RETRY_S = 2.0
+_FETCH_WATCH_ERRORS = (RuntimeError, OSError, sqlite3.Error, TypeError, ValueError)
 
 _FETCH_LIFECYCLE_PROGRESS_KEYS = {
     "active",
@@ -336,14 +339,12 @@ def heartbeat_fetch_lifecycle_from_tasks(
     )
     phase = str(progress_payload.get("phaseKey") or progress_payload.get("phase") or "")
     stage = phase.strip() or "running"
+    now_mono = time.monotonic()
     if heartbeat_gate is not None:
-        now_mono = time.monotonic()
         last_stage = str(heartbeat_gate.get("stage") or "")
         last_mono = float(heartbeat_gate.get("monotonic") or 0.0)
         if last_stage == stage and (now_mono - last_mono) < max(1.0, float(min_interval_s or 0.0)):
             return
-        heartbeat_gate["stage"] = stage
-        heartbeat_gate["monotonic"] = now_mono
     ctx.heartbeat_lifecycle_run(
         run_id,
         "fetch",
@@ -352,6 +353,30 @@ def heartbeat_fetch_lifecycle_from_tasks(
         progress=progress_payload or None,
         summary=summary_payload or None,
     )
+    if heartbeat_gate is not None:
+        heartbeat_gate["stage"] = stage
+        heartbeat_gate["monotonic"] = now_mono
+
+
+def _log_fetch_watch_retry(
+    ctx: FetchLifecycleContext,
+    *,
+    run_id: str,
+    stage: str,
+    error: Exception,
+) -> None:
+    try:
+        ctx.bridge_log(
+            "warn",
+            "task_lifecycle_watch_retry",
+            taskType="fetch",
+            runId=run_id,
+            stage=stage,
+            error=str(error),
+            retryInMs=int(FETCH_LIFECYCLE_WATCH_RETRY_S * 1000),
+        )
+    except _FETCH_WATCH_ERRORS:
+        return
 
 
 def watch_fetch_lifecycle(
@@ -362,49 +387,69 @@ def watch_fetch_lifecycle(
 ) -> None:
     heartbeat_gate: dict[str, Any] = {}
     while True:
-        lifecycle_row = ctx.get_lifecycle_row(run_id, "fetch")
-        if close_fetch_lifecycle_from_report(ctx, run_id=run_id):
-            return
-        if ctx.pid_is_running(int(pid)):
-            heartbeat_fetch_lifecycle_from_tasks(
-                ctx,
-                run_id=run_id,
-                heartbeat_gate=heartbeat_gate,
-            )
-            time.sleep(2.0)
+        stage = "watch"
+        try:
+            lifecycle_row = ctx.get_lifecycle_row(run_id, "fetch")
+            stage = "closeout"
+            if close_fetch_lifecycle_from_report(ctx, run_id=run_id):
+                return
+            if ctx.pid_is_running(int(pid)):
+                stage = "heartbeat"
+                heartbeat_fetch_lifecycle_from_tasks(
+                    ctx,
+                    run_id=run_id,
+                    heartbeat_gate=heartbeat_gate,
+                )
+                time.sleep(2.0)
+                continue
+            if row_abort_requested(lifecycle_row):
+                stage = "abort_closeout"
+                finished_at = ctx.now_iso()
+                repaired = repair_fetch_canceled_evidence(
+                    report_path=ctx.jobs_fetch_report,
+                    tasks_path=ctx.jobs_fetch_tasks,
+                    run_id=run_id,
+                    finished_at=finished_at,
+                    load_json_object=ctx.load_json_object,
+                    save_json_atomic=ctx.save_json_atomic,
+                    normalize_report=ctx.normalize_fetch_report_contract,
+                    reason=str((lifecycle_row or {}).get("summary", {}).get("abortReason") or ""),
+                    overwrite_finished=True,
+                )
+                ctx.cancel_lifecycle_run(
+                    run_id,
+                    "fetch",
+                    finished_at=str(repaired.get("finishedAt") or finished_at),
+                    terminal_reason=ABORT_TERMINAL_REASON,
+                    summary=dict(repaired.get("summary") or {}),
+                    progress=dict(repaired.get("taskProgress") or {}),
+                )
+                return
+            break
+        except _FETCH_WATCH_ERRORS as exc:
+            _log_fetch_watch_retry(ctx, run_id=run_id, stage=stage, error=exc)
+            time.sleep(FETCH_LIFECYCLE_WATCH_RETRY_S)
             continue
-        if row_abort_requested(lifecycle_row):
-            finished_at = ctx.now_iso()
-            repaired = repair_fetch_canceled_evidence(
-                report_path=ctx.jobs_fetch_report,
-                tasks_path=ctx.jobs_fetch_tasks,
-                run_id=run_id,
-                finished_at=finished_at,
-                load_json_object=ctx.load_json_object,
-                save_json_atomic=ctx.save_json_atomic,
-                normalize_report=ctx.normalize_fetch_report_contract,
-                reason=str((lifecycle_row or {}).get("summary", {}).get("abortReason") or ""),
-                overwrite_finished=True,
-            )
-            ctx.cancel_lifecycle_run(
+    while True:
+        try:
+            if close_fetch_lifecycle_from_report(ctx, run_id=run_id):
+                return
+            ctx.fail_lifecycle_run(
                 run_id,
                 "fetch",
-                finished_at=str(repaired.get("finishedAt") or finished_at),
-                terminal_reason=ABORT_TERMINAL_REASON,
-                summary=dict(repaired.get("summary") or {}),
-                progress=dict(repaired.get("taskProgress") or {}),
+                finished_at=ctx.now_iso(),
+                terminal_reason="owner_inactive_without_terminal_report",
+                summary={"error": "owner_inactive_without_terminal_report"},
             )
             return
-        break
-    if close_fetch_lifecycle_from_report(ctx, run_id=run_id):
-        return
-    ctx.fail_lifecycle_run(
-        run_id,
-        "fetch",
-        finished_at=ctx.now_iso(),
-        terminal_reason="owner_inactive_without_terminal_report",
-        summary={"error": "owner_inactive_without_terminal_report"},
-    )
+        except _FETCH_WATCH_ERRORS as exc:
+            _log_fetch_watch_retry(
+                ctx,
+                run_id=run_id,
+                stage="terminal_closeout",
+                error=exc,
+            )
+            time.sleep(FETCH_LIFECYCLE_WATCH_RETRY_S)
 
 
 def start_fetch_lifecycle_watch(
