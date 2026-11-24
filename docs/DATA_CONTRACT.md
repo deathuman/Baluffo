@@ -635,7 +635,40 @@ When `sourceRegistry=json`, registry reads use the runtime active/pending file w
 it exists, then the tracked seed file, then the in-code fallback. When
 `sourceRegistry=sqlite`, registry GET routes, POST mutations, and tombstone
 load/save publish through generation-scoped SQLite rows first and regenerate the
-active/pending/rejected/tombstone exports afterward. Seed files are never mutated.
+active/pending/rejected/tombstone exports afterward. Reconciliation retry entries are capped
+at a fixed count (currently 25) and an uncompressed serialized byte budget
+(currently 2 MiB) that bounds the queued snapshots' parse cost: recording a new
+entry evicts the oldest queued run other than the one being recorded and logs
+`discovery_registry_reconciliation_retry_evicted` with
+`reason: "queue_limit"` or `reason: "byte_budget"`. The entry being recorded is
+never evicted, so a single report larger than the budget is still kept, because
+it is the repair the queue exists for, and is logged as
+`discovery_registry_reconciliation_retry_oversized` with `entryBytes` and
+`budgetBytes`.
+Each entry stores only the report fields the drain reads: timestamps, the
+approved/live summary counts, the projected `runtime.autoApproval` and
+`runtime.registryFinalization` fields, `runtime.lifecycle.heartbeatAt`, and the
+candidates the drain may act on. Every kept candidate is stored whole: the drain
+stages a cap-deferred row into the active registry, so the stored copy must carry
+every field that row writes. The file is gzip-backed (`_GZIP_REGISTRY_NAMES`), so
+the queue is written to `source-registry-reconcile-retry.json.gz` and read back
+through the same `save_json_atomic`/`load_json_object` path; the byte budget is
+measured on the uncompressed serialized payload (the drain's parse cost), not the
+gzip size. A candidate already stored verbatim in its pending row is not
+duplicated: the entry lists its identity in `pendingCandidateIds` and the drain
+restores the candidate copy from `pendingRows`, so report-side evidence such as
+a probe error still reaches auto-approval. A
+drain charges only the entries it reaches, and writes their attempt counters and
+resolved removals once, after the pass, so a queue of large snapshots is not
+reparsed and rewritten per retry. The small
+`source-registry-reconcile-retry-inflight.json` marker names the entry being
+reconciled: a bridge that dies mid-reconcile charges that one entry
+on the next drain instead of spending an attempt on every queued report, and the
+marker is cleared when the drain completes. Entries a crashed drain had already
+finished keep the counts the last completed pass wrote, and a retry re-recorded
+with a newer snapshot while the pass runs is neither charged nor cleared: the
+drain only writes entries it read. Unrelated candidates, `failures` and task
+progress are not persisted. Seed files are never mutated.
 Direct CLI JSON writes or JSON/SQLite drift trigger JSON fallback/rollback rather
 than silent SQLite overwrite.
 

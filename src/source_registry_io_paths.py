@@ -49,6 +49,9 @@ _GZIP_REGISTRY_NAMES = {
     "source-registry-rejected.json",
     "source-registry-tombstones.json",
     "source-registry-metadata.json",
+    # A failed reconciliation's retry entry can carry hundreds of cap-deferred
+    # candidates; gzip keeps the queue small without changing a stored row.
+    "source-registry-reconcile-retry.json",
 }
 
 _JSON_JOURNAL_SCHEMA_VERSION = 1
