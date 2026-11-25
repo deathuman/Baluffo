@@ -50,6 +50,7 @@ from src.ship.desktop_update_shared import (
 )
 from src.ship.desktop_update_state import (
     ARTIFACT_VERIFY_BUDGET_MS,
+    INSTALL_WRITE_PHASE,
     _cached_release_notes,
     _cached_release_notes_history,
     _failure_result,
@@ -293,6 +294,7 @@ class DesktopUpdateService:
                     **dict(status),
                     "lastError": str(error or "").strip(),
                 },
+                phase=INSTALL_WRITE_PHASE,
             )
         )
         return _as_dict(_failure_result(status=next_status, error=error, error_code=error_code))
@@ -314,6 +316,7 @@ class DesktopUpdateService:
             save_status(
                 self.paths,
                 _retryable_install_status(status, zip_path=zip_path, error=error),
+                phase=INSTALL_WRITE_PHASE,
             )
         )
         return _as_dict(
@@ -1099,6 +1102,7 @@ class DesktopUpdateService:
                         "downloadedZipPath": str(zip_path),
                         "rollbackPath": str(rollback_path),
                     },
+                    phase=INSTALL_WRITE_PHASE,
                 )
                 verified_status = load_status(self.paths, current_version=self.current_version())
                 verified_status, credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(

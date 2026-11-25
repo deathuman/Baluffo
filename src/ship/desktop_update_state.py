@@ -48,6 +48,7 @@ def _as_str_dict(value: Any) -> dict[str, str]:
 def default_status_payload(*, current_version: str | None = None) -> dict[str, Any]:
     return {
         "schemaVersion": DESKTOP_UPDATE_SCHEMA_VERSION,
+        "revision": 0,
         "channel": DESKTOP_UPDATE_CHANNEL,
         "currentVersion": str(current_version or get_app_version()),
         "latestVersion": "",
@@ -220,6 +221,61 @@ def _reconcile_repair_status(
     return next_status, True
 
 
+# `install-state.json` is written by the bridge poller and the updater helper in
+# separate processes. Every save records the revision it read; when the file has
+# moved on and the incoming write is not the install phase, the install phase
+# fields on disk win, so a stale download-progress write cannot lower
+# `installState` or erase an installer completion.
+STATUS_WRITE_PHASE = "status"
+INSTALL_WRITE_PHASE = "install"
+_INSTALL_PHASE_STATES = frozenset(
+    {"handoff_requested", "waiting_for_exit", "installing", "verifying", "installed"}
+)
+_INSTALL_OWNED_KEYS = (
+    "installState",
+    "installStage",
+    "installStageLabel",
+    "helperUpdatedAt",
+    "downloadState",
+    "downloadedBytes",
+    "totalBytes",
+    "downloadPercent",
+    "downloadedZipPath",
+    "lastError",
+)
+
+
+def _install_phase_active(status: dict[str, Any]) -> bool:
+    """True when an install, not a download, owns the status."""
+    state = str(status.get("installState") or "").strip().lower()
+    if state in _INSTALL_PHASE_STATES:
+        return True
+    return state == "failed" and str(status.get("installStage") or "").strip().lower() not in {
+        "",
+        "idle",
+    }
+
+
+def _phase_guarded_status(
+    *,
+    current: dict[str, Any],
+    payload: dict[str, Any],
+    phase: str,
+) -> dict[str, Any]:
+    """Keep the install block on disk when a stale non-install write arrives."""
+    next_status = dict(payload)
+    if phase == INSTALL_WRITE_PHASE:
+        return next_status
+    if int(payload.get("revision") or 0) >= int(current.get("revision") or 0):
+        return next_status
+    if not _install_phase_active(current):
+        return next_status
+    for key in _INSTALL_OWNED_KEYS:
+        if key in current:
+            next_status[key] = current[key]
+    return next_status
+
+
 def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, Any]:
     status = default_status_payload(current_version=current_version)
     status.update(_as_dict(read_json(paths.install_state_path, {})))
@@ -239,9 +295,24 @@ def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, 
     return dict(status)
 
 
-def save_status(paths: Any, payload: dict[str, Any]) -> dict[str, Any]:
-    write_json_atomic(paths.install_state_path, payload)
-    return payload
+def save_status(
+    paths: Any,
+    payload: dict[str, Any],
+    *,
+    phase: str = STATUS_WRITE_PHASE,
+) -> dict[str, Any]:
+    """Persist a status snapshot without regressing an install already on disk.
+
+    A payload carries the ``revision`` it was read at. When the file has moved
+    on and the write is not the install phase, the install block from disk is
+    kept, so a stale download-progress write cannot lower ``installState`` or
+    overwrite a completion the updater helper already wrote.
+    """
+    current = _as_dict(read_json(paths.install_state_path, {}))
+    next_status = _phase_guarded_status(current=current, payload=payload, phase=phase)
+    next_status["revision"] = int(current.get("revision") or 0) + 1
+    write_json_atomic(paths.install_state_path, next_status)
+    return next_status
 
 
 def updater_install_requested(data_dir: Path) -> bool:

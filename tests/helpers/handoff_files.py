@@ -53,7 +53,7 @@ def write_credible_handoff_request(
     du.save_status(
         paths,
         {
-            **du.default_status_payload(current_version="0.1.0"),
+            **du.load_status(paths, current_version="0.1.0"),
             "installState": str(install_state),
         },
     )

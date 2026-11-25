@@ -46,6 +46,9 @@ from src.ship.desktop_update_shared import (
     terminal_install_stage as _terminal_install_stage,
 )
 from src.ship.desktop_update_state import (
+    INSTALL_WRITE_PHASE,
+)
+from src.ship.desktop_update_state import (
     clear_handoff_request as _clear_handoff_request,
 )
 from src.ship.desktop_update_state import (
@@ -147,7 +150,7 @@ def _save_install_stage_status(
         }
     )
     status.update(extra)
-    return _as_dict(save_status(paths, status))
+    return _as_dict(save_status(paths, status, phase=INSTALL_WRITE_PHASE))
 
 
 def _wait_for_launcher_exit(plan: dict[str, Any], *, timeout_s: float = 120.0) -> None:
@@ -634,7 +637,7 @@ def save_repair_failure_status(paths: DesktopUpdatePaths, error: str) -> dict[st
             "helperUpdatedAt": iso_now(),
         }
     )
-    return _as_dict(save_status(paths, status))
+    return _as_dict(save_status(paths, status, phase=INSTALL_WRITE_PHASE))
 
 
 _REPAIR_OPERATIONAL_ERRORS = (

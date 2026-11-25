@@ -361,8 +361,6 @@ def test_get_status_payload_preserves_handoff_state_with_downloaded_zip() -> Non
         service = du.DesktopUpdateService(
             data_dir=data_dir, current_version_getter=lambda: "0.1.31"
         )
-        session_root = Path(tmp) / "session"
-        _write_credible_handoff_request(paths, session_root, install_state="handoff_requested")
         zip_path = paths.downloads_dir / "baluffo-portable-0.1.32.zip"
         zip_path.parent.mkdir(parents=True, exist_ok=True)
         zip_path.write_text("portable-zip", encoding="utf-8")
@@ -406,6 +404,9 @@ def test_get_status_payload_preserves_handoff_state_with_downloaded_zip() -> Non
                 "rollbackPath": str(paths.rollback_root / "0.1.32-20260419-222621"),
             },
         )
+        # The handoff write follows the ready status and keeps its download fields.
+        session_root = Path(tmp) / "session"
+        _write_credible_handoff_request(paths, session_root, install_state="handoff_requested")
 
         with mock.patch.object(update_state, "pid_is_running", return_value=True):
             status = service.get_status_payload()
