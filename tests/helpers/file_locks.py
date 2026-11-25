@@ -15,7 +15,12 @@ def _byte_lock(handle: Any, *, release: bool = False) -> None:
     if os.name == "nt":
         import msvcrt
 
-        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK if release else msvcrt.LK_NBLCK, 1)
+        # The platform C module's stubs vary with the mypy version and platform;
+        # the lock modules cast it for the same reason.
+        msvcrt_mod = cast(Any, msvcrt)
+        msvcrt_mod.locking(
+            handle.fileno(), msvcrt_mod.LK_UNLCK if release else msvcrt_mod.LK_NBLCK, 1
+        )
         return
     import fcntl
 
