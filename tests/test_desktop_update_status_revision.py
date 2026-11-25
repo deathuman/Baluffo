@@ -12,6 +12,7 @@ import pytest
 from src.ship import desktop_update_state as update_state
 from src.ship.desktop_update_state import INSTALL_WRITE_PHASE
 from tests.helpers.desktop_update_leaf_namespace import du
+from tests.helpers.file_locks import held_lock_file
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -193,6 +194,26 @@ def test_save_status_holds_the_write_lock_across_its_write() -> None:
             status = du.save_status(paths, du.default_status_payload(current_version="0.1.0"))
 
         assert status["revision"] == 1
+
+
+def test_save_status_does_not_seed_a_held_lock_file() -> None:
+    """A held lock file must make the save wait, not write into the range.
+
+    Seeding the file before locking writes byte 0 into the holder's range, which
+    Windows rejects with ``PermissionError`` instead of the expected timeout.
+    """
+    with workspace_tmpdir("desktop-update") as tmp:
+        paths = _paths(tmp)
+        state_path = paths.install_state_path
+        lock_path = state_path.with_name(
+            f"{state_path.name}{update_state._INSTALL_STATE_LOCK_SUFFIX}"
+        )
+        with (
+            mock.patch.object(update_state, "_INSTALL_STATE_LOCK_TIMEOUT_S", 0.2),
+            held_lock_file(lock_path),
+            pytest.raises(TimeoutError),
+        ):
+            du.save_status(paths, du.default_status_payload(current_version="0.1.0"))
 
 
 def test_stale_status_write_cannot_erase_a_repair_failure() -> None:

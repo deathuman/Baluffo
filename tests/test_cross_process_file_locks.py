@@ -9,12 +9,9 @@ holder's byte range, and Windows reported ``PermissionError`` on the flush.
 from __future__ import annotations
 
 import multiprocessing
-import os
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 import pytest
 
@@ -28,6 +25,7 @@ from src.source_registry_write_lock import (
     SourceRegistryWriteLockTimeout,
     source_registry_write_lock,
 )
+from tests.helpers.file_locks import held_lock_file
 
 
 class _LockSpec(NamedTuple):
@@ -44,35 +42,6 @@ _LOCKS = {
     ),
     "feed": _LockSpec(jobs_feed_reconciliation_lock, ReconciliationLockTimeout, _LOCK_FILENAME),
 }
-
-
-def _byte_lock(handle: Any, *, release: bool = False) -> None:
-    """Hold or release byte 0, the byte range the lock modules use."""
-    handle.seek(0)
-    if os.name == "nt":
-        import msvcrt
-
-        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK if release else msvcrt.LK_NBLCK, 1)
-        return
-    import fcntl
-
-    fcntl_mod = cast(Any, fcntl)
-    fcntl_mod.flock(
-        handle.fileno(),
-        fcntl_mod.LOCK_UN if release else fcntl_mod.LOCK_EX | fcntl_mod.LOCK_NB,
-    )
-
-
-@contextmanager
-def _held_lock_file(lock_path: Path) -> Iterator[None]:
-    """Hold the lock file empty and locked, as a competing process would."""
-    handle = lock_path.open("a+b")
-    _byte_lock(handle)
-    try:
-        yield
-    finally:
-        _byte_lock(handle, release=True)
-        handle.close()
 
 
 def _writer(kind: str, data_dir: str, barrier: Any, writes: int) -> None:
@@ -133,7 +102,7 @@ def test_lock_does_not_seed_a_held_lock_file(kind: str, tmp_path: Path) -> None:
     Windows rejects with ``PermissionError`` instead of the expected timeout.
     """
     spec = _LOCKS[kind]
-    with _held_lock_file(tmp_path / spec.filename):
+    with held_lock_file(tmp_path / spec.filename):
         with pytest.raises(spec.timeout):
             with spec.open_lock(tmp_path, timeout_s=0.2):
                 pass
