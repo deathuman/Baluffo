@@ -8,6 +8,7 @@ from importlib import reload as _reload
 from pathlib import Path
 from typing import Any
 
+from src import source_registry_authority_apply as _authority_apply
 from src import source_registry_auto_approval as _auto
 from src import source_registry_canonicalize as _canonicalize
 from src import source_registry_identity as _identity
@@ -153,6 +154,7 @@ def apply_discovery_auto_approval(
     auto_approve_enabled: bool,
     approval_state_path: Path | None = None,
     record_approval_state: bool = True,
+    blocked_ids: set[str] | None = None,
     now_iso_fn: Callable[[], str] | None = now_iso,
 ) -> tuple[dict[str, list[dict[str, Any]]], int]:
     return _auto.apply_discovery_auto_approval(
@@ -161,7 +163,45 @@ def apply_discovery_auto_approval(
         auto_approve_enabled=auto_approve_enabled,
         approval_state_path=Path(approval_state_path or APPROVAL_STATE_PATH),
         record_approval_state=record_approval_state,
+        blocked_ids=blocked_ids,
         now_iso_fn=now_iso_fn,
+    )
+
+
+def apply_discovery_approval_to_authority(
+    *,
+    active_path: Path,
+    pending_path: Path,
+    rejected_path: Path,
+    pending_rows: list[dict[str, Any]],
+    report: dict[str, Any],
+    auto_approve_enabled: bool,
+    tombstones: dict[str, dict[str, Any]],
+    approval_state_path: Path,
+    now_iso_fn: Callable[[], str],
+    merge_audit: dict[str, int] | None = None,
+    merge_conflicts: list[dict[str, Any]] | None = None,
+    active_merge_conflicts: list[dict[str, Any]] | None = None,
+    lock_timeout_s: float | None = None,
+) -> tuple[dict[str, list[dict[str, Any]]], int, str]:
+    _sync_io_paths()
+    return _authority_apply.apply_discovery_approval_to_authority(
+        active_path=active_path,
+        pending_path=pending_path,
+        rejected_path=rejected_path,
+        pending_rows=pending_rows,
+        report=report,
+        auto_approve_enabled=auto_approve_enabled,
+        tombstones=tombstones,
+        approval_state_path=approval_state_path,
+        now_iso_fn=now_iso_fn,
+        save_registry_state_atomic=_io.save_registry_state_atomic,
+        save_json_atomic=_io.save_json_atomic,
+        load_json_array=_io.load_json_array,
+        merge_audit=merge_audit,
+        merge_conflicts=merge_conflicts,
+        active_merge_conflicts=active_merge_conflicts,
+        lock_timeout_s=lock_timeout_s,
     )
 
 
@@ -169,5 +209,15 @@ __all__ = [
     name
     for name in globals()
     if not name.startswith("__")
-    and name not in {"_auto", "_canonicalize", "_identity", "_io", "_policy", "_reload", "_state"}
+    and name
+    not in {
+        "_authority_apply",
+        "_auto",
+        "_canonicalize",
+        "_identity",
+        "_io",
+        "_policy",
+        "_reload",
+        "_state",
+    }
 ]

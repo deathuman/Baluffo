@@ -232,7 +232,9 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
         "Writing discovery registry artifacts: "
         f"pending={len(pending_rows)}, candidates={len(report_candidates)}."
     )
-    orchestrator.save_json_atomic(source_registry_module.PENDING_PATH, pending_rows)
+    # Pending rows are staged through the registry authority below, not written
+    # straight to the JSON file: under `sourceRegistry=sqlite` the file is only
+    # an export, and a whole-file write would drop concurrent admin edits.
     orchestrator.save_json_atomic(
         source_registry_module.DISCOVERY_CANDIDATES_PATH, report_candidates
     )
@@ -384,57 +386,62 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
         "candidateCount": len(report_candidates),
         "activeCount": len(state.active),
         "rejectedCount": len(state.rejected),
+        # The bridge can recover a crashed publish from this snapshot. It is
+        # removed before the terminal report so a successful run never looks
+        # like a failed publish.
+        "pendingRows": pending_rows,
     }
     report["runtime"] = runtime_payload
 
     DiscoveryReportSchema.model_validate(report)
     final_report_path = orchestrator._discovery_report_write_path()
     orchestrator.save_json_atomic(final_report_path, report)
+    runtime_payload["registryFinalization"].pop("pendingRows", None)
 
-    registry_state = {
-        "active": state.active,
-        "pending": pending_rows,
-        "rejected": state.rejected,
-    }
-    if auto_approve_enabled:
-        try:
-            orchestrator.emit_log("Applying discovery auto-approval.")
-            registry_state, auto_approved = orchestrator.apply_discovery_auto_approval(
-                registry_state,
-                report,
+    published_state: dict[str, list[dict[str, Any]]] | None = None
+    registry_authority = ""
+    registry_publish_error = ""
+    merge_audit: dict[str, int] = {}
+    merge_conflicts: list[dict[str, Any]] = []
+    active_merge_conflicts: list[dict[str, Any]] = []
+    try:
+        orchestrator.emit_log(
+            "Applying discovery auto-approval."
+            if auto_approve_enabled
+            else "Staging discovery pending rows through the registry authority."
+        )
+        published_state, auto_approved, registry_authority = (
+            orchestrator.apply_discovery_approval_to_authority(
+                active_path=source_registry_module.ACTIVE_PATH,
+                pending_path=source_registry_module.PENDING_PATH,
+                rejected_path=source_registry_module.REJECTED_PATH,
+                pending_rows=pending_rows,
+                report=report,
                 auto_approve_enabled=auto_approve_enabled,
+                tombstones=state.tombstones,
                 approval_state_path=orchestrator.DEFAULT_APPROVAL_STATE_PATH,
                 now_iso_fn=now_iso,
+                merge_audit=merge_audit,
+                merge_conflicts=merge_conflicts,
+                active_merge_conflicts=active_merge_conflicts,
             )
-            if auto_approved > 0:
-                source_registry_module.save_registry_state_atomic(
-                    source_registry_module.ACTIVE_PATH,
-                    source_registry_module.PENDING_PATH,
-                    source_registry_module.REJECTED_PATH,
-                    {
-                        "active": filter_tombstoned_rows(
-                            registry_state["active"], state.tombstones
-                        ),
-                        "pending": filter_tombstoned_rows(
-                            registry_state["pending"], state.tombstones
-                        ),
-                        "rejected": filter_tombstoned_rows(
-                            registry_state["rejected"], state.tombstones
-                        ),
-                    },
-                )
-                orchestrator.emit_log(
-                    f"Auto-approval applied during discovery: approved={auto_approved}."
-                )
-            runtime_payload = _as_dict(report.get("runtime"))
-            runtime_payload["autoApproval"] = {
-                **_as_dict(runtime_payload.get("autoApproval")),
-                "enabled": True,
-                "approvedCount": int(auto_approved),
-                "status": "completed",
-            }
-            report["runtime"] = runtime_payload
-        except (OSError, TypeError, ValueError, PydanticValidationError) as exc:
+        )
+        runtime_payload = _as_dict(report.get("runtime"))
+        runtime_payload["autoApproval"] = {
+            **_as_dict(runtime_payload.get("autoApproval")),
+            "enabled": auto_approve_enabled,
+            "approvedCount": int(auto_approved),
+            "authorityMode": registry_authority,
+            "status": "completed",
+        }
+        report["runtime"] = runtime_payload
+        orchestrator.emit_log(
+            "Discovery registry state published during discovery: "
+            f"approved={auto_approved} authority={registry_authority}."
+        )
+    except (OSError, TypeError, ValueError, PydanticValidationError) as exc:
+        registry_publish_error = str(exc)
+        if auto_approve_enabled:
             runtime_payload = _as_dict(report.get("runtime"))
             runtime_payload["autoApproval"] = {
                 **_as_dict(runtime_payload.get("autoApproval")),
@@ -443,25 +450,37 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
                 "error": str(exc),
             }
             report["runtime"] = runtime_payload
-            orchestrator.emit_log(f"Auto-approval failed during discovery: {exc}")
-        DiscoveryReportSchema.model_validate(report)
+        orchestrator.emit_log(f"Discovery registry publication failed: {exc}")
+    final_state = published_state or {
+        "active": filter_tombstoned_rows(state.active, state.tombstones),
+        "pending": pending_rows,
+        "rejected": filter_tombstoned_rows(state.rejected, state.tombstones),
+    }
     runtime_payload = _as_dict(report.get("runtime"))
+    # A failed authority publish leaves the run's pending rows out of the
+    # registry; carry the exact rows so the bridge's terminal reconciliation
+    # can restage them instead of losing the candidates.
     runtime_payload["registryFinalization"] = {
         **_as_dict(runtime_payload.get("registryFinalization")),
-        "status": "completed",
-        "pendingCount": len(registry_state.get("pending") or []),
+        "status": "failed" if registry_publish_error else "completed",
+        "pendingCount": len(final_state.get("pending") or []),
         "candidateCount": len(report_candidates),
-        "activeCount": len(registry_state.get("active") or []),
-        "rejectedCount": len(registry_state.get("rejected") or []),
+        "activeCount": len(final_state.get("active") or []),
+        "rejectedCount": len(final_state.get("rejected") or []),
+        **(dict(pendingMergeAudit=merge_audit) if merge_audit else {}),
+        **({"pendingMergeConflicts": merge_conflicts} if merge_conflicts else {}),
+        **({"activeMergeConflicts": active_merge_conflicts} if active_merge_conflicts else {}),
+        **({"error": registry_publish_error} if registry_publish_error else {}),
+        **({"pendingRows": pending_rows} if registry_publish_error else {}),
     }
     report["runtime"] = runtime_payload
     DiscoveryReportSchema.model_validate(report)
     orchestrator.save_json_atomic(final_report_path, report)
     orchestrator.emit_log(
         "Discovery registry finalization complete: "
-        f"active={len(registry_state.get('active') or [])}, "
-        f"pending={len(registry_state.get('pending') or [])}, "
-        f"rejected={len(registry_state.get('rejected') or [])}."
+        f"active={len(final_state.get('active') or [])}, "
+        f"pending={len(final_state.get('pending') or [])}, "
+        f"rejected={len(final_state.get('rejected') or [])}."
     )
     orchestrator.emit_log(f"Discovery report written to {final_report_path}.")
     return report

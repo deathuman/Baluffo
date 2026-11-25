@@ -213,9 +213,19 @@ def _compact_lifecycle_summary(task_type: str, summary: dict[str, Any]) -> dict[
     return compact
 
 
+def _compact_owner_abort(value: dict[str, Any]) -> dict[str, Any]:
+    compact = _compact_scalar_dict(value, max_items=4)
+    # Keep the fixed evidence shape: an empty warnings list means the abort
+    # completed without warnings, which is not the same as missing evidence.
+    compact["warnings"] = _compact_string_list(value.get("warnings") or [], max_items=8)
+    return compact
+
+
 def _compact_summary_entry(clean_key: str, value: Any) -> Any:
     if _is_scalar(value):
         return value
+    if isinstance(value, dict) and clean_key == "ownerAbort":
+        return _compact_owner_abort(value) or None
     if isinstance(value, dict) and clean_key in _NESTED_SCALAR_DICT_KEYS:
         return _compact_nested_scalar_dict(value) or None
     if isinstance(value, list) and clean_key in _NESTED_STRING_LIST_KEYS:

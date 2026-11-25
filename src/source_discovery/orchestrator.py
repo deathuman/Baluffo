@@ -35,7 +35,7 @@ from src.source_registry import (
     URL_PATCH_MANIFEST_PATH as DEFAULT_URL_PATCH_MANIFEST_PATH,
 )
 from src.source_registry import (
-    apply_discovery_auto_approval as _apply_discovery_auto_approval,
+    apply_discovery_approval_to_authority as _apply_discovery_approval_to_authority,
 )
 from src.source_registry import (
     save_json_atomic,
@@ -111,7 +111,7 @@ orchestrator_probe_mod.root = sys.modules[__name__]
 orchestrator_finalize_mod.root = sys.modules[__name__]
 
 DEFAULT_APPROVAL_STATE_PATH = _DEFAULT_APPROVAL_STATE_PATH
-apply_discovery_auto_approval = _apply_discovery_auto_approval
+apply_discovery_approval_to_authority = _apply_discovery_approval_to_authority
 read_source_state = _read_source_state
 apply_sheet_directory_static_probe_cap = _apply_sheet_directory_static_probe_cap
 discover_gamedevmap_candidates = _discover_gamedevmap_candidates

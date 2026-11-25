@@ -155,6 +155,7 @@ def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync_without_le
             "errors": [],
         },
         "cleanup": {"ok": True, "orphaned": 2},
+        "discoveryReconciliation": 0,
         "startupSync": {"ok": True, "scheduled": True},
         "pipelineSchedule": {"started": False, "enabled": False},
     }
@@ -387,6 +388,11 @@ def test_on_bridge_started_records_each_startup_step_metric(
             "get_pipeline_schedule_service",
             return_value=pipeline_schedule_service,
         ),
+        mock.patch.object(
+            admin_bridge,
+            "_get_discovery_service",
+            return_value=mock.Mock(drain_pending_registry_reconciliation=mock.Mock(return_value=2)),
+        ),
     ):
         admin_bridge.on_bridge_started()
 
@@ -395,6 +401,7 @@ def test_on_bridge_started_records_each_startup_step_metric(
         "runtime_evidence_journal_cleanup",
         "registry_journal_compaction",
         "stale_task_cleanup",
+        "discovery_reconciliation_retry_drain",
         "startup_sync_schedule",
         "pipeline_schedule_polling",
     ]
@@ -423,6 +430,10 @@ def test_on_bridge_started_records_each_startup_step_metric(
     assert seeded["activeTaskCount"] == 1
     assert seeded["activeTaskTypes"] == ["fetch"]
     assert seeded["activeRunIds"] == ["fetch_live"]
+    drained = next(
+        payload for payload in finished if payload["step"] == "discovery_reconciliation_retry_drain"
+    )
+    assert drained["attempted"] == 2
 
 
 def test_on_bridge_started_seeds_the_compaction_hold_before_startup_steps(

@@ -72,6 +72,7 @@ def reap(
     orphan_run: Callable[..., dict[str, Any] | None] | None = None,
     cancel_run: Callable[..., dict[str, Any] | None] | None = None,
     sync_compaction_hold: Callable[[], dict[str, Any]] | None = None,
+    abort_discovery_owner: Callable[[str], dict[str, Any]] | None = None,
     startup: bool = True,
 ) -> dict[str, Any]:
     lifecycle = build_lifecycle(data_dir, now_iso=now_iso)
@@ -83,5 +84,6 @@ def reap(
         orphan_run=orphan_run or lifecycle.orphan_run,
         cancel_run=cancel_run or lifecycle.cancel_run,
         sync_compaction_hold=sync_compaction_hold or lifecycle.sync_compaction_hold,
+        abort_discovery_owner=abort_discovery_owner,
         startup=startup,
     )

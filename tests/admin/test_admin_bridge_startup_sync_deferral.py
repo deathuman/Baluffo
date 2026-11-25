@@ -295,3 +295,66 @@ def test_startup_sync_pull_waits_for_first_paint_then_completes(
     runtime = api.get_sync_status_payload().get("runtime") or {}
     assert runtime.get("lastAction") == "pull"
     assert runtime.get("lastResult") == "ok"
+
+
+def test_on_bridge_started_continues_when_retry_drain_fails(
+    admin_bridge_entrypoint_root,
+) -> None:
+    calls: list[str] = []
+    events: list[tuple[str, str]] = []
+
+    def cleanup() -> dict[str, object]:
+        calls.append("cleanup")
+        return {"ok": True, "orphaned": 0}
+
+    def startup_sync() -> dict[str, object]:
+        calls.append("startup_sync")
+        return {"ok": True, "scheduled": True}
+
+    def startup_pipeline_schedule() -> dict[str, object]:
+        calls.append("pipeline_schedule")
+        return {"started": False, "enabled": False}
+
+    pipeline_schedule_service = mock.Mock(
+        start_background_polling=mock.Mock(side_effect=startup_pipeline_schedule)
+    )
+    discovery_service = mock.Mock(
+        drain_pending_registry_reconciliation=mock.Mock(
+            side_effect=OSError("unreadable retry file")
+        )
+    )
+
+    with (
+        mock.patch(
+            "src.bridge.admin_task_runtime.cleanup_runtime_evidence_journals",
+            return_value={"ok": True, "checked": 0, "quarantined": [], "errors": []},
+        ),
+        mock.patch(
+            "src.bridge.admin_task_runtime.compact_registry_journals",
+            return_value={
+                "ok": True,
+                "checked": 0,
+                "compacted": [],
+                "skipped": [],
+                "errors": [],
+            },
+        ),
+        mock.patch.object(admin_bridge, "cleanup_stale_startup_tasks", side_effect=cleanup),
+        mock.patch.object(admin_bridge, "_get_discovery_service", return_value=discovery_service),
+        mock.patch.object(
+            admin_bridge,
+            "bridge_log",
+            side_effect=lambda level, message, **_fields: events.append((level, message)),
+        ),
+        mock.patch.object(admin_bridge, "schedule_startup_sync_pull", side_effect=startup_sync),
+        mock.patch.object(
+            admin_bridge.admin_entrypoint_services_mod,
+            "get_pipeline_schedule_service",
+            return_value=pipeline_schedule_service,
+        ),
+    ):
+        result = admin_bridge.on_bridge_started()
+
+    assert calls == ["cleanup", "startup_sync", "pipeline_schedule"]
+    assert ("warn", "discovery_registry_reconciliation_retry_drain_failed") in events
+    assert result["discoveryReconciliation"] == 0

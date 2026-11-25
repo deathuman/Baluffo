@@ -311,14 +311,18 @@ def _auto_approve_pending_rows(
     report_candidates_by_id: dict[str, dict[str, Any]],
     approved_at: str,
     active_static_aliases: set[str],
+    blocked_ids: set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str], set[str], set[str]]:
     moved: list[dict[str, Any]] = []
     remaining: list[dict[str, Any]] = []
     moved_ids: set[str] = set()
     moved_static_aliases: set[str] = set()
-    blocked_ids: set[str] = set()
+    blocked_ids = set(blocked_ids or ())
     for row in pending_rows:
         row_id = source_identity(row)
+        if row_id and row_id in blocked_ids:
+            remaining.append(dict(row))
+            continue
         report_row = report_candidates_by_id.get(row_id)
         merged_row = dict(report_row or row)
         promotion_reason = _promotion_reason_for_candidate(merged_row)
@@ -363,6 +367,8 @@ def _auto_approve_report_candidates(
         row_id = source_identity(row)
         if not row_id or row_id in active_ids or row_id in moved_ids:
             continue
+        if row_id in blocked_ids:
+            continue
         if _static_alias_blocks_auto_approval(
             row,
             row_id,
@@ -391,8 +397,12 @@ def apply_discovery_auto_approval(
     auto_approve_enabled: bool,
     approval_state_path: Path,
     record_approval_state: bool = True,
+    blocked_ids: set[str] | None = None,
     now_iso_fn: Callable[[], str] | None = now_iso,
 ) -> tuple[dict[str, list[dict[str, Any]]], int]:
+    auto_approval_blocked_ids = {
+        str(value).strip() for value in (blocked_ids or set()) if str(value).strip()
+    }
     normalized_state = {
         bucket: unique_sources(dict(row) for row in json_object_rows(state.get(bucket)))
         for bucket in ("active", "pending", "rejected")
@@ -409,7 +419,7 @@ def apply_discovery_auto_approval(
     moved: list[dict[str, Any]] = []
     remaining: list[dict[str, Any]] = []
     moved_ids: set[str] = set()
-    blocked_auto_approval_ids: set[str] = set()
+    blocked_auto_approval_ids: set[str] = set(auto_approval_blocked_ids)
     active_ids = {
         source_identity(row) for row in normalized_state["active"] if source_identity(row)
     }
@@ -427,6 +437,7 @@ def apply_discovery_auto_approval(
             report_candidates_by_id=report_candidates_by_id,
             approved_at=approved_at,
             active_static_aliases=active_static_aliases,
+            blocked_ids=auto_approval_blocked_ids,
         )
         _auto_approve_report_candidates(
             report_candidate_rows,

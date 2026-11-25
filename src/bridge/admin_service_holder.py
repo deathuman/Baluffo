@@ -17,7 +17,7 @@ class BridgeServices:
     registry_service_paths: tuple[Path, Path, Path] | None = None
     registry_service_lock: Any = field(default_factory=threading.RLock)
     discovery_service: Any | None = None
-    discovery_service_paths: tuple[Path, Path, Path, Path] | None = None
+    discovery_service_paths: tuple[Path, Path, Path, Path, Path] | None = None
     discovery_service_lock: Any = field(default_factory=threading.RLock)
     pipeline_service: Any | None = None
     pipeline_service_lock: Any = field(default_factory=threading.RLock)

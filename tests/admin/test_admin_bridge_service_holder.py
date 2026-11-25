@@ -158,6 +158,7 @@ def test_discovery_service_is_owned_by_bridge_services_holder(
         Path(admin_bridge.DISCOVERY_REPORT_PATH),
         Path(admin_bridge.DISCOVERY_CANDIDATES_PATH),
         Path(admin_bridge.PENDING_PATH),
+        Path(admin_bridge.TOMBSTONES_PATH),
         Path(admin_bridge.DISCOVERY_LOG_PATH),
     )
 
@@ -179,6 +180,7 @@ def test_discovery_service_holder_reuses_existing_service(
         Path(admin_bridge.DISCOVERY_REPORT_PATH),
         Path(admin_bridge.DISCOVERY_CANDIDATES_PATH),
         Path(admin_bridge.PENDING_PATH),
+        Path(admin_bridge.TOMBSTONES_PATH),
         Path(admin_bridge.DISCOVERY_LOG_PATH),
     )
     holder_service = SimpleNamespace(name="holder-discovery-service")
@@ -217,6 +219,7 @@ def test_runtime_path_reconfiguration_resets_discovery_holder(
         Path(admin_bridge.DISCOVERY_REPORT_PATH),
         Path(admin_bridge.DISCOVERY_CANDIDATES_PATH),
         Path(admin_bridge.PENDING_PATH),
+        Path(admin_bridge.TOMBSTONES_PATH),
         Path(admin_bridge.DISCOVERY_LOG_PATH),
     )
 

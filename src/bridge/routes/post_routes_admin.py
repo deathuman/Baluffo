@@ -62,6 +62,7 @@ from src.source_registry import (
     transition_registry_to_pending,
     transition_registry_to_rejected,
 )
+from src.source_registry_write_lock import source_registry_write_lock
 
 
 class _AdminPostRouteApi(Protocol):
@@ -652,7 +653,39 @@ def _handle_sync_post(
     return True
 
 
+# Every route below reads the whole registry, mutates it, and writes the whole
+# registry back. The discovery worker publishes its auto-approval through the
+# same authority, so both sides must hold the registry write lock across the
+# read and the write or the later whole-state write erases the other's row.
+_REGISTRY_MUTATION_PATHS = frozenset(
+    {
+        "/source-policy/migration-link-action",
+        "/sources/manual",
+        "/discovery/check-source",
+        "/registry/approve",
+        "/registry/reject",
+        "/registry/demote-active",
+        "/registry/conflicts/auto-demote-safe",
+        "/registry/restore-rejected",
+        "/registry/delete",
+    }
+)
+
+
 def handle_post(
+    handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str, payload: Any
+) -> bool:
+    """Dispatch a POST, serializing registry read-modify-write mutations."""
+    lock = (
+        source_registry_write_lock(Path(api.APPROVAL_STATE_PATH).resolve().parent)
+        if path in _REGISTRY_MUTATION_PATHS
+        else nullcontext()
+    )
+    with lock:
+        return _dispatch_post(handler, api=api, path=path, payload=payload)
+
+
+def _dispatch_post(
     handler: BridgeResponseWriter, *, api: _AdminPostRouteApi, path: str, payload: Any
 ) -> bool:
     data = as_json_object(payload)

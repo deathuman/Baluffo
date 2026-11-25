@@ -20,6 +20,7 @@ class DiscoveryPaths:
     report: Any
     candidates: Any
     pending: Any
+    tombstones: Any
     log: Any
     settings: Any
     approval_state: Any
@@ -59,6 +60,9 @@ class DiscoveryDeps:
         None
     )
     load_runtime_evidence: Callable[[Any, Any], Any] | None = None
+    # Terminates the registered discovery child so a stalled run leaves no
+    # second writer behind. Returns the process registry's terminate result.
+    abort_discovery_owner: Callable[[str], dict[str, Any]] | None = None
 
 
 class DiscoveryServiceState:
@@ -114,6 +118,10 @@ class DiscoveryServiceState:
     ) -> tuple[dict[str, Any], int, bool]:
         raise NotImplementedError
 
+    def _drain_reconciliation_retries(self) -> int:
+        """Retry the queued registry reconciliations; owned by the registry mixin."""
+        raise NotImplementedError
+
     def _terminal_report_auto_approval_enabled(
         self,
         report: dict[str, Any],
@@ -124,6 +132,10 @@ class DiscoveryServiceState:
 
     @staticmethod
     def _discovery_report_finalization_settled(report: dict[str, Any]) -> bool:
+        raise NotImplementedError
+
+    @classmethod
+    def _lifecycle_row_is_terminal(cls, row: dict[str, Any] | None) -> bool:
         raise NotImplementedError
 
     def watch_discovery_run_for_auto_sync(self, run_id: str, pid: int, started_at: str) -> None:

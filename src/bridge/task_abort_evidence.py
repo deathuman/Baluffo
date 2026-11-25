@@ -31,6 +31,17 @@ def row_abort_requested(row: dict[str, Any] | None) -> bool:
     )
 
 
+def normalize_owner_abort_result(result: Any) -> dict[str, Any]:
+    """Normalize a process-registry terminate result into row evidence."""
+    payload = result if isinstance(result, dict) else {}
+    raw_warnings = payload.get("warnings")
+    warnings = [str(item) for item in raw_warnings] if isinstance(raw_warnings, list) else []
+    warning = clean_text(payload.get("warning"))
+    if warning:
+        warnings.append(warning)
+    return {"exited": bool(payload.get("exited")), "warnings": warnings}
+
+
 def terminal_report_exists(
     path: Path,
     *,
@@ -245,6 +256,7 @@ __all__ = [
     "ABORT_TERMINAL_REASON",
     "aborting_progress",
     "clean_text",
+    "normalize_owner_abort_result",
     "repair_discovery_canceled_evidence",
     "repair_fetch_canceled_evidence",
     "row_abort_requested",

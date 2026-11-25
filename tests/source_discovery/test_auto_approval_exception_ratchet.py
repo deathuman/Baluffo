@@ -13,14 +13,16 @@ from ._helpers import (
 )
 
 
-def _run_minimal_discovery_with_auto_approval_failure(error: BaseException) -> dict:
+def _run_minimal_discovery_with_auto_approval_failure(
+    error: BaseException, *, auto_approve_enabled: bool = True
+) -> dict:
     with workspace_tmpdir("source-discovery-auto-approval-ratchet") as root:
         with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
             with (
                 patch_empty_generator_stages(probe=lambda *_args, **_kwargs: (False, 0, "")),
                 mock.patch.object(
                     discovery_orchestrator,
-                    "apply_discovery_auto_approval",
+                    "apply_discovery_approval_to_authority",
                     side_effect=error,
                 ),
             ):
@@ -31,7 +33,7 @@ def _run_minimal_discovery_with_auto_approval_failure(error: BaseException) -> d
                     mode="dynamic",
                     include_web_search=False,
                     discovery_config=discovery_config_without_generator_stages(
-                        autoApproveHealthyPendingOnComplete=True
+                        autoApproveHealthyPendingOnComplete=auto_approve_enabled
                     ),
                     fetcher=lambda *_args, **_kwargs: "",
                 )
@@ -46,6 +48,22 @@ def test_auto_approval_expected_failure_marks_runtime_failed() -> None:
     assert auto_approval["enabled"] is True
     assert auto_approval["status"] == "failed"
     assert auto_approval["error"] == "bad auto-approval state"
+
+
+def test_registry_publish_failure_with_auto_approval_off_marks_finalization_failed() -> None:
+    report = _run_minimal_discovery_with_auto_approval_failure(
+        ValueError("bad registry state"),
+        auto_approve_enabled=False,
+    )
+
+    runtime = report.get("runtime") or {}
+    auto_approval = runtime.get("autoApproval") or {}
+    # Auto-approval did not fail; the pending staging did.
+    assert auto_approval["enabled"] is False
+    assert "error" not in auto_approval
+    finalization = runtime.get("registryFinalization") or {}
+    assert finalization["status"] == "failed"
+    assert finalization["error"] == "bad registry state"
 
 
 def test_auto_approval_unexpected_failure_propagates() -> None:

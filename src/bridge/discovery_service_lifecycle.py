@@ -251,6 +251,7 @@ class DiscoveryServiceLifecycleMixin(DiscoveryServiceState):
         return dict(normalized)
 
     def _reconcile_terminal_discovery_report_from_state(self) -> dict[str, Any] | None:
+        self._drain_reconciliation_retries()
         raw = self._read_discovery_report()
         if not isinstance(raw, dict):
             return None

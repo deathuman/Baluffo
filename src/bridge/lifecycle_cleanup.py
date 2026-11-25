@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.sync_timing import load_sync_timing_history as _load_history
-from src.bridge.task_abort_evidence import ABORT_TERMINAL_REASON, row_abort_requested
+from src.bridge.task_abort_evidence import (
+    ABORT_TERMINAL_REASON,
+    normalize_owner_abort_result,
+    row_abort_requested,
+)
 from src.contracts import SCHEMA_VERSION
 from src.shared.coerce import as_dict as _progress_dict
 from src.shared.coerce import as_dict as _summary_dict
@@ -43,6 +47,12 @@ HEARTBEAT_LEASE_SECONDS = 3600.0
 # Keep it well above sync_service.SYNC_LIFECYCLE_HEARTBEAT_S so a progressing
 # sync always refreshes its row between beats.
 SYNC_STALL_CAP_SECONDS = 900.0
+# Discovery rows are progress-gated the same way: the bridge watcher beats only
+# when the report's work counters advance, so a hung worker that keeps rewriting
+# timestamps stops refreshing its row. Keep the cap far above the 300s advisory
+# discovery stall window in pipeline_stall.py, because one scanning or probing
+# phase can sit quiet for minutes while it is still working.
+DISCOVERY_STALL_CAP_SECONDS = 1800.0
 
 
 def _normalize_history_duration(row: dict[str, Any]) -> dict[str, Any]:
@@ -251,9 +261,10 @@ def _row_heartbeat_lease_expired(
     seconds cadence. One hour is far above every real cadence while still
     unblocking the queue within an hour of a crash.
 
-    A sync row is capped at `SYNC_STALL_CAP_SECONDS` instead of the hour: its
-    heartbeat is progress-gated, so a wedged worker stops beating long before
-    the generic lease would close it.
+    A sync row is capped at `SYNC_STALL_CAP_SECONDS` and a discovery row at
+    `DISCOVERY_STALL_CAP_SECONDS` instead of the hour: both heartbeats are
+    progress-gated, so a wedged worker stops beating long before the generic
+    lease would close it.
 
     A row with neither a heartbeat nor a start time has no lease at all. With no
     pid either, nothing can ever prove it alive, so it counts as expired. A live
@@ -272,9 +283,12 @@ def _row_heartbeat_lease_expired(
     current = (
         now_utc if getattr(now_utc, "tzinfo", None) is not None else now_utc.replace(tzinfo=UTC)
     )
+    task_type = str(row.get("taskType") or row.get("type") or "").strip().lower()
     lease_seconds = HEARTBEAT_LEASE_SECONDS
-    if str(row.get("taskType") or row.get("type") or "").strip().lower() == "sync":
+    if task_type == "sync":
         lease_seconds = SYNC_STALL_CAP_SECONDS
+    elif task_type == "discovery":
+        lease_seconds = DISCOVERY_STALL_CAP_SECONDS
     return bool((current - last_seen) > timedelta(seconds=lease_seconds))
 
 
@@ -432,8 +446,10 @@ def _stale_terminal_kwargs(
     finished_at: str,
     error: str,
     orphan_reason: str,
+    owner_abort: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     progress = _progress_dict(row.get("progress") or row.get("taskProgress"))
+    abort_evidence = {"ownerAbort": owner_abort} if owner_abort else {}
     payload: dict[str, Any] = {
         "finished_at": finished_at,
         "terminal_reason": ABORT_TERMINAL_REASON if aborted else error,
@@ -442,12 +458,14 @@ def _stale_terminal_kwargs(
                 **_summary_dict(row.get("summary")),
                 "status": "canceled",
                 "terminalReason": ABORT_TERMINAL_REASON,
+                **abort_evidence,
             }
             if aborted
             else {
                 **_summary_dict(row.get("summary")),
                 "error": error,
                 "orphanReason": orphan_reason,
+                **abort_evidence,
             }
         ),
     }
@@ -464,6 +482,7 @@ def _write_stale_history_rows(
     stale_reasons_by_key: dict[tuple[str, str], str],
     finished_at: str,
     error: str,
+    owner_aborts: dict[tuple[str, str], dict[str, Any]],
 ) -> None:
     history_rows = _load_history(history_path)
     history_changed = False
@@ -475,6 +494,7 @@ def _write_stale_history_rows(
         if key not in stale_keys or str(row.get("finishedAt") or "").strip():
             continue
         aborted = key in aborted_keys
+        abort_evidence = {"ownerAbort": owner_aborts[key]} if key in owner_aborts else {}
         row["status"] = "canceled" if aborted else "error"
         row["finishedAt"] = finished_at
         row["summary"] = (
@@ -482,12 +502,14 @@ def _write_stale_history_rows(
                 **_summary_dict(row.get("summary")),
                 "status": "canceled",
                 "terminalReason": ABORT_TERMINAL_REASON,
+                **abort_evidence,
             }
             if aborted
             else {
                 **_summary_dict(row.get("summary")),
                 "error": error,
                 "orphanReason": stale_reasons_by_key[key],
+                **abort_evidence,
             }
         )
         history_changed = True
@@ -540,6 +562,34 @@ def _terminalize_stale_reports(
             )
 
 
+def _abort_live_discovery_owners(
+    *,
+    stale_rows_by_key: dict[tuple[str, str], dict[str, Any]],
+    pid_is_running: Callable[[int], bool],
+    abort_discovery_owner: Callable[[str], dict[str, Any]] | None,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Terminate a live discovery owner before its stale row is orphaned.
+
+    The terminal row admits a new run, so a worker that outlived its lease must
+    be gone first or it can still rewrite the report and registry files. The row
+    is orphaned even when the abort cannot confirm the exit: the reaper is the
+    last resort and the queue must not stay blocked.
+    """
+    if not callable(abort_discovery_owner):
+        return {}
+    aborts: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, row in sorted(stale_rows_by_key.items()):
+        task_type, run_id = key
+        pid = _owner_pid(row)
+        if task_type != "discovery" or pid <= 0 or not pid_is_running(pid):
+            continue
+        try:
+            aborts[key] = normalize_owner_abort_result(abort_discovery_owner(run_id))
+        except (OSError, RuntimeError, TypeError, ValueError):
+            aborts[key] = {"exited": False, "warnings": ["abort_raised"]}
+    return aborts
+
+
 def cleanup_orphaned_startup_tasks(
     data_dir: Path,
     *,
@@ -549,6 +599,7 @@ def cleanup_orphaned_startup_tasks(
     orphan_run: Callable[..., dict[str, Any] | None],
     cancel_run: Callable[..., dict[str, Any] | None],
     sync_compaction_hold: Callable[[], dict[str, Any]],
+    abort_discovery_owner: Callable[[str], dict[str, Any]] | None = None,
     startup: bool = True,
 ) -> dict[str, Any]:
     """Close stale task rows whose owner lease is no longer valid.
@@ -565,6 +616,10 @@ def cleanup_orphaned_startup_tasks(
     reap in-process owners a restart invalidated. The periodic tick passes
     ``startup=False``: live writers keep the snapshot current, and a live
     ``bridge_thread``/``pipeline`` owner belongs to this process.
+
+    A stale ``discovery`` row with a still-live owner terminates that owner
+    through ``abort_discovery_owner`` before the terminal write: the orphaned
+    row admits a new run, and the old worker must not still be writing.
     """
 
     root = Path(data_dir).resolve()
@@ -620,6 +675,11 @@ def cleanup_orphaned_startup_tasks(
             "compactionHold": compaction_hold,
         }
 
+    owner_aborts = _abort_live_discovery_owners(
+        stale_rows_by_key=stale_rows_by_key,
+        pid_is_running=pid_is_running,
+        abort_discovery_owner=abort_discovery_owner,
+    )
     cleared_task_state = _clear_stale_task_state(task_state_path, task_state, stale_keys)
     # Terminalize under the lifecycle service lock: each transition writes the
     # ledger, so a heartbeat or terminal report that lands during a tick stays.
@@ -632,6 +692,7 @@ def cleanup_orphaned_startup_tasks(
             finished_at=finished_at,
             error=error,
             orphan_reason=stale_reasons_by_key[(task_type, run_id)],
+            owner_abort=owner_aborts.get((task_type, run_id)),
         )
         if aborted:
             cancel_run(run_id, task_type, **kwargs)
@@ -644,6 +705,7 @@ def cleanup_orphaned_startup_tasks(
         stale_reasons_by_key=stale_reasons_by_key,
         finished_at=finished_at,
         error=error,
+        owner_aborts=owner_aborts,
     )
     _terminalize_stale_reports(
         stale_keys=stale_keys,
@@ -669,6 +731,11 @@ def cleanup_orphaned_startup_tasks(
                 "taskType": task_type,
                 "reason": stale_reasons_by_key[(task_type, run_id)],
                 "aborted": (task_type, run_id) in aborted_keys,
+                **(
+                    {"ownerAbort": owner_aborts[(task_type, run_id)]}
+                    if (task_type, run_id) in owner_aborts
+                    else {}
+                ),
             }
             for task_type, run_id in sorted(stale_keys)
         ],

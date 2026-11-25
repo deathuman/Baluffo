@@ -133,6 +133,7 @@ class _AdminTaskRuntimeRoot(Protocol):
 
     def _get_sync_state(self) -> _SyncStateLike: ...
     def _get_sync_service(self) -> _SyncServiceLike: ...
+    def _get_discovery_service(self) -> Any: ...
     def _get_pipeline_service(self) -> _PipelineServiceLike: ...
     def _get_job_availability_service(self) -> Any: ...
     def _get_task_launch_api(self) -> _TaskLaunchApiLike: ...
@@ -272,6 +273,20 @@ def _defer_startup_sync_pull(root_mod: Any) -> JsonObject:
     return cast(JsonObject, schedule())
 
 
+def _drain_discovery_reconciliation_retries(root_mod: Any) -> int:
+    """Retry queued discovery reports without letting a bad retry file stop startup."""
+    try:
+        attempted = root_mod._get_discovery_service().drain_pending_registry_reconciliation()
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        root_mod.bridge_log(
+            "warn",
+            "discovery_registry_reconciliation_retry_drain_failed",
+            error=str(exc),
+        )
+        return 0
+    return int(attempted or 0)
+
+
 def on_bridge_started(*, root_mod: Any) -> JsonObject:
     root_mod = cast(_AdminTaskRuntimeRoot, root_mod)
     # A task can already be running when this bridge starts (desktop reconnect to
@@ -315,6 +330,12 @@ def on_bridge_started(*, root_mod: Any) -> JsonObject:
     cleanup = _run_startup_step(
         root_mod, "stale_task_cleanup", lambda: root_mod.cleanup_stale_startup_tasks()
     )
+    discovery_retries = _run_startup_step(
+        root_mod,
+        "discovery_reconciliation_retry_drain",
+        lambda: _drain_discovery_reconciliation_retries(root_mod),
+        summarize=lambda attempted: {"attempted": int(attempted or 0)},
+    )
     startup_sync = _run_startup_step(
         root_mod,
         "startup_sync_schedule",
@@ -342,6 +363,7 @@ def on_bridge_started(*, root_mod: Any) -> JsonObject:
         "runtimeEvidenceJournals": runtime_journals,
         "registryJournals": registry_journals,
         "cleanup": cleanup,
+        "discoveryReconciliation": discovery_retries,
         "startupSync": startup_sync,
         "pipelineSchedule": pipeline_schedule,
     }

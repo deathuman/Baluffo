@@ -560,6 +560,9 @@ def cleanup_stale_startup_tasks(*, startup: bool = True) -> dict[str, Any]:
         orphan_run=_TASK_LIFECYCLE.orphan_run,
         cancel_run=_TASK_LIFECYCLE.cancel_run,
         sync_compaction_hold=_TASK_LIFECYCLE.sync_compaction_hold,
+        abort_discovery_owner=lambda run_id: bridge_runtime_state.TASK_PROCESS_REGISTRY.terminate(
+            "discovery", run_id
+        ),
         startup=startup,
     )
 

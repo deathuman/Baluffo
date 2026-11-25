@@ -317,23 +317,20 @@ def is_hidden_from_default(row: dict[str, Any]) -> bool:
     )
 
 
-def hide_repeated_zero_job_pending(
+def apply_repeated_zero_job_hide(
     row: dict[str, Any],
     *,
-    threshold: int = ZERO_JOB_HIDDEN_DEFER_THRESHOLD,
     actor: str = "discovery_zero_job_policy",
     at: str | None = None,
 ) -> dict[str, Any]:
+    """Apply the hide fields after the repeated-zero-job predicate has passed.
+
+    ``hide_repeated_zero_job_pending`` owns the predicate. Callers that already
+    have proof the row qualifies, such as a run row the policy hid, use this
+    helper so the lifecycle field list has one definition.
+    """
     updated = ensure_source_id(dict(row))
-    registry_state = _infer_registry_state(updated, bucket=REGISTRY_STATE_PENDING)
-    if registry_state == REGISTRY_STATE_ACTIVE:
-        return updated
-    jobs_found = max(
-        0,
-        _coerce_int(updated.get("jobsFound"), 0),
-        _coerce_int(updated.get("sampleCount"), 0),
-    )
-    if jobs_found > 0 or _coerce_int(updated.get("deferCount"), 0) < int(threshold):
+    if _infer_registry_state(updated, bucket=REGISTRY_STATE_PENDING) == REGISTRY_STATE_ACTIVE:
         return updated
     timestamp = str(at or now_iso())
     updated["registryState"] = REGISTRY_STATE_PENDING
@@ -344,3 +341,21 @@ def hide_repeated_zero_job_pending(
     updated["stateChangedBy"] = str(updated.get("stateChangedBy") or actor)
     updated["lastDemotedAt"] = str(updated.get("lastDemotedAt") or timestamp)
     return updated
+
+
+def hide_repeated_zero_job_pending(
+    row: dict[str, Any],
+    *,
+    threshold: int = ZERO_JOB_HIDDEN_DEFER_THRESHOLD,
+    actor: str = "discovery_zero_job_policy",
+    at: str | None = None,
+) -> dict[str, Any]:
+    updated = ensure_source_id(dict(row))
+    jobs_found = max(
+        0,
+        _coerce_int(updated.get("jobsFound"), 0),
+        _coerce_int(updated.get("sampleCount"), 0),
+    )
+    if jobs_found > 0 or _coerce_int(updated.get("deferCount"), 0) < int(threshold):
+        return updated
+    return apply_repeated_zero_job_hide(updated, actor=actor, at=at)

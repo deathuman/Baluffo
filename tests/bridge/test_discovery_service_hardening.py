@@ -27,6 +27,7 @@ def _make_service(
     *,
     report_path: Path,
     now_iso: str = "2026-03-20T12:04:00Z",
+    tombstones_path: Path | None = None,
     **dep_overrides: Any,
 ) -> DiscoveryService:
     deps: dict[str, Any] = {
@@ -58,6 +59,7 @@ def _make_service(
             report=report_path,
             candidates=tmp_path / "source-registry-pending.json",
             pending=tmp_path / "source-registry-pending.json",
+            tombstones=tombstones_path or tmp_path / "source-registry-tombstones.json",
             log=tmp_path / "source-discovery.log",
             settings=tmp_path / "source-discovery-config.json",
             approval_state=tmp_path / "source-approval-state.json",
@@ -651,7 +653,7 @@ def test_discovery_watch_retries_transient_terminal_finalization(
     assert "discovery finalize failed" in retries[0][2]["error"]
 
 
-def test_reconcile_terminal_discovery_registry_skips_unsafe_finalization_mismatch(
+def test_reconcile_terminal_discovery_registry_persists_on_finalization_count_mismatch(
     tmp_path: Path,
 ) -> None:
     report_path = tmp_path / "source-discovery-report.json"
@@ -699,7 +701,92 @@ def test_reconcile_terminal_discovery_registry_skips_unsafe_finalization_mismatc
 
     service.reconcile_terminal_discovery_report_from_state()
 
-    assert persisted_states == []
-    assert [row["id"] for row in state["active"]] == ["active-1"]
-    assert [row["id"] for row in state["pending"]] == ["pending-ok"]
-    assert "discovery_registry_reconciliation_skipped" in events
+    # The report's counts are stale (it claims 99 active); the merge is still the
+    # authority-aware result and must be persisted, not dropped.
+    assert len(persisted_states) == 1
+    assert [row["id"] for row in persisted_states[0]["active"]] == ["active-1", "pending-ok"]
+    assert persisted_states[0]["pending"] == []
+    assert "discovery_registry_reconciliation_count_mismatch" in events
+
+
+def test_reconcile_terminal_discovery_registry_restages_pending_after_failed_publish(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "runId": "discovery_publish_failed",
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "2026-03-20T12:05:00Z",
+                "summary": {"queuedCandidateCount": 2},
+                "runtime": {
+                    "autoApproval": {
+                        "enabled": False,
+                        "approvedCount": 0,
+                        "status": "completed",
+                    },
+                    "registryFinalization": {
+                        "status": "failed",
+                        "error": "authority write failed",
+                        "pendingCount": 2,
+                        "pendingRows": [
+                            {
+                                "id": "pending-new",
+                                "adapter": "static",
+                                "name": "New Pending",
+                                "jobsFound": 2,
+                            },
+                            {
+                                "id": "already-active",
+                                "adapter": "static",
+                                "name": "Active Duplicate",
+                            },
+                        ],
+                    },
+                },
+                "candidates": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    state: dict[str, list[dict[str, Any]]] = {
+        "active": [{"id": "already-active", "adapter": "static", "name": "Active Duplicate"}],
+        "pending": [],
+        "rejected": [],
+    }
+    persisted_states: list[dict[str, list[dict[str, Any]]]] = []
+    persist_reasons: list[str] = []
+    events: list[tuple[str, str]] = []
+
+    def persist_state_and_auto_sync(
+        next_state: dict[str, list[dict[str, Any]]], **kwargs: Any
+    ) -> dict[str, list[dict[str, Any]]]:
+        persist_reasons.append(str(kwargs.get("reason") or ""))
+        persisted = {bucket: [dict(row) for row in rows] for bucket, rows in next_state.items()}
+        persisted_states.append(persisted)
+        return persisted
+
+    service = _make_service(
+        tmp_path,
+        report_path=report_path,
+        now_iso="2026-03-20T12:06:00Z",
+        bridge_log=lambda level, message, **fields: events.append((level, str(message))),
+        load_state=lambda: json.loads(json.dumps(state)),
+        persist_state_and_auto_sync=persist_state_and_auto_sync,
+    )
+
+    service.reconcile_terminal_discovery_report_from_state()
+
+    assert len(persisted_states) == 1
+    # A row that was not pending before really was restaged, so this branch keeps
+    # the restage reason; only field-only carries get the update reason.
+    assert persist_reasons == ["discovery_pending_restage"]
+    assert [row["id"] for row in persisted_states[0]["active"]] == ["already-active"]
+    assert [row["id"] for row in persisted_states[0]["pending"]] == ["pending-new"]
+    saved = json.loads(report_path.read_text(encoding="utf-8"))
+    finalization = saved["runtime"]["registryFinalization"]
+    assert finalization["status"] == "failed"
+    assert finalization["pendingRestagedCount"] == 1
+    assert finalization["pendingRestagedAt"] == "2026-03-20T12:06:00Z"
+    assert ("info", "discovery_registry_pending_restaged") in events

@@ -485,6 +485,7 @@ def get_discovery_service(*, root_mod: Any) -> _DiscoveryServiceLike:
         Path(root_mod.DISCOVERY_REPORT_PATH),
         Path(root_mod.DISCOVERY_CANDIDATES_PATH),
         Path(root_mod.PENDING_PATH),
+        Path(root_mod.TOMBSTONES_PATH),
         Path(root_mod.DISCOVERY_LOG_PATH),
     )
     services = root_mod.BRIDGE_SERVICES
@@ -496,6 +497,7 @@ def get_discovery_service(*, root_mod: Any) -> _DiscoveryServiceLike:
                     report=root_mod.DISCOVERY_REPORT_PATH,
                     candidates=root_mod.DISCOVERY_CANDIDATES_PATH,
                     pending=root_mod.PENDING_PATH,
+                    tombstones=root_mod.TOMBSTONES_PATH,
                     log=root_mod.DISCOVERY_LOG_PATH,
                     settings=root_mod.DISCOVERY_CONFIG_PATH,
                     approval_state=root_mod.APPROVAL_STATE_PATH,
@@ -513,6 +515,9 @@ def get_discovery_service(*, root_mod: Any) -> _DiscoveryServiceLike:
                     load_runtime_evidence=root_mod.load_runtime_evidence,
                     save_json_atomic=root_mod.save_json_atomic,
                     run_background_script=root_mod.run_background_script,
+                    abort_discovery_owner=lambda run_id: (
+                        bridge_runtime_state.TASK_PROCESS_REGISTRY.terminate("discovery", run_id)
+                    ),
                     append_run_history=root_mod.append_run_history,
                     upsert_run_history=root_mod.upsert_run_history,
                     prune_started_rows_for_type=root_mod.prune_started_rows_for_type,

@@ -43,6 +43,7 @@ def test_discovery_watch_abort_intent_repairs_finished_report_and_skips_sync(
             report=report_path,
             candidates=tmp_path / "source-discovery-candidates.json",
             pending=tmp_path / "source-registry-pending.json",
+            tombstones=tmp_path / "source-registry-tombstones.json",
             log=tmp_path / "source-discovery.log",
             settings=tmp_path / "source-discovery-config.json",
             approval_state=tmp_path / "source-approval-state.json",

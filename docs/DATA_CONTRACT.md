@@ -633,9 +633,59 @@ below remain compatibility/debug exports and JSON fallback inputs.
 
 When `sourceRegistry=json`, registry reads use the runtime active/pending file when
 it exists, then the tracked seed file, then the in-code fallback. When
-`sourceRegistry=sqlite`, registry GET routes, POST mutations, and tombstone
-load/save publish through generation-scoped SQLite rows first and regenerate the
-active/pending/rejected/tombstone exports afterward. Reconciliation retry entries are capped
+`sourceRegistry=sqlite`, registry GET routes, POST mutations, tombstone load/save,
+and the discovery worker's registry publish through generation-scoped SQLite rows
+first and regenerate the active/pending/rejected/tombstone exports afterward.
+The worker always stages its pending rows through that publish, whether or not
+auto-approval is enabled, so a disabled run still reaches the authority instead
+of writing `data/source-registry-pending.json` directly. Registry mutations are
+whole-state read-modify-writes, so the bridge POST routes and the discovery
+worker both hold `data/.source-registry-write.lock` across the read and the
+publish; the worker merges its pending rows and approval delta into the current
+authority state, so a discovery approval and a concurrent admin demotion both
+survive instead of the later write replacing the other's snapshot. A run never
+replaces the authority's identity, routing, display or lifecycle fields: `id`, a
+non-blank `adapter`, URL fields, `name`/`studio`/`company`, and the registry
+state/approval/hide fields stay with the current row, as do
+`migration*`/`selectedStatic*`/`adminBackfillOwned`/`providerCoverage*` link
+metadata and `enabledByDefault`/`remoteFriendly`/`nlPriority` policy flags. The
+run owns fresh observations: when its `lastProbedAt` is newer than the current
+row's, `jobsFound`, `sampleCount`, `lastProbedAt`, probe status/error/validation
+fields, and the run's evidence/ranking fields are carried onto the existing row.
+A failed probe carries its error/status but not its zero count. A run may fill a
+blank display/routing field (`name`, `studio`, `company`, URL fields, `pages`),
+but never overwrite a non-blank one; `adapter` stays with the authority. The one run-owned lifecycle
+exception is the repeated-zero-job hide (`candidateState="hidden"`,
+`hiddenFromDefault=true`, `pendingReason="repeated_zero_jobs"`), which applies
+to an existing pending row too so a source cannot stay visible merely because it
+was staged earlier. The hide reuses the policy's transition fields: it may fill
+blank `stateChangedAt`/`stateChangedBy`/`lastDemotedAt`, but it preserves existing
+values and never rewrites the authority's `deferCount` or non-hide fields. If that
+authority publish fails, the terminal report carries
+the exact rows it would have staged in `runtime.registryFinalization.pendingRows`
+(`status: "failed"`); the bridge's terminal reconciliation restages new rows and
+carries the same observation updates onto existing rows, persists them through
+the registry authority, and only then runs auto-approval, so pending candidates
+and their fresh evidence are not lost when auto-approval is off. New rows are
+recorded as `pendingRestagedCount`/`pendingRestagedAt`; carried field updates as
+`pendingUpdatedCount`/`pendingUpdatedAt`. Both publish paths also report
+`pendingMergeAudit` (merge counters, including `fieldConflicts`) and, when
+conflicts exist, a bounded `pendingMergeConflicts` sample of the non-blank run
+values the authority kept; the count remains exact when the sample is capped.
+Auto-approval holds a row for review when its merge recorded a routing-field
+conflict (`careersUrl`, `url`, `listing_url`, `board_url`, `api_url`, `feed_url`,
+`endpointUrl`, `finalUrl`, or `pages`). The gate uses the complete routing-conflict
+set, not the bounded sample. Observation-only changes remain eligible, and
+display-only conflicts such as `name` do not block approval. Run rows dropped
+because their identity is already active or rejected are compared read-only with
+the placed row. Fill-only conflicts there increment `activeFieldConflicts` and
+produce a bounded `activeMergeConflicts` sample; the comparison never mutates the
+active or rejected row.
+The pre-publish `running` report also carries the same `pendingRows`; if it is
+still `running` after five minutes, the bridge treats the publish as crashed,
+restages the rows, and rewrites `registryFinalization.status` to `failed` (and
+`autoApproval.status` when it was running) with
+`error: "stale_running_report_recovered"`. Reconciliation retry entries are capped
 at a fixed count (currently 25) and an uncompressed serialized byte budget
 (currently 2 MiB) that bounds the queued snapshots' parse cost: recording a new
 entry evicts the oldest queued run other than the one being recorded and logs
@@ -668,9 +718,20 @@ marker is cleared when the drain completes. Entries a crashed drain had already
 finished keep the counts the last completed pass wrote, and a retry re-recorded
 with a newer snapshot while the pass runs is neither charged nor cleared: the
 drain only writes entries it read. Unrelated candidates, `failures` and task
-progress are not persisted. Seed files are never mutated.
-Direct CLI JSON writes or JSON/SQLite drift trigger JSON fallback/rollback rather
-than silent SQLite overwrite.
+progress are not persisted. Seed files are never mutated. Direct CLI JSON writes or JSON/SQLite
+drift trigger JSON fallback/rollback rather than silent SQLite overwrite.
+
+Pending-row field ownership:
+
+| Field group | Owner | Merge rule |
+|---|---|---|
+| `id` | Authority/identity | Never changed by a run |
+| `jobsFound`, `sampleCount`, `lastProbedAt`, `lastProbeStatus`, `lastProbeError`, `lastStatus`, `lastValidationStatus`, `ok`, `httpStatus`, `lastCheckedAt`, `coverageAuditOpenings`, `confidence`, `evidenceScore`, `evidenceTypes`, `score`, `rankScore`, `rankReasons`, `reasons`, `weakSignal`, `deferred`, `deferReason`, `promotionLane`, `promotionReason` | Run observation | Carried when the run's `lastProbedAt` is newer; failed-probe counts are not carried |
+| `name`, `studio`, `company`, `careersUrl`, `url`, `listing_url`, `board_url`, `api_url`, `feed_url`, `endpointUrl`, `finalUrl`, `pages` | Authority (admin/sync/manual) | Current non-blank value wins; a run may fill a blank value |
+| `adapter` | Authority (routing) | Current wins, even when blank |
+| `registryState`, `candidateState`, `pendingReason`, `stateChangedAt`, `stateChangedBy`, `lastPromotedAt`, `lastDemotedAt`, `approvedAt`, `approvedBy`, `liveAt`, `quarantinedAt`, `quarantineReason`, `hiddenFromDefault`, `deferCount` | Authority/lifecycle | Current wins; the repeated-zero-job hide may set the hide fields and fill blank transition timestamps, but never rewrites `deferCount` or an existing timestamp/actor |
+| `enabledByDefault`, `remoteFriendly`, `nlPriority` | Authority/policy | Current wins |
+| `migrationSourceIdentity`, `migrationSourceName`, `migrationConfidence`, `migrationReasons`, `migrationLinkedAt`, `migrationLinkedBy`, `selectedStaticSourceId`, `selectedStaticSourceName`, `staticSourceId`, `providerSourceId`, `adminBackfillOwned`, `providerCoverage*` | Admin link metadata | Current wins |
 
 ### Canonical registry row
 
@@ -987,7 +1048,7 @@ Fetch `taskProgress.counts.runningSourceNames` is the only count value that may 
 - Any new task-lifecycle artifact must preserve `runId` end to end instead of relying on timestamps.
 - User abort intent for `fetch`, `discovery`, and `pipeline` is stored in the lifecycle row before termination. While abort is in progress the row remains active with `status: "running"`, `stage: "aborting"` or `stage: "abort_pending_sync"`, `summary.abortRequestedAt`, `summary.abortReason`, and `taskProgress.phaseKey: "aborting"`.
 - Terminal user-aborted rows use `status: "canceled"` / route `status: "canceled"`, `terminalReason: "user_abort_requested"`, inactive task progress, and canceled report evidence. Once a lifecycle row is terminal, normal success/failure/cancel/orphan writers must not change its status, timestamps, summary, or progress; `repair_terminal_run` is the explicit operator override, requires an existing terminal row and a `repairReason`, and records that reason on the row. `start_run` is idempotent for an existing active run (it returns that row unchanged) and rejects terminal reuse with `ValueError` unless `restart=True` is passed; an explicit restart replaces the terminal row with a fresh active attempt, clearing `finishedAt` and `terminalReason`.
-- Bridge startup and a periodic reaper tick reap stale active lifecycle rows through a heartbeat/owner lease: `ownerKind` `pipeline`/`bridge_thread` cannot survive a restart (the startup pass reaps them; a periodic tick judges them by pid and heartbeat because they are live in the running process), a dead `ownerPid` is orphaned, and any active row whose `heartbeatAt` (or `startedAt` when absent) is older than one hour is orphaned even when its PID is alive (a `sync` row instead uses a 15-minute stall cap because its heartbeat is progress-gated: it beats only while the sync worker reports progress, so a wedged pull or push stops beating and is reaped), and a row with no heartbeat, no start time, and no PID has no lease evidence and is orphaned too. A stale child is not evidence about its parent, so the reaper has no general child→parent closeout; the parent's own heartbeat lease closes it. The exception is a parent with no owner metadata: a stale child closes it (`child_owner_stale`), and that closeout stops at the parent and does not cascade to its other children, while a parent stale on its own evidence still closes them (`parent_owner_stale`). Reaped rows get `terminalReason: "owner_inactive_without_terminal_report"`, `summary.error`, and `summary.orphanReason` (`owner_kind_restart`, `owner_pid_dead`, `heartbeat_lease_expired`, `parent_owner_stale`, or `child_owner_stale`); the reaper re-derives the compaction hold so it is released when the last active row is gone. Bridge and periodic-reaper callers terminalize those rows through the lifecycle service transitions (`orphan_run`/`cancel_run`), which write under the lifecycle lock, so a tick never rewrites the ledger from its own snapshot over a live task transition.
+- Bridge startup and a periodic reaper tick reap stale active lifecycle rows through a heartbeat/owner lease: `ownerKind` `pipeline`/`bridge_thread` cannot survive a restart (the startup pass reaps them; a periodic tick judges them by pid and heartbeat because they are live in the running process), a dead `ownerPid` is orphaned, and any active row whose `heartbeatAt` (or `startedAt` when absent) is older than one hour is orphaned even when its PID is alive (a `sync` row instead uses a 15-minute stall cap because its heartbeat is progress-gated: it beats only while the sync worker reports progress, so a wedged pull or push stops beating and is reaped; a `discovery` row uses a 30-minute cap for the same reason — the bridge watcher beats only when `taskProgress.counts` advances (the progress contract: counters and stage keys, never timestamps that are rewritten on a cadence), and when the cap trips the watcher aborts the still-live owner through the process registry; the row is failed with `terminalReason: "stalled"` only once that owner is gone, otherwise it stays non-terminal with `stage: "stalled"` and its heartbeat pinned to the last progress time so `trigger_discovery_task` refuses a duplicate start and the reaper's lease can orphan it (the reaper terminates a still-live discovery owner before writing the orphaned row and records `summary.ownerAbort` too) — either way the failed run leaves no second writer for the report and registry files, and the row and repaired report carry `summary.ownerAbort` with the abort outcome), and a row with no heartbeat, no start time, and no PID has no lease evidence and is orphaned too. A stale child is not evidence about its parent, so the reaper has no general child→parent closeout; the parent's own heartbeat lease closes it. The exception is a parent with no owner metadata: a stale child closes it (`child_owner_stale`), and that closeout stops at the parent and does not cascade to its other children, while a parent stale on its own evidence still closes them (`parent_owner_stale`). Reaped rows get `terminalReason: "owner_inactive_without_terminal_report"`, `summary.error`, and `summary.orphanReason` (`owner_kind_restart`, `owner_pid_dead`, `heartbeat_lease_expired`, `parent_owner_stale`, or `child_owner_stale`); the reaper re-derives the compaction hold so it is released when the last active row is gone. Bridge and periodic-reaper callers terminalize those rows through the lifecycle service transitions (`orphan_run`/`cancel_run`), which write under the lifecycle lock, so a tick never rewrites the ledger from its own snapshot over a live task transition.
 - Abort repair may overwrite finished fetch/discovery evidence only after abort intent is authoritative. If matching non-canceled terminal evidence existed before abort intent was recorded, normal terminal finalization owns that child/run; for pipeline aborts the parent may still become `canceled` while the already-terminal child remains in its original terminal state.
 
 ### Jobs pipeline schedule contract
