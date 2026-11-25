@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -253,10 +252,6 @@ def failures_resolved_by_browser_total(
     return sum(max(0, value) for value in totals)
 
 
-def _counts_signature(counts: dict[str, Any]) -> str:
-    return json.dumps(counts, sort_keys=True, separators=(",", ":"), default=str)
-
-
 def _carried_counts_updated_at(
     *,
     counts: dict[str, Any],
@@ -273,8 +268,7 @@ def _carried_counts_updated_at(
     """
     if not isinstance(previous_progress, dict):
         return updated_at
-    previous_counts = as_json_object(previous_progress.get("counts"))
-    if not previous_counts or _counts_signature(previous_counts) != _counts_signature(counts):
+    if as_json_object(previous_progress.get("counts")) != counts:
         return updated_at
     return str(previous_progress.get("countsUpdatedAt") or "").strip() or updated_at
 
@@ -493,13 +487,13 @@ def update_discovery_subtask_progress_report(
     load_json_object_fn,
     save_json_atomic_fn,
     now_iso_fn=now_iso,
-) -> None:
+) -> dict[str, Any] | None:
     existing = load_json_object_fn(report_write_path, {})
     report = dict(existing) if isinstance(existing, dict) else {}
     existing_run_id = str(report.get("runId") or "").strip()
     expected_run_id = str(run_id or "").strip()
     if expected_run_id and existing_run_id and existing_run_id != expected_run_id:
-        return
+        return None
 
     heartbeat_at = now_iso_fn()
     summary = as_json_object(report.get("summary"))
@@ -530,7 +524,11 @@ def update_discovery_subtask_progress_report(
         "phase": str(phase or summary.get("phase") or "").strip(),
         "phaseLabel": str(phase_label or summary.get("phaseLabel") or "").strip(),
     }
-    report["taskProgress"] = {
+    merged_counts = {
+        **counts,
+        **subtask_counts,
+    }
+    merged_task_progress: dict[str, Any] = {
         **task_progress,
         "active": True,
         "phaseKey": phase_key,
@@ -542,11 +540,15 @@ def update_discovery_subtask_progress_report(
             subtask_progress.get("targetUrl") or task_progress.get("targetUrl") or ""
         ).strip(),
         "updatedAt": heartbeat_at,
-        "counts": {
-            **counts,
-            **subtask_counts,
-        },
+        "countsUpdatedAt": _carried_counts_updated_at(
+            counts=merged_counts,
+            previous_progress=task_progress,
+            updated_at=heartbeat_at,
+        ),
+        "counts": merged_counts,
     }
+    report["taskProgress"] = merged_task_progress
     if expected_run_id and not existing_run_id:
         report["runId"] = expected_run_id
     save_json_atomic_fn(report_write_path, report)
+    return merged_task_progress

@@ -10,11 +10,15 @@ projects those counts so the jobs caption's source count keeps advancing
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 
 from src.bridge.pipeline_stall import compute_pipeline_child_quiet_info
-from src.source_discovery.reporting_progress import build_discovery_task_progress
+from src.source_discovery.reporting_progress import (
+    build_discovery_task_progress,
+    update_discovery_subtask_progress_report,
+)
 from tests._pipeline_execution_shared import (
     Any,
     FakeLock,
@@ -220,3 +224,55 @@ def test_quiet_discovery_child_keeps_the_worker_counts_stamp(tmp_path: Path) -> 
     assert quiet is not None
     assert quiet["inChild"] == "discovery"
     assert quiet["quietSeconds"] >= 1000
+
+
+def test_subtask_progress_restamps_counts_updated_at_only_when_audit_counts_move(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "discovery-report.json"
+
+    def save(path: Path, payload: dict[str, Any]) -> None:
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    def load(path: Path, default: Any) -> Any:
+        if not path.exists():
+            return default
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    save(
+        report_path,
+        {
+            "runId": "discovery_1",
+            "summary": {"phase": "scanning_sources"},
+            "taskProgress": {
+                "active": True,
+                "phaseKey": "scanning_sources",
+                "updatedAt": "2026-08-31T12:00:00Z",
+                "countsUpdatedAt": "2026-08-31T12:00:00Z",
+                "counts": {"foundEndpoints": 10, "activeAuditCompletedUrls": 3},
+            },
+        },
+    )
+
+    def write_subtask(completed_urls: int, now: str) -> None:
+        update_discovery_subtask_progress_report(
+            report_write_path=report_path,
+            run_id="discovery_1",
+            phase="scanning_sources",
+            phase_label="Scanning GameDevMap",
+            subtask_progress={"counts": {"activeAuditCompletedUrls": completed_urls}},
+            load_json_object_fn=load,
+            save_json_atomic_fn=save,
+            now_iso_fn=lambda: now,
+        )
+
+    write_subtask(4, "2026-08-31T12:01:00Z")
+    moved = load(report_path, {})
+    assert moved["taskProgress"]["counts"]["activeAuditCompletedUrls"] == 4
+    assert moved["taskProgress"]["countsUpdatedAt"] == "2026-08-31T12:01:00Z"
+
+    # A throttled rewrite that leaves the merged counters alone must carry the stamp.
+    write_subtask(4, "2026-08-31T12:02:00Z")
+    quiet = load(report_path, {})
+    assert quiet["taskProgress"]["updatedAt"] == "2026-08-31T12:02:00Z"
+    assert quiet["taskProgress"]["countsUpdatedAt"] == "2026-08-31T12:01:00Z"

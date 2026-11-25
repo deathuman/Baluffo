@@ -232,30 +232,23 @@ class _PipelineServiceControlMixin(PipelineServiceState):
         now_iso: str,
     ) -> dict[str, Any]:
         """Stamp countsUpdatedAt onto progress for an already-locked child row."""
-        previous = child.get("taskProgress")
-        if not isinstance(previous, dict):
-            previous = {}
-        previous_counts_value = previous.get("counts")
-        previous_counts: dict[str, Any] = (
-            dict(previous_counts_value) if isinstance(previous_counts_value, dict) else {}
-        )
-        # ponytail: the child report's taskProgress.updatedAt is its *heartbeat*
-        # stamp, which is refreshed even when counters are frozen. Track the last
-        # moment the counters actually moved so the UI can reassure the user a
-        # quiet-but-alive stage is still working.
-        report_counts_updated_at = str(progress.get("countsUpdatedAt") or "").strip()
-        if report_counts_updated_at:
-            # The child report stamps its own counters when they move and carries
-            # the stamp when they do not, so trust it over this refresh's clock:
-            # a pipeline status rebuild must not make a quiet child look fresh.
-            progress["countsUpdatedAt"] = report_counts_updated_at
-        elif (
-            previous_counts != progress["counts"]
-            or not str(previous.get("countsUpdatedAt") or "").strip()
-        ):
-            progress["countsUpdatedAt"] = now_iso
-        else:
-            progress["countsUpdatedAt"] = str(previous.get("countsUpdatedAt") or now_iso)
+        # The child report stamps its own counters when they move and carries the
+        # stamp when they do not, so trust it over this refresh's clock: a status
+        # rebuild must not make a quiet child look fresh.
+        counts_updated_at = str(progress.get("countsUpdatedAt") or "").strip()
+        if not counts_updated_at:
+            # Children without their own stamp (fetch, sync) fall back to comparing
+            # the counters against the last projection.
+            previous = child.get("taskProgress")
+            previous = previous if isinstance(previous, dict) else {}
+            previous_counts_value = previous.get("counts")
+            previous_counts = (
+                dict(previous_counts_value) if isinstance(previous_counts_value, dict) else {}
+            )
+            if previous_counts == progress["counts"]:
+                counts_updated_at = str(previous.get("countsUpdatedAt") or "").strip()
+            counts_updated_at = counts_updated_at or now_iso
+        progress["countsUpdatedAt"] = counts_updated_at
         return progress
 
     def _refresh_live_child_task_progress(

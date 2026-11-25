@@ -164,10 +164,9 @@ class DiscoveryRunState:
                 "urlPatches": str(source_registry_module.URL_PATCH_MANIFEST_PATH),
             },
             save_json_atomic_fn=root.save_json_atomic,
-            previous_progress=self.last_task_progress or None,
+            previous_progress=self.last_task_progress,
         )
-        if isinstance(written, dict):
-            self.last_task_progress = written
+        self.last_task_progress = written
 
     def write_subtask_progress_report(
         self,
@@ -191,7 +190,7 @@ class DiscoveryRunState:
             return
         self.subtask_progress_last_phase = phase_token
         self.subtask_progress_last_written_mono = now_mono
-        root.update_discovery_subtask_progress_report(
+        written = root.update_discovery_subtask_progress_report(
             report_write_path=root._discovery_report_write_path(),
             run_id=deps.run_id,
             phase=phase,
@@ -200,3 +199,5 @@ class DiscoveryRunState:
             load_json_object_fn=source_registry_module.load_json_object,
             save_json_atomic_fn=root.save_json_atomic,
         )
+        if written is not None:
+            self.last_task_progress = written

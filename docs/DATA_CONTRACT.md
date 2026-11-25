@@ -1007,8 +1007,6 @@ Lifecycle invariants:
 
 Fetcher and discovery reports may include a shared `taskProgress` object for the admin loading bars. This is the preferred progress contract for the frontend.
 
-Discovery reports stamp `taskProgress.countsUpdatedAt` only when the counters change and carry the previous stamp when they do not; the pipeline child projection and the live-task normalizer preserve it, so a discovery run that keeps rewriting its report without advancing still reads as quiet.
-
 Discovery `taskProgress.counts` may include additive subtask diagnostics while a stage is running. GameDevMap active-audit discovery reports use `subtaskKey="gamedevmap_active_audit"` plus `activeAudit*` counters such as completed/total URLs, batch, phase, homepage fetch, recovery fetch, recovery analysis, candidate, and failure counts. These fields are display-only progress diagnostics and must not drive registry, candidate, dedupe, or source-health decisions.
 
 Sync `taskProgress.counts` may include additive sharded-push diagnostics while `phaseKey="remote_write"`: `shardCount`, `changedShardCount`, `completedShardCount`, `verifiedShardCount`, `currentShardIndex`, `currentShardLabel`, `shardsPushedBytes`, `totalShardBytes`, `manifestCommitted`, and `gcDeletedCount`. These fields are display-only heartbeat/progress diagnostics; the source-sync manifest, shard payloads, and final sync result metrics remain the authority for committed remote state.
