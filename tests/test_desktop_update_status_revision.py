@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import multiprocessing
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -171,19 +172,6 @@ def test_fresh_status_write_is_not_guarded() -> None:
         assert status["lastError"] == "Install cancelled."
 
 
-def test_every_status_save_bumps_the_revision() -> None:
-    with workspace_tmpdir("desktop-update") as tmp:
-        paths = _paths(tmp)
-        assert du.default_status_payload(current_version="0.1.0")["revision"] == 0
-        assert (
-            du.save_status(paths, du.default_status_payload(current_version="0.1.0"))["revision"]
-            == 1
-        )
-        assert (
-            du.save_status(paths, du.load_status(paths, current_version="0.1.0"))["revision"] == 2
-        )
-
-
 def test_save_status_holds_the_write_lock_across_its_write() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         paths = _paths(tmp)
@@ -240,3 +228,58 @@ def test_stale_status_write_cannot_erase_a_repair_failure() -> None:
         assert status["repairState"] == "repair_failed"
         assert status["repairError"] == "Repair could not replace the install."
         assert status["repairFailedAt"] == "2026-05-01T12:00:03Z"
+
+
+def _contention_worker(data_dir: str, barrier: Any, worker: int, writes: int) -> None:
+    """One independent process, released with every other writer at the barrier."""
+    paths = du.DesktopUpdatePaths.from_data_dir(Path(data_dir))
+    barrier.wait(timeout=60)
+    for index in range(writes):
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "lastCheckedAt": f"{worker}-{index}",
+            },
+        )
+
+
+def test_concurrent_processes_do_not_lose_status_writes() -> None:
+    """Every save must see the revision the previous save wrote.
+
+    A save reads the revision and writes ``revision + 1``, so a read-modify-write
+    that is not serialized drops writes and the final revision falls short of the
+    save count. With the write lock removed this failed every run (final revision
+    3-7 of 24), because the six writers start together and their read/write gaps
+    overlap.
+    """
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        workers = 6
+        writes = 4
+        context = multiprocessing.get_context("spawn")
+        barrier = context.Barrier(workers)
+        processes = [
+            context.Process(
+                target=_contention_worker,
+                args=(str(data_dir), barrier, index, writes),
+            )
+            for index in range(workers)
+        ]
+        try:
+            for process in processes:
+                process.start()
+            for process in processes:
+                process.join(timeout=60)
+                assert process.exitcode == 0, f"contention worker exited {process.exitcode}"
+        finally:
+            for process in processes:
+                if process.is_alive():
+                    process.terminate()
+                    process.join(timeout=10)
+
+        status = du.load_status(
+            du.DesktopUpdatePaths.from_data_dir(data_dir),
+            current_version="0.1.0",
+        )
+        assert status["revision"] == workers * writes

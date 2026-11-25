@@ -296,16 +296,16 @@ def _install_state_write_lock(paths: Any) -> Iterator[None]:
     before `save_status` read the file. Hold an exclusive OS lock across the
     read and the write so a helper write cannot slip into that gap; the OS
     releases the lock when a holder exits.
+
+    The file stays empty: locking byte 0 works past the end of the file, while
+    writing a byte here would collide with another process's byte-range lock on
+    Windows (`PermissionError` on the write, before the lock is even held).
     """
     lock_path = paths.install_state_path.with_name(
         f"{paths.install_state_path.name}{_INSTALL_STATE_LOCK_SUFFIX}"
     )
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as handle:
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() == 0:
-            handle.write(b"\0")
-            handle.flush()
         deadline = time.monotonic() + _INSTALL_STATE_LOCK_TIMEOUT_S
         while True:
             try:
