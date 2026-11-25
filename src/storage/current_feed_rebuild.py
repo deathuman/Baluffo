@@ -42,6 +42,11 @@ CONTENT_PARITY_TABLES = (
     "source_registry_state",
     "source_registry_tombstones",
 )
+# Runtime ledgers that move on their own while a copy runs. The storage task row
+# that reports a reclaim is written by a watcher thread a few milliseconds after
+# the run starts, and task events are appended to and pruned throughout, so their
+# count is taken inside the copy's own read snapshot instead of up front.
+VOLATILE_COUNT_TABLES = ("task_runs", "task_events")
 REBUILD_JOURNAL_SUFFIX = ".rebuild.json"
 REBUILD_STAGING_SUFFIX = ".rebuild.tmp"
 REBUILD_BACKUP_SUFFIX = ".pre-rebuild"
@@ -438,6 +443,58 @@ def _copy_table(
     return copied
 
 
+def _copy_counted_table(
+    source_conn: sqlite3.Connection,
+    target_conn: sqlite3.Connection,
+    table: str,
+    *,
+    generation: str,
+    on_progress: Callable[[dict[str, Any]], None] | None,
+    cancel_requested: CancelRequested | None,
+    expected_counts: dict[str, int],
+) -> int:
+    """Copy one table and record the count validation must match for it.
+
+    A volatile runtime ledger is counted inside the copy's own read transaction:
+    ``task_runs`` gains the storage task row that reports the very reclaim doing
+    this copy, and ``task_events`` is appended to and pruned, so a count taken
+    with the other tables can describe a different database than the copy reads.
+    Pinning both statements to one deferred transaction keeps the exact
+    comparison in :func:`validate_rebuilt_database` intact instead of tolerating
+    a copy that lost or duplicated a batch.
+    """
+    if table not in VOLATILE_COUNT_TABLES:
+        return _copy_table(
+            source_conn,
+            target_conn,
+            table,
+            generation=generation,
+            on_progress=on_progress,
+            cancel_requested=cancel_requested,
+        )
+    raise_if_cancelled(cancel_requested)
+    source_conn.execute("BEGIN")
+    try:
+        expected_counts[table] = _count(source_conn, table)
+        copied = _copy_table(
+            source_conn,
+            target_conn,
+            table,
+            generation=generation,
+            on_progress=on_progress,
+            cancel_requested=cancel_requested,
+        )
+    except BaseException:
+        try:
+            source_conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            # SQLite may already have ended the failed statement's transaction.
+            pass
+        raise
+    source_conn.execute("COMMIT")
+    return copied
+
+
 def rebuild_current_feed_database(
     source_path: Path | str,
     staging_path: Path | str,
@@ -534,7 +591,15 @@ def rebuild_current_feed_database(
         if not table_names:
             raise CurrentFeedRebuildError("source database has no tables")
         non_feed_tables = [table for table in table_names if table not in FEED_TABLES]
-        expected_table_counts = {table: _count(source_conn, table) for table in non_feed_tables}
+        # The task/run ledgers are counted inside their own copy's snapshot (see
+        # `_copy_counted_table`): the reclaim writes its own task row while this
+        # copy is starting, so a count taken here would describe an older
+        # database than the copy reads.
+        expected_table_counts = {
+            table: _count(source_conn, table)
+            for table in non_feed_tables
+            if table not in VOLATILE_COUNT_TABLES
+        }
         expected_table_counts[FEED_TABLES[0]] = expected_job_rows
         expected_table_counts[FEED_TABLES[1]] = expected_source_rows
         report("prepare", currentGeneration=generation, tablesTotal=len(table_names))
@@ -562,13 +627,14 @@ def rebuild_current_feed_database(
         copied = 0
         table_counts: dict[str, int] = {}
         for table in table_names:
-            table_counts[table] = _copy_table(
+            table_counts[table] = _copy_counted_table(
                 source_conn,
                 target_conn,
                 table,
                 generation=generation,
                 on_progress=on_progress,
                 cancel_requested=cancel_requested,
+                expected_counts=expected_table_counts,
             )
             copied += 1
             report(
