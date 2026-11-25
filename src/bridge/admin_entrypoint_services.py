@@ -409,11 +409,21 @@ def _build_pipeline_smoke_overrides(root_mod: Any) -> dict[str, Callable[..., An
         return {"started": True, "runId": "sync_smoke"}
 
     def pipeline_wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> dict[str, Any]:
+        # The pipeline attaches a lifecycle row for the runId the stub reported;
+        # nothing else closes it because no sync worker runs in stub mode.
+        finished_at = root_mod.now_iso()
+        root_mod.finish_lifecycle_run(
+            str(run_id or "sync_smoke"),
+            "sync",
+            finished_at=finished_at,
+            terminal_reason="completed",
+            summary={},
+        )
         return {
             "id": str(run_id or "sync_smoke"),
             "type": "sync",
             "status": "ok",
-            "finishedAt": root_mod.now_iso(),
+            "finishedAt": finished_at,
             "summary": {},
         }
 
