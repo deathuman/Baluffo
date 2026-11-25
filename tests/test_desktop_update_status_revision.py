@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
+import pytest
+
+from src.ship import desktop_update_state as update_state
 from src.ship.desktop_update_state import INSTALL_WRITE_PHASE
 from tests.helpers.desktop_update_leaf_namespace import du
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -178,3 +182,61 @@ def test_every_status_save_bumps_the_revision() -> None:
         assert (
             du.save_status(paths, du.load_status(paths, current_version="0.1.0"))["revision"] == 2
         )
+
+
+def test_save_status_holds_the_write_lock_across_its_write() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        paths = _paths(tmp)
+        real_write = update_state.write_json_atomic
+
+        def probe(path: Path, payload: dict[str, Any]) -> None:
+            if path == paths.install_state_path:
+                # The save must still hold the lock here, so a second writer
+                # cannot acquire it until the write completes.
+                with pytest.raises(TimeoutError):
+                    with update_state._install_state_write_lock(paths):
+                        pass
+            real_write(path, payload)
+
+        with (
+            mock.patch.object(update_state, "_INSTALL_STATE_LOCK_TIMEOUT_S", 0.2),
+            mock.patch.object(update_state, "write_json_atomic", probe),
+        ):
+            status = du.save_status(paths, du.default_status_payload(current_version="0.1.0"))
+
+        assert status["revision"] == 1
+
+
+def test_stale_status_write_cannot_erase_a_repair_failure() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        paths = _paths(tmp)
+        poller_snapshot = _ready_to_install(paths)
+        du.save_status(
+            paths,
+            {
+                **du.load_status(paths, current_version="0.1.0"),
+                "installState": "failed",
+                "installStage": "rollback_failed",
+                "installStageLabel": "Update repair required",
+                "repairState": "repair_failed",
+                "repairError": "Repair could not replace the install.",
+                "repairFailedAt": "2026-05-01T12:00:03Z",
+                "helperUpdatedAt": "2026-05-01T12:00:03Z",
+            },
+            phase=INSTALL_WRITE_PHASE,
+        )
+
+        du.save_status(
+            paths,
+            {
+                **poller_snapshot,
+                "lastCheckedAt": "2026-05-01T12:00:04Z",
+            },
+        )
+
+        status = du.load_status(paths, current_version="0.1.0")
+        assert status["installState"] == "failed"
+        assert status["installStage"] == "rollback_failed"
+        assert status["repairState"] == "repair_failed"
+        assert status["repairError"] == "Repair could not replace the install."
+        assert status["repairFailedAt"] == "2026-05-01T12:00:03Z"

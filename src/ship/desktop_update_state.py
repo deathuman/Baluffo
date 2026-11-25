@@ -9,12 +9,15 @@ AI boundary verify: `npm run lint:repo-guardrails` plus focused desktop update s
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
 import subprocess
 import tempfile
 import threading
+import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.app_version import get_app_version
 from src.shared.coerce import as_dict as _as_dict
@@ -225,9 +228,15 @@ def _reconcile_repair_status(
 # separate processes. Every save records the revision it read; when the file has
 # moved on and the incoming write is not the install phase, the install phase
 # fields on disk win, so a stale download-progress write cannot lower
-# `installState` or erase an installer completion.
+# `installState` or erase an installer completion. The revision check cannot see
+# a write that lands between the read and the write, so the whole read-modify-
+# write holds an exclusive file lock.
 STATUS_WRITE_PHASE = "status"
 INSTALL_WRITE_PHASE = "install"
+_INSTALL_STATE_LOCK_SUFFIX = ".lock"
+_INSTALL_STATE_LOCK_TIMEOUT_S = 10.0
+_INSTALL_STATE_LOCK_RETRY_S = 0.05
+_CONTENDED_LOCK_ERRNOS = frozenset({errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK, errno.EDEADLK})
 _INSTALL_PHASE_STATES = frozenset(
     {"handoff_requested", "waiting_for_exit", "installing", "verifying", "installed"}
 )
@@ -242,6 +251,9 @@ _INSTALL_OWNED_KEYS = (
     "downloadPercent",
     "downloadedZipPath",
     "lastError",
+    "repairState",
+    "repairError",
+    "repairFailedAt",
 )
 
 
@@ -263,17 +275,74 @@ def _phase_guarded_status(
     phase: str,
 ) -> dict[str, Any]:
     """Keep the install block on disk when a stale non-install write arrives."""
+    if (
+        phase == INSTALL_WRITE_PHASE
+        or int(payload.get("revision") or 0) >= int(current.get("revision") or 0)
+        or not _install_phase_active(current)
+    ):
+        return dict(payload)
     next_status = dict(payload)
-    if phase == INSTALL_WRITE_PHASE:
-        return next_status
-    if int(payload.get("revision") or 0) >= int(current.get("revision") or 0):
-        return next_status
-    if not _install_phase_active(current):
-        return next_status
     for key in _INSTALL_OWNED_KEYS:
         if key in current:
             next_status[key] = current[key]
     return next_status
+
+
+@contextlib.contextmanager
+def _install_state_write_lock(paths: Any) -> Iterator[None]:
+    """Serialize the install-state read-modify-write across the bridge and helper.
+
+    The revision check in `_phase_guarded_status` only sees writes that landed
+    before `save_status` read the file. Hold an exclusive OS lock across the
+    read and the write so a helper write cannot slip into that gap; the OS
+    releases the lock when a holder exits.
+    """
+    lock_path = paths.install_state_path.with_name(
+        f"{paths.install_state_path.name}{_INSTALL_STATE_LOCK_SUFFIX}"
+    )
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        deadline = time.monotonic() + _INSTALL_STATE_LOCK_TIMEOUT_S
+        while True:
+            try:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt_mod = cast(Any, msvcrt)
+                    msvcrt_mod.locking(handle.fileno(), msvcrt_mod.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl_mod = cast(Any, fcntl)
+                    fcntl_mod.flock(handle.fileno(), fcntl_mod.LOCK_EX | fcntl_mod.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in _CONTENDED_LOCK_ERRNOS:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        "Timed out waiting for the desktop update state write lock."
+                    ) from exc
+                time.sleep(_INSTALL_STATE_LOCK_RETRY_S)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt_mod = cast(Any, msvcrt)
+                msvcrt_mod.locking(handle.fileno(), msvcrt_mod.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl_mod = cast(Any, fcntl)
+                fcntl_mod.flock(handle.fileno(), fcntl_mod.LOCK_UN)
 
 
 def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, Any]:
@@ -306,12 +375,15 @@ def save_status(
     A payload carries the ``revision`` it was read at. When the file has moved
     on and the write is not the install phase, the install block from disk is
     kept, so a stale download-progress write cannot lower ``installState`` or
-    overwrite a completion the updater helper already wrote.
+    overwrite a completion the updater helper already wrote. The read and the
+    write share a cross-process lock, so a helper write cannot land between
+    them unseen.
     """
-    current = _as_dict(read_json(paths.install_state_path, {}))
-    next_status = _phase_guarded_status(current=current, payload=payload, phase=phase)
-    next_status["revision"] = int(current.get("revision") or 0) + 1
-    write_json_atomic(paths.install_state_path, next_status)
+    with _install_state_write_lock(paths):
+        current = _as_dict(read_json(paths.install_state_path, {}))
+        next_status = _phase_guarded_status(current=current, payload=payload, phase=phase)
+        next_status["revision"] = int(current.get("revision") or 0) + 1
+        write_json_atomic(paths.install_state_path, next_status)
     return next_status
 
 
