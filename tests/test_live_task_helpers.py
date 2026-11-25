@@ -63,6 +63,20 @@ def test_build_live_task_progress_payload_preserves_wait_reason() -> None:
     assert payload["waitReason"] == "domain_gate"
 
 
+def test_normalize_live_task_progress_keeps_counts_updated_at() -> None:
+    progress = normalize_live_task_progress(
+        {
+            "active": True,
+            "updatedAt": "2026-08-31T12:05:00Z",
+            "countsUpdatedAt": "2026-08-31T12:00:00Z",
+        }
+    )
+
+    # The heartbeat moved; the counters did not, and the quiet cue needs that split.
+    assert progress["updatedAt"] == "2026-08-31T12:05:00Z"
+    assert progress["countsUpdatedAt"] == "2026-08-31T12:00:00Z"
+
+
 def test_normalize_live_task_progress_preserves_bounded_running_source_names() -> None:
     progress = normalize_live_task_progress(
         {

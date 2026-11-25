@@ -1,7 +1,8 @@
 import {
   appendLiveTaskActivity,
   buildTaskWorkItemActivitySignature,
-  markLiveTaskActivity
+  markLiveTaskActivity,
+  parseReportTimestampMs
 } from "../live-task.js";
 import {
   deriveDiscoveryProgressModel,
@@ -191,10 +192,23 @@ export function createAdminDiscoveryProgressController({
     return Math.max(0, Number(nowMs) - changedAtMs);
   }
 
+  function discoveryServerQuietMs(report, nowMs) {
+    // The worker stamps countsUpdatedAt only when the shown counters move, so it
+    // stays honest across a page reload while the snapshot heartbeat keeps
+    // ticking. Prefer the older of that and the tab-local stamp.
+    const countsUpdatedAtMs = parseReportTimestampMs(report?.taskProgress?.countsUpdatedAt);
+    if (countsUpdatedAtMs <= 0) return 0;
+    return Math.max(0, Number(nowMs) - countsUpdatedAtMs);
+  }
+
   function updateDiscoveryProgressFromReport(report, { running = false, quietSeconds = 0 } = {}) {
+    const nowMs = Date.now();
     const quietMs = Number(quietSeconds) > 0
       ? Number(quietSeconds) * 1000
-      : discoveryLiveQuietMs(Date.now());
+      : Math.max(
+        discoveryLiveQuietMs(nowMs),
+        running ? discoveryServerQuietMs(report, nowMs) : 0
+      );
     setDiscoveryProgress(deriveDiscoveryProgressModel(report, {
       running,
       phaseHint: getDiscoveryProgressPhaseHint(),

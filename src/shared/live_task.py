@@ -36,6 +36,7 @@ class LiveTaskProgress(TypedDict, total=False):
     targetUrl: str
     waitReason: str
     updatedAt: str
+    countsUpdatedAt: str
 
 
 class LiveTaskWorkItem(TypedDict, total=False):
@@ -170,6 +171,7 @@ def normalize_live_task_progress(payload: Mapping[str, Any] | None) -> LiveTaskP
         "targetUrl": clean_text(src.get("targetUrl")),
         "waitReason": wait_reason,
         "updatedAt": clean_text(src.get("updatedAt")),
+        "countsUpdatedAt": clean_text(src.get("countsUpdatedAt")),
     }
 
 

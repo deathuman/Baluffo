@@ -10,8 +10,10 @@ projects those counts so the jobs caption's source count keeps advancing
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
+from src.bridge.pipeline_stall import compute_pipeline_child_quiet_info
 from src.source_discovery.reporting_progress import build_discovery_task_progress
 from tests._pipeline_execution_shared import (
     Any,
@@ -121,4 +123,100 @@ def test_refresh_live_child_projects_discovery_report_counts(tmp_path: Path) -> 
     assert counts["probeTotal"] == 2135
     assert child["taskProgress"]["mode"] == "determinate"
     assert child["taskProgress"]["phaseLabel"] == "Probing 2135 candidate(s)"
-    assert child["taskProgress"]["countsUpdatedAt"] == "2026-08-31T12:00:15Z"
+    # The worker stamped its counters at 12:00:10; the projection at 12:00:15 only
+    # proves the pipeline re-read the report, so it must not restamp the cue.
+    assert child["taskProgress"]["countsUpdatedAt"] == "2026-08-31T12:00:10Z"
+
+
+def test_discovery_task_progress_stamps_counts_updated_at_only_when_counts_move() -> None:
+    first = build_discovery_task_progress(
+        summary=_probing_summary(probed=512),
+        finished=False,
+        updated_at="2026-08-31T12:00:00Z",
+    )
+    quiet = build_discovery_task_progress(
+        summary=_probing_summary(probed=512),
+        finished=False,
+        updated_at="2026-08-31T12:05:00Z",
+        previous_progress=first,
+    )
+    moved = build_discovery_task_progress(
+        summary=_probing_summary(probed=530),
+        finished=False,
+        updated_at="2026-08-31T12:06:00Z",
+        previous_progress=quiet,
+    )
+
+    assert first["countsUpdatedAt"] == "2026-08-31T12:00:00Z"
+    # The report was rewritten on its cadence; the counters did not move.
+    assert quiet["updatedAt"] == "2026-08-31T12:05:00Z"
+    assert quiet["countsUpdatedAt"] == "2026-08-31T12:00:00Z"
+    assert moved["countsUpdatedAt"] == "2026-08-31T12:06:00Z"
+
+
+def test_quiet_discovery_child_keeps_the_worker_counts_stamp(tmp_path: Path) -> None:
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "discovery",
+        "activeChildren": [
+            {
+                "id": "discovery_1",
+                "runId": "discovery_1",
+                "taskType": "discovery",
+                "type": "discovery",
+                "active": True,
+                "taskProgress": {
+                    "phaseKey": "probing_candidates",
+                    "mode": "indeterminate",
+                    "ratio": 0.0,
+                    "counts": {},
+                },
+            }
+        ],
+    }
+    progress = build_discovery_task_progress(
+        summary=_probing_summary(probed=512),
+        finished=False,
+        updated_at="2026-08-31T12:00:10Z",
+    )
+    progress["countsUpdatedAt"] = "2026-08-31T12:02:00Z"
+    report = {
+        "runId": "discovery_1",
+        "startedAt": "2026-08-31T12:00:01Z",
+        "taskProgress": progress,
+    }
+
+    service = PipelineService(
+        pipeline_state_lock=FakeLock(),
+        pipeline_status=status,
+        runtime=PipelineRuntime(),
+        bridge_log=lambda *a, **kw: None,
+        now_iso=lambda: "2026-08-31T12:20:00Z",
+        parse_iso=make_parse_iso(),
+        sync_task_running=lambda: False,
+        current_fetch_output_count=lambda: 0,
+        load_json_object=lambda _path, default: default,
+        wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+        discovery_report_path=tmp_path / "discovery-report.json",
+        fetch_report_path=tmp_path / "fetch-report.json",
+        trigger_discovery_task=lambda **kw: (200, {"started": True}),
+        start_fetcher_task=lambda x: {"started": True, "runId": "fetch_1"},
+        start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+        get_app_version=lambda: "1.0.0",
+    )
+
+    service._refresh_live_child_task_progress("discovery", report)
+
+    child = service._status["activeChildren"][0]
+    # A freshly rebuilt child row must not reset the worker's stamp to "now".
+    assert child["taskProgress"]["countsUpdatedAt"] == "2026-08-31T12:02:00Z"
+
+    quiet = compute_pipeline_child_quiet_info(
+        service._status,
+        parse_iso=make_parse_iso(),
+        now_utc=lambda: datetime.fromisoformat("2026-08-31T12:20:00+00:00"),
+    )
+    assert quiet is not None
+    assert quiet["inChild"] == "discovery"
+    assert quiet["quietSeconds"] >= 1000

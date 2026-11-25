@@ -1007,6 +1007,8 @@ Lifecycle invariants:
 
 Fetcher and discovery reports may include a shared `taskProgress` object for the admin loading bars. This is the preferred progress contract for the frontend.
 
+Discovery reports stamp `taskProgress.countsUpdatedAt` only when the counters change and carry the previous stamp when they do not; the pipeline child projection and the live-task normalizer preserve it, so a discovery run that keeps rewriting its report without advancing still reads as quiet.
+
 Discovery `taskProgress.counts` may include additive subtask diagnostics while a stage is running. GameDevMap active-audit discovery reports use `subtaskKey="gamedevmap_active_audit"` plus `activeAudit*` counters such as completed/total URLs, batch, phase, homepage fetch, recovery fetch, recovery analysis, candidate, and failure counts. These fields are display-only progress diagnostics and must not drive registry, candidate, dedupe, or source-health decisions.
 
 Sync `taskProgress.counts` may include additive sharded-push diagnostics while `phaseKey="remote_write"`: `shardCount`, `changedShardCount`, `completedShardCount`, `verifiedShardCount`, `currentShardIndex`, `currentShardLabel`, `shardsPushedBytes`, `totalShardBytes`, `manifestCommitted`, and `gcDeletedCount`. These fields are display-only heartbeat/progress diagnostics; the source-sync manifest, shard payloads, and final sync result metrics remain the authority for committed remote state.
@@ -1021,6 +1023,7 @@ Sync `taskProgress.counts` may include additive sharded-push diagnostics while `
 | `mode` | `string` | Either `indeterminate` or `determinate`. |
 | `ratio` | `number` | `0..1` progress ratio when `mode` is `determinate`; ignored otherwise. |
 | `counts` | `object` | Display-only task metrics used to enrich the label, not to redefine primary progress semantics. |
+| `countsUpdatedAt` | `string` | ISO timestamp of the last time the shown `counts` values actually moved. `updatedAt` is rewritten on the report cadence and proves only that the writer ran; this field stays put while counters freeze, so the admin quiet cue and `compute_pipeline_child_quiet_info` can report "still working - counts unchanged" for a hung-but-writing worker instead of a fresh heartbeat. |
 
 Fetch `taskProgress.counts.runningSourceNames` is the only count value that may remain an array. It is a bounded `string[]` of current source names for Admin/JOBS active fetch rendering; all other count fields stay scalar compatibility values. Running aggregate sources may also expose scalar aggregate-tail fields such as `etaBasis`, `activeAggregateSourceName`, `activeAggregateCompleted`, `activeAggregateTotal`, `activeAggregateRunning`, `activeAggregateQueued`, `activeAggregateError`, `activeAggregateRatePerMinute`, and `activeAggregateEstimatedRemainingMs`; when `etaBasis` is `aggregate`, `estimatedRemainingMs` is based on aggregate progress rather than top-level source count.
 

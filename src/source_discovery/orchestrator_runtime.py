@@ -104,6 +104,7 @@ class DiscoveryRunState:
     directory_audit_summaries: dict[str, dict[str, Any]] = field(default_factory=dict)
     subtask_progress_last_written_mono: float = 0.0
     subtask_progress_last_phase: str = ""
+    last_task_progress: dict[str, Any] = field(default_factory=dict)
 
     def total_duration_ms(self, deps: DiscoveryRunDeps) -> int:
         import time
@@ -120,7 +121,7 @@ class DiscoveryRunState:
         root: Any,
     ) -> None:
         report_write_path = root._discovery_report_write_path()
-        root.write_discovery_progress_report(
+        written = root.write_discovery_progress_report(
             current_candidates=current_candidates,
             phase=phase,
             phase_label=phase_label,
@@ -163,7 +164,10 @@ class DiscoveryRunState:
                 "urlPatches": str(source_registry_module.URL_PATCH_MANIFEST_PATH),
             },
             save_json_atomic_fn=root.save_json_atomic,
+            previous_progress=self.last_task_progress or None,
         )
+        if isinstance(written, dict):
+            self.last_task_progress = written
 
     def write_subtask_progress_report(
         self,

@@ -98,8 +98,9 @@ function mapDiscoveryHybridRatio(progress) {
 
 function formatQuietElapsedMs(quietMs) {
   const value = Math.max(0, Number(quietMs || 0));
-  if (!Number.isFinite(value) || value <= 0) return "";
-  if (value < 60_000) return "1m";
+  // Only claim a quiet minute once one has actually passed: the server's
+  // countsUpdatedAt can be seconds old on a freshly loaded page.
+  if (!Number.isFinite(value) || value < 60_000) return "";
   return `${Math.max(1, Math.round(value / 60_000))}m`;
 }
 

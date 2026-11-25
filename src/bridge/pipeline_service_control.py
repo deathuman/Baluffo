@@ -243,7 +243,13 @@ class _PipelineServiceControlMixin(PipelineServiceState):
         # stamp, which is refreshed even when counters are frozen. Track the last
         # moment the counters actually moved so the UI can reassure the user a
         # quiet-but-alive stage is still working.
-        if (
+        report_counts_updated_at = str(progress.get("countsUpdatedAt") or "").strip()
+        if report_counts_updated_at:
+            # The child report stamps its own counters when they move and carries
+            # the stamp when they do not, so trust it over this refresh's clock:
+            # a pipeline status rebuild must not make a quiet child look fresh.
+            progress["countsUpdatedAt"] = report_counts_updated_at
+        elif (
             previous_counts != progress["counts"]
             or not str(previous.get("countsUpdatedAt") or "").strip()
         ):

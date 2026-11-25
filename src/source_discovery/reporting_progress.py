@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -252,11 +253,38 @@ def failures_resolved_by_browser_total(
     return sum(max(0, value) for value in totals)
 
 
+def _counts_signature(counts: dict[str, Any]) -> str:
+    return json.dumps(counts, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _carried_counts_updated_at(
+    *,
+    counts: dict[str, Any],
+    previous_progress: dict[str, Any] | None,
+    updated_at: str,
+) -> str:
+    """Return when the shown counters last moved, not when the report was written.
+
+    The discovery report is rewritten on a cadence even when no counter changes,
+    so ``updatedAt`` proves the worker is writing, not that it is advancing. Carry
+    the previous stamp while the counts are identical; the admin quiet cue and
+    ``compute_pipeline_child_quiet_info`` then show a hung-but-writing worker as
+    quiet instead of freshly active.
+    """
+    if not isinstance(previous_progress, dict):
+        return updated_at
+    previous_counts = as_json_object(previous_progress.get("counts"))
+    if not previous_counts or _counts_signature(previous_counts) != _counts_signature(counts):
+        return updated_at
+    return str(previous_progress.get("countsUpdatedAt") or "").strip() or updated_at
+
+
 def build_discovery_task_progress(
     *,
     summary: dict[str, Any],
     finished: bool,
     updated_at: str = "",
+    previous_progress: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     phase_key = str(summary.get("phaseKey") or summary.get("phase") or "").strip() or (
         "completed" if finished else "starting"
@@ -295,6 +323,22 @@ def build_discovery_task_progress(
     elif phase_key == "probing_candidates" and probe_total > 0:
         mode = "determinate"
         ratio = max(0.0, min(1.0, probed_count / max(1, probe_total)))
+    counts = {
+        "foundEndpoints": found_count,
+        "generatedCandidates": generated_count,
+        "survivedDedupeCandidates": survived_count,
+        "probedCandidates": probed_count,
+        "probeTotal": probe_total,
+        "queuedCandidates": queued_count,
+        "deferredCandidates": deferred_count,
+        "failedProbes": failed_count,
+        "currentStageKey": current_stage_key,
+        "currentStageLabel": current_stage_label,
+        "stageIndex": stage_index,
+        "stageTotal": stage_total,
+        "completedStages": completed_stage_count,
+    }
+    updated_at_text = str(updated_at or "").strip()
     return {
         "active": not bool(finished),
         "phaseKey": phase_key,
@@ -302,22 +346,13 @@ def build_discovery_task_progress(
         "mode": mode,
         "ratio": ratio,
         "targetLabel": current_stage_label,
-        "updatedAt": str(updated_at or "").strip(),
-        "counts": {
-            "foundEndpoints": found_count,
-            "generatedCandidates": generated_count,
-            "survivedDedupeCandidates": survived_count,
-            "probedCandidates": probed_count,
-            "probeTotal": probe_total,
-            "queuedCandidates": queued_count,
-            "deferredCandidates": deferred_count,
-            "failedProbes": failed_count,
-            "currentStageKey": current_stage_key,
-            "currentStageLabel": current_stage_label,
-            "stageIndex": stage_index,
-            "stageTotal": stage_total,
-            "completedStages": completed_stage_count,
-        },
+        "updatedAt": updated_at_text,
+        "countsUpdatedAt": _carried_counts_updated_at(
+            counts=counts,
+            previous_progress=previous_progress,
+            updated_at=updated_at_text,
+        ),
+        "counts": counts,
     }
 
 
@@ -365,8 +400,9 @@ def write_discovery_progress_report(
     report_write_path,
     outputs: dict[str, str],
     save_json_atomic_fn,
+    previous_progress: dict[str, Any] | None = None,
     now_iso_fn=now_iso,
-) -> None:
+) -> dict[str, Any]:
     heartbeat_at = now_iso_fn()
     runtime_payload = build_discovery_runtime_payload(
         total_duration_ms=total_duration_ms,
@@ -416,7 +452,10 @@ def write_discovery_progress_report(
     )
     summary.update(stage_progress)
     task_progress = build_discovery_task_progress(
-        summary=summary, finished=False, updated_at=heartbeat_at
+        summary=summary,
+        finished=False,
+        updated_at=heartbeat_at,
+        previous_progress=previous_progress,
     )
     save_json_atomic_fn(
         report_write_path,
@@ -441,6 +480,7 @@ def write_discovery_progress_report(
             "outputs": outputs,
         },
     )
+    return task_progress
 
 
 def update_discovery_subtask_progress_report(
