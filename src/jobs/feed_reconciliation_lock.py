@@ -353,12 +353,11 @@ def jobs_feed_reconciliation_lock(
             return
 
         lock_path.parent.mkdir(parents=True, exist_ok=True)
+        # The file stays empty: byte 0 is lockable past the end of an empty
+        # file, while seeding a byte here would collide with a holder's
+        # byte-range lock on Windows (``PermissionError`` on the flush).
         handle = lock_path.open("a+b")
         try:
-            handle.seek(0, os.SEEK_END)
-            if handle.tell() == 0:
-                handle.write(b"\0")
-                handle.flush()
             _acquire_file_lock(handle, lock_path=lock_path, timeout_s=effective_timeout)
             _write_holder_metadata(lock_path, operation)
             held[key] = [handle, 1]
